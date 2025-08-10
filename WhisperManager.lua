@@ -27,6 +27,11 @@ function addon:OpenConversation(playerName)
         cleanName = trimmedName
     end
 
+    -- Add a check to prevent opening a window for oneself.
+    if strlower(cleanName) == strlower(UnitName("player"):match("([^%-]+)")) then
+        return
+    end
+
     local playerKey = Ambiguate(cleanName, "none")
     -- If Ambiguate fails to resolve the name, use the cleaned name as a fallback.
     if not playerKey or playerKey == "" then
@@ -53,9 +58,6 @@ function addon:OpenConversation(playerName)
     win:Show();
     win:Raise();
     _G[win:GetName() .. "Input"]:SetFocus();
-
-    -- THE FIX: The line below was the source of all errors. It has been removed.
-    -- ChatEdit_SetLastTellTarget(playerKey);
 end
 
 -- This function creates a new window frame from our XML template.
@@ -122,10 +124,8 @@ function addon:CreateWindow(playerKey)
     input:SetAutoFocus(true);
     input:SetHistoryLines(1);
     
-    -- NEW: Set maximum number of characters allowed in the input box.
     input:SetMaxLetters(CHAT_MAX_LETTERS);
     
-    -- NEW: Create the character count indicator.
     local inputCount = win:CreateFontString(frameName .. "InputCount", "OVERLAY", "GameFontNormalSmall");
     inputCount:SetPoint("BOTTOMRIGHT", input, "BOTTOMRIGHT", -5, 5);
     inputCount:SetTextColor(0.8, 0.8, 0.8);
@@ -156,7 +156,6 @@ function addon:CreateWindow(playerKey)
         end
     end);
 
-    -- NEW: Add a script to update the character counter as the user types.
     input:SetScript("OnTextChanged", function(self)
         local inputCount = _G[self:GetName() .. "Count"];
         local len = self:GetNumLetters();
@@ -192,14 +191,30 @@ function addon:DisplayHistory(window, playerName)
     historyFrame:Clear();
     local history = WhisperManager_HistoryDB[playerName];
     if not history then return end
+
     for _, entry in ipairs(history) do
         local timeString = date("[%H:%M]", entry.timestamp);
-        local authorColor = (entry.author == "Me") and "|cff949flff" or "|cffffd100";
-        local formattedMessage = string.format("%s %s%s:|r %s", timeString, authorColor, entry.author, entry.message);
+        local coloredAuthor;
+
+        if entry.author == "Me" then
+            -- Using a valid purple color for messages you send.
+            coloredAuthor = "|cff9494ffMe|r"; 
+        else
+            -- Using the original yellow color for the other person's messages.
+            coloredAuthor = string.format("|cffffd100%s|r", entry.author);
+        end
+        
+        -- Escape any '%' characters in the message itself to prevent formatting errors.
+        local safeMessage = entry.message:gsub("%%", "%%%%");
+        
+        -- Construct the final formatted line.
+        local formattedMessage = string.format("%s %s: %s", timeString, coloredAuthor, safeMessage);
         historyFrame:AddMessage(formattedMessage);
     end
+
     historyFrame:ScrollToBottom();
 end
+
 
 --------------------------------------------------------------------
 -- Event Handling and Initialization
@@ -212,6 +227,8 @@ function addon:Initialize()
 
     local eventFrame = CreateFrame("Frame");
     eventFrame:RegisterEvent("CHAT_MSG_WHISPER");
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD");
+
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "CHAT_MSG_WHISPER" then
             local message, author = ...;
@@ -223,32 +240,58 @@ function addon:Initialize()
                     addon:DisplayHistory(addon.windows[playerKey], playerKey);
                 end
             end
-        end
-    end);
+        elseif event == "PLAYER_ENTERING_WORLD" then
+            -- Hook into chat commands
+            hooksecurefunc("ChatFrame_OpenChat", function(text, chatFrame)
+                if not text or type(text) ~= "string" then return end
+                local _, _, target = strfind(text, "^/(?:whisper|w)%s+([^%s]+)");
+                if target then
+                    local editBox = _G.ChatEdit_ChooseBoxForSend(chatFrame);
+                    if target ~= "" and strlower(target) ~= strlower(UnitName("player")) then
+                        addon:OpenConversation(target);
+                        _G.ChatEdit_OnEscapePressed(editBox);
+                    end
+                end
+            end);
+            
+            hooksecurefunc("ChatFrame_ReplyTell", function()
+                local target = _G.ChatEdit_GetLastTellTarget();
+                if target and target ~= "" and strlower(target) ~= strlower(UnitName("player")) then
+                     addon:OpenConversation(target);
+                     local editBox = _G.ChatEdit_ChooseBoxForSend();
+                     _G.ChatEdit_OnEscapePressed(editBox);
+                end
+            end);
 
-    hooksecurefunc("ChatFrame_OpenChat", function(text, chatFrame)
-        if not text or type(text) ~= "string" then return end;
+            -- Hook into the right-click menu system with added safety checks
+            hooksecurefunc("UnitPopup_ShowMenu", function(menu, which, unit, name)
+                -- Apply safety checks to prevent UI taint.
+                if menu:IsForbidden() or UIDROPDOWNMENU_MENU_LEVEL ~= 1 then
+                    return
+                end
 
-        -- Look for /w or /whisper commands and extract the target name directly from the text
-        local _, _, target = strfind(text, "^/(?:whisper|w)%s+([^%s]+)");
-    
-        if target then
-            local editBox = _G.ChatEdit_ChooseBoxForSend(chatFrame);
-            if target ~= "" and strlower(target) ~= strlower(UnitName("player")) then
-                -- Call OpenConversation with the parsed target name
-                addon:OpenConversation(target);
-                -- Clear the input box to prevent the command from being sent in the main chat
-                _G.ChatEdit_OnEscapePressed(editBox);
-            end
-        end
-    end);
-    
-    hooksecurefunc("ChatFrame_ReplyTell", function()
-        local target = _G.ChatEdit_GetLastTellTarget();
-        if target and target ~= "" and strlower(target) ~= strlower(UnitName("player")) then
-             addon:OpenConversation(target);
-             local editBox = _G.ChatEdit_ChooseBoxForSend();
-             _G.ChatEdit_OnEscapePressed(editBox);
+                local playerName
+                if unit and UnitIsPlayer(unit) and not UnitIsUnit(unit, "player") then
+                    playerName = name or UnitName(unit)
+                elseif not unit and name and (which == "FRIEND" or which == "CHAT_PLAYER") then
+                    playerName = name
+                end
+
+                if playerName and playerName ~= UNKNOWN_OBJECT_NAME and playerName ~= UNKNOWN then
+                    local info = {
+                        text = "Open in WhisperManager",
+                        notCheckable = true,
+                        func = function()
+                            addon:OpenConversation(playerName)
+                        end,
+                        -- This button does not create a submenu, so it is safe.
+                    }
+                    UIDropDownMenu_AddButton(info)
+                end
+            end)
+
+            -- Unregister the event so this block only runs once per login.
+            self:UnregisterEvent("PLAYER_ENTERING_WORLD")
         end
     end);
 end
