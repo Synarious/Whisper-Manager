@@ -1,0 +1,9 @@
+## Interface: 100207
+## Title: WhisperManager
+## Notes: Whisper addon with window managment, editbox improvements and cross-character history without dependencies or complexity! 
+## Author: Synarion (Cephrax)
+## Version: 1.0
+## Dependencies: Blizzard_ChatFrame
+
+WhisperManager.xml
+WhisperManager.lua
