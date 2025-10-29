@@ -233,7 +233,7 @@ function addon:OpenConversation(playerName)
     local win = self.windows[playerKey]
     if not win then
         DebugMessage("No existing window. Calling CreateWindow.");
-        win = self:CreateWindow(playerKey, playerTarget, displayName)
+        win = self:CreateWindow(playerKey, playerTarget, displayName, false)
         if not win then 
             DebugMessage("|cffff0000ERROR: CreateWindow failed to return a window.|r");
             return false 
@@ -259,7 +259,49 @@ function addon:OpenConversation(playerName)
     return true
 end
 
-function addon:CreateWindow(playerKey, playerTarget, displayName)
+function addon:OpenBNetConversation(bnSenderID, displayName)
+    DebugMessage("OpenBNetConversation called for BNet ID:", bnSenderID)
+    local playerKey = "bnet_" .. tostring(bnSenderID)
+    
+    -- Get account info for display name
+    local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
+    if accountInfo then
+        displayName = accountInfo.accountName or displayName
+    end
+    displayName = displayName or "BNet Friend"
+    
+    self:RecordDisplayName(playerKey, displayName)
+    
+    local win = self.windows[playerKey]
+    if not win then
+        DebugMessage("No existing BNet window. Calling CreateWindow.")
+        win = self:CreateWindow(playerKey, bnSenderID, displayName, true)
+        if not win then
+            DebugMessage("|cffff0000ERROR: CreateWindow failed to return a BNet window.|r")
+            return false
+        end
+        self.windows[playerKey] = win
+    else
+        win.bnSenderID = bnSenderID
+        win.playerDisplay = displayName
+        win.playerKey = playerKey
+    end
+    
+    self:DisplayHistory(win, playerKey)
+    if win.Title then
+        win.Title:SetText("BNet Whisper: " .. displayName)
+    end
+    self:ApplyWindowPosition(win)
+    win:Show()
+    win:Raise()
+    if win.Input then
+        win.Input:SetFocus()
+    end
+    
+    return true
+end
+
+function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     DebugMessage("CreateWindow called for:", playerKey);
     local sanitizedKey = playerKey:gsub("[^%w]","")
     if sanitizedKey == "" then return nil end
@@ -272,6 +314,10 @@ function addon:CreateWindow(playerKey, playerTarget, displayName)
     win.playerKey = playerKey
     win.playerTarget = playerTarget
     win.playerDisplay = displayName
+    win.isBNet = isBNet or false
+    if isBNet then
+        win.bnSenderID = playerTarget  -- For BNet, playerTarget is the bnSenderID
+    end
     win:SetSize(400, 300)
     win:SetPoint("CENTER")
     win:SetClampedToScreen(true)
@@ -331,8 +377,102 @@ function addon:CreateWindow(playerKey, playerTarget, displayName)
     -- Title Text
     win.Title = win:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     win.Title:SetPoint("TOP", win, "TOP", 0, -10)
-    win.Title:SetText("Whisper: " .. (displayName or playerTarget or playerKey))
+    local titlePrefix = isBNet and "BNet Whisper: " or "Whisper: "
+    win.Title:SetText(titlePrefix .. (displayName or playerTarget or playerKey))
     win.Title:SetTextColor(1, 0.82, 0, 1)
+    
+    -- Make title clickable for right-click menu
+    win.TitleButton = CreateFrame("Button", nil, win)
+    win.TitleButton:SetAllPoints(win.Title)
+    win.TitleButton:RegisterForClicks("RightButtonUp")
+    win.TitleButton:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            -- Open unit popup menu for the player
+            if win.playerTarget then
+                local dropDown = CreateFrame("Frame", "WhisperManager_DropDown", UIParent, "UIDropDownMenuTemplate")
+                local menuList = {
+                    {
+                        text = win.playerDisplay or win.playerTarget,
+                        isTitle = true,
+                        notCheckable = true,
+                    },
+                }
+                
+                -- Only show regular player options for non-BNet whispers
+                if not win.isBNet then
+                    table.insert(menuList, {
+                        text = WHISPER,
+                        func = function()
+                            ChatFrame_SendTell(win.playerTarget)
+                        end,
+                        notCheckable = true,
+                    })
+                    table.insert(menuList, {
+                        text = INVITE,
+                        func = function()
+                            C_PartyInfo.InviteUnit(win.playerTarget)
+                        end,
+                        notCheckable = true,
+                    })
+                    table.insert(menuList, {
+                        text = RAID_TARGET_ICON,
+                        hasArrow = true,
+                        notCheckable = true,
+                        menuList = {
+                            {
+                                text = RAID_TARGET_NONE,
+                                func = function()
+                                    SetRaidTarget(win.playerTarget, 0)
+                                end,
+                                notCheckable = true,
+                            },
+                        },
+                    })
+                    
+                    -- Add raid target icons dynamically
+                    for i = 1, 8 do
+                        table.insert(menuList[#menuList].menuList, {
+                            text = RAID_TARGET_ICON .. " " .. i,
+                            func = function()
+                                SetRaidTarget(win.playerTarget, i)
+                            end,
+                            icon = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. i,
+                            notCheckable = true,
+                        })
+                    end
+                    
+                    table.insert(menuList, {
+                        text = ADD_FRIEND,
+                        func = function()
+                            C_FriendList.AddFriend(win.playerTarget)
+                        end,
+                        notCheckable = true,
+                    })
+                    table.insert(menuList, {
+                        text = PLAYER_REPORT,
+                        func = function()
+                            C_ReportSystem.OpenReportPlayerDialog(C_PlayerInfo.GUIDFromPlayerName(win.playerTarget), win.playerTarget)
+                        end,
+                        notCheckable = true,
+                    })
+                end
+                
+                table.insert(menuList, {
+                    text = CANCEL,
+                    func = function() end,
+                    notCheckable = true,
+                })
+                
+                EasyMenu(menuList, dropDown, "cursor", 0, 0, "MENU")
+            end
+        end
+    end)
+    win.TitleButton:SetScript("OnEnter", function(self)
+        win.Title:SetTextColor(1, 1, 1, 1)  -- White on hover
+    end)
+    win.TitleButton:SetScript("OnLeave", function(self)
+        win.Title:SetTextColor(1, 0.82, 0, 1)  -- Gold default
+    end)
 
     -- Close Button
     win.CloseButton = CreateFrame("Button", nil, win, "UIPanelCloseButton")
@@ -420,9 +560,14 @@ function addon:CreateWindow(playerKey, playerTarget, displayName)
     win.Input:SetScript("OnEnterPressed", function(self)
         local message = self:GetText()
         if message and message ~= "" then
-            C_ChatInfo.SendChatMessage(message, "WHISPER", nil, win.playerTarget)
-            addon:AddMessageToHistory(win.playerKey, win.playerDisplay or win.playerTarget, "Me", message)
-            addon:DisplayHistory(win, win.playerKey)
+            if win.isBNet then
+                -- Send BNet whisper
+                BNSendWhisper(win.bnSenderID, message)
+            else
+                -- Send regular whisper
+                C_ChatInfo.SendChatMessage(message, "WHISPER", nil, win.playerTarget)
+            end
+            -- Don't manually add to history here - let the INFORM event handle it
             self:SetText("")
             UpdateInputHeight(self)  -- Reset height after sending
         end
@@ -443,9 +588,9 @@ function addon:CreateWindow(playerKey, playerTarget, displayName)
     end)
     win.Input:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
-        local parent = self:GetParent()
-        if parent and parent.Hide then
-            parent:Hide()
+        -- Hide the window frame, not the parent (UIParent)
+        if win and win.Hide then
+            win:Hide()
         end
     end)
     
@@ -463,6 +608,35 @@ function addon:CreateWindow(playerKey, playerTarget, displayName)
     DebugMessage("CreateWindow finished successfully for", playerKey);
     addon:ApplyWindowPosition(win)
     return win
+end
+
+--------------------------------------------------------------------
+-- Emote and Speech Detection (TotalRP3-style)
+--------------------------------------------------------------------
+
+-- Format message to detect and colorize emotes (*text*) and speech ("text")
+local function FormatEmotesAndSpeech(message)
+    if not message or message == "" then return message end
+    
+    -- Get WoW's emote color (orange)
+    local emoteColor = ChatTypeInfo["EMOTE"]
+    local emoteHex = string.format("|cff%02x%02x%02x", emoteColor.r * 255, emoteColor.g * 255, emoteColor.b * 255)
+    
+    -- Get WoW's say color (white)
+    local sayColor = ChatTypeInfo["SAY"]
+    local sayHex = string.format("|cff%02x%02x%02x", sayColor.r * 255, sayColor.g * 255, sayColor.b * 255)
+    
+    -- Detect and colorize emotes surrounded by asterisks: *emote*
+    message = message:gsub("(%*.-%*)", function(emote)
+        return emoteHex .. emote .. "|r"
+    end)
+    
+    -- Detect and colorize speech surrounded by quotes: "speech"
+    message = message:gsub('(".-")', function(speech)
+        return sayHex .. speech .. "|r"
+    end)
+    
+    return message
 end
 
 --------------------------------------------------------------------
@@ -508,6 +682,10 @@ function addon:DisplayHistory(window, playerKey)
             coloredAuthor = string.format("|cffffd100%s|r", entry.author)
         end
         local safeMessage = entry.message:gsub("%%", "%%%%")
+        
+        -- Apply emote and speech formatting
+        safeMessage = FormatEmotesAndSpeech(safeMessage)
+        
         local formattedMessage = string.format("%s %s: %s", timeString, coloredAuthor, safeMessage)
         historyFrame:AddMessage(formattedMessage)
     end
@@ -582,6 +760,8 @@ function addon:Initialize()
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:RegisterEvent("CHAT_MSG_WHISPER")
     eventFrame:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
+    eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER")
+    eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER_INFORM")
 
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "CHAT_MSG_WHISPER" then
@@ -602,6 +782,31 @@ function addon:Initialize()
 
             addon:AddMessageToHistory(playerKey, displayName or resolvedTarget, "Me", message)
             addon:OpenConversation(resolvedTarget)
+            local window = addon.windows[playerKey]
+            if window then
+                addon:DisplayHistory(window, playerKey)
+            end
+        elseif event == "CHAT_MSG_BN_WHISPER" then
+            local message, author, _, _, _, _, _, _, _, _, _, _, bnSenderID = ...
+            -- For BNet whispers, use the BNet ID as the key
+            local playerKey = "bnet_" .. tostring(bnSenderID)
+            local displayName = author or "BNet Friend"
+            
+            addon:AddMessageToHistory(playerKey, displayName, author, message)
+            addon:OpenBNetConversation(bnSenderID, author)
+            local window = addon.windows[playerKey]
+            if window then
+                addon:DisplayHistory(window, playerKey)
+            end
+        elseif event == "CHAT_MSG_BN_WHISPER_INFORM" then
+            local message, _, _, _, _, _, _, _, _, _, _, _, bnSenderID = ...
+            -- For outgoing BNet whispers, use the BNet ID as the key
+            local playerKey = "bnet_" .. tostring(bnSenderID)
+            local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
+            local displayName = accountInfo and accountInfo.accountName or "BNet Friend"
+            
+            addon:AddMessageToHistory(playerKey, displayName, "Me", message)
+            addon:OpenBNetConversation(bnSenderID, displayName)
             local window = addon.windows[playerKey]
             if window then
                 addon:DisplayHistory(window, playerKey)
