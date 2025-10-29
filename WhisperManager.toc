@@ -4,6 +4,7 @@
 ## Author: Synarion (Cephrax)
 ## Version: 1.0
 ## Dependencies: Blizzard_ChatFrame
+## SavedVariables: WhisperManager_HistoryDB, WhisperManager_WindowDB, WhisperManager_Config
 
 WhisperManager.xml
 WhisperManager.lua
