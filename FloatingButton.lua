@@ -9,6 +9,11 @@ local addon = WhisperManager;
 -- ============================================================================
 
 function addon:CreateFloatingButton()
+    -- Don't create if it already exists
+    if addon.floatingButton and addon.floatingButton:IsShown() then
+        return
+    end
+    
     local btn = CreateFrame("Button", "WhisperManager_FloatingButton", UIParent)
     btn:SetSize(40, 40)
     btn:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -28,6 +33,7 @@ function addon:CreateFloatingButton()
         GameTooltip:AddLine("WhisperManager", 1, 0.82, 0)
         GameTooltip:AddLine("Left Click: Recent Chats", 1, 1, 1)
         GameTooltip:AddLine("Right Click: History/Search", 1, 1, 1)
+        GameTooltip:AddLine("SHIFT+Right Click: Settings", 0.7, 0.7, 1)
         GameTooltip:AddLine("ALT+Left Click: Move", 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
@@ -55,7 +61,11 @@ function addon:CreateFloatingButton()
         if button == "LeftButton" then
             addon:ToggleRecentChatsFrame()
         elseif button == "RightButton" then
-            addon:ToggleHistoryFrame()
+            if IsShiftKeyDown() then
+                addon:ToggleSettingsFrame()
+            else
+                addon:ToggleHistoryFrame()
+            end
         end
     end)
     

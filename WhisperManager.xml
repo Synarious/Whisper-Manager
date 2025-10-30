@@ -14,6 +14,7 @@
     <Script file="RecentChats.lua"/>
     <Script file="HistoryViewer.lua"/>
     <Script file="FloatingButton.lua"/>
+    <Script file="Settings.lua"/>
     
     <!-- Event handlers (must be loaded after all UI components) -->
     <Script file="Events.lua"/>

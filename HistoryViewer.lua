@@ -118,44 +118,51 @@ function addon:CreateHistoryFrame()
     frame.detailTitle:SetText("Select a conversation")
     
     -- Detail scroll frame with proper scrolling support
-    frame.detailScrollFrame = CreateFrame("ScrollFrame", nil, frame.detailFrame, "UIPanelScrollFrameTemplate")
+    frame.detailScrollFrame = CreateFrame("ScrollingMessageFrame", nil, frame.detailFrame)
     frame.detailScrollFrame:SetPoint("TOPLEFT", 10, -35)
-    frame.detailScrollFrame:SetPoint("BOTTOMRIGHT", -30, 10)
-    
-    -- Create scroll child to hold the message text
-    frame.detailScrollChild = CreateFrame("Frame", nil, frame.detailScrollFrame)
-    frame.detailScrollChild:SetWidth(frame.detailScrollFrame:GetWidth())
-    frame.detailScrollChild:SetHeight(1)
-    frame.detailScrollFrame:SetScrollChild(frame.detailScrollChild)
-    
-    -- Update width when frame is resized
-    frame:SetScript("OnSizeChanged", function()
-        local width = frame.detailScrollFrame:GetWidth()
-        if width > 0 then
-            frame.detailScrollChild:SetWidth(width)
-            frame.detailText:SetWidth(width - 35) -- Account for padding and scrollbar
+    frame.detailScrollFrame:SetPoint("BOTTOMRIGHT", -10, 10)
+    frame.detailScrollFrame:SetFading(false)
+    frame.detailScrollFrame:SetMaxLines(addon.MAX_HISTORY_LINES)
+    frame.detailScrollFrame:SetFont(addon:GetSetting("fontFamily") or "Fonts\\FRIZQT__.TTF", addon:GetSetting("messageFontSize") or 14, (select(3, ChatFontNormal:GetFont())) or "")
+    frame.detailScrollFrame:SetJustifyH("LEFT")
+    frame.detailScrollFrame:SetHyperlinksEnabled(true)
+    frame.detailScrollFrame:EnableMouse(true)
+    frame.detailScrollFrame:SetMouseMotionEnabled(true)
+    frame.detailScrollFrame:SetMouseClickEnabled(true)
+    frame.detailScrollFrame:SetScript("OnHyperlinkClick", function(self, link, text, button)
+        addon:DebugMessage("Hyperlink clicked in history:", link, text, button)
+        if button == "RightButton" and type(link) == "string" then
+            local linkType, linkTarget = link:match("^(%a+):([^:]+)")
+            if linkType == "player" and linkTarget then
+                local display = (text and text:gsub("|c[0-9a-fA-F]+", ""):gsub("|r", "")) or linkTarget
+                display = display:gsub("%[", ""):gsub("%]", "")
+                addon:OpenPlayerContextMenu(linkTarget, display, false)
+                return
+            elseif linkType == "BNplayer" then
+                local bnID = tonumber(linkTarget)
+                addon:OpenPlayerContextMenu(nil, text, true, bnID)
+                return
+            end
         end
+        ChatFrame_OnHyperlinkClick(self, link, text, button)
     end)
-    
-    -- Create a font string for displaying messages
-    frame.detailText = frame.detailScrollChild:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
-    frame.detailText:SetPoint("TOPLEFT", 5, -5)
-    frame.detailText:SetWidth(frame.detailScrollFrame:GetWidth() - 35) -- Account for padding and scrollbar
-    frame.detailText:SetJustifyH("LEFT")
-    frame.detailText:SetJustifyV("TOP")
-    frame.detailText:SetWordWrap(true)
-    frame.detailText:SetNonSpaceWrap(true)
-    frame.detailText:SetText("Select a conversation")
+    frame.detailScrollFrame:SetScript("OnHyperlinkEnter", function(self, link, text, button)
+        ShowUIPanel(GameTooltip)
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+        GameTooltip:SetHyperlink(link)
+        GameTooltip:Show()
+    end)
+    frame.detailScrollFrame:SetScript("OnHyperlinkLeave", function(self)
+        HideUIPanel(GameTooltip)
+    end)
     
     -- Enable mouse wheel scrolling
     frame.detailScrollFrame:EnableMouseWheel(true)
     frame.detailScrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        local scrollBar = self.ScrollBar or _G[self:GetName().."ScrollBar"]
-        if scrollBar then
-            local current = scrollBar:GetValue()
-            local _, maxValue = scrollBar:GetMinMaxValues()
-            local step = 20 * delta
-            scrollBar:SetValue(math.max(0, math.min(maxValue, current - step)))
+        if delta > 0 then
+            self:ScrollUp()
+        else
+            self:ScrollDown()
         end
     end)
     
@@ -305,68 +312,90 @@ function addon:ShowHistoryDetail(playerKey, displayName)
     if not self.historyFrame then return end
     
     local detailTitle = self.historyFrame.detailTitle
-    local detailText = self.historyFrame.detailText
-    local detailScrollChild = self.historyFrame.detailScrollChild
-    local detailScrollFrame = self.historyFrame.detailScrollFrame
+    local detailScroll = self.historyFrame.detailScrollFrame
     
     detailTitle:SetText(displayName)
-    
-    -- Set scroll child width to match scroll frame
-    local scrollWidth = detailScrollFrame:GetWidth()
-    if scrollWidth > 0 then
-        detailScrollChild:SetWidth(scrollWidth)
-        detailText:SetWidth(scrollWidth - 35) -- Account for padding and scrollbar
-    end
+    detailScroll:Clear()
     
     if not WhisperManager_HistoryDB or not WhisperManager_HistoryDB[playerKey] then
-        detailText:SetText("No message history found.")
-        detailScrollChild:SetHeight(detailText:GetStringHeight() + 10)
+        detailScroll:AddMessage("No message history found.")
         return
     end
     
     local history = WhisperManager_HistoryDB[playerKey]
-    local messageLines = {}
     local playerName, playerRealm = UnitName("player")
     local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
     local fullPlayerName = playerName .. "-" .. realm
+    
+    -- Determine if this is a BNet conversation
+    local isBNet = playerKey:match("^bnet_") ~= nil
     
     for _, entry in ipairs(history) do
         -- Support both old and new format
         local timestamp = entry.t or entry.timestamp
         local author = entry.a or entry.author
         local message = entry.m or entry.message
+        local classToken = entry.c  -- Get stored class token
         
         if timestamp and author and message then
-            local timeString = date("[%H:%M]", timestamp)
+            -- Timestamp with customizable color
+            local tsColor = self.settings.timestampColor or {r = 0.5, g = 0.5, b = 0.5}
+            local tsColorHex = string.format("%02x%02x%02x", tsColor.r * 255, tsColor.g * 255, tsColor.b * 255)
+            local timeString = "|cff" .. tsColorHex .. date("%H:%M", timestamp) .. "|r"
+            
             local coloredAuthor
+            local messageColor
             if author == "Me" or author == playerName or author == fullPlayerName then
-                coloredAuthor = "|cff9494ffMe|r"
+                -- Darker purple for own messages - make it a clickable hyperlink (without brackets, we'll add them separately)
+                coloredAuthor = "|Hplayer:" .. fullPlayerName .. "|h|cff7070bb" .. playerName .. "|r|h"
+                messageColor = "|cffb0b0d0"  -- Lighter purple for message text
             else
-                coloredAuthor = string.format("|cffffd100%s|r", author)
+                -- Color based on whisper type
+                if isBNet then
+                    -- Blue for BNet whispers - BNet names aren't clickable in the same way
+                    -- Strip battletag number for display
+                    local authorDisplayName = author:match("^([^#]+)") or author
+                    coloredAuthor = "|TInterface\\ChatFrame\\UI-ChatIcon-Blizz:14:14:0:-1|t|cff3399ff" .. authorDisplayName .. "|r"
+                    messageColor = "|cffccddff"  -- Light blue for BNet message text
+                else
+                    -- Regular whispers: use stored class color if available, fallback to lookup then gold
+                    -- Strip realm name from author (Name-Realm -> Name)
+                    local authorDisplayName = author:match("^([^%-]+)") or author
+                    local classColorHex
+                    
+                    -- Use stored class token if available (performance optimization)
+                    if classToken then
+                        local classColor = RAID_CLASS_COLORS[classToken]
+                        if classColor then
+                            classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+                        end
+                    end
+                    
+                    -- Fallback to lookup only if no stored class
+                    if not classColorHex then
+                        classColorHex = self:GetClassColorForPlayer(author)
+                    end
+                    
+                    local nameColor = classColorHex and ("|cff" .. classColorHex) or "|cffffd100"  -- Class color or gold
+                    -- Make player name a clickable hyperlink (without brackets, we'll add them separately)
+                    coloredAuthor = "|Hplayer:" .. author .. "|h" .. nameColor .. authorDisplayName .. "|r|h"
+                    messageColor = "|cffffffff"  -- White for regular message text
+                end
             end
+            
             local safeMessage = message:gsub("%%", "%%%%")
             
             -- Apply emote and speech formatting
             safeMessage = self:FormatEmotesAndSpeech(safeMessage)
             
-            local formattedMessage = string.format("%s %s: %s", timeString, coloredAuthor, safeMessage)
-            table.insert(messageLines, formattedMessage)
+            -- Format message - brackets use message color, player name is hyperlink
+            local formattedMessage = string.format("%s %s[%s%s]: %s%s|r", timeString, messageColor, coloredAuthor, messageColor, messageColor, safeMessage)
+            detailScroll:AddMessage(formattedMessage)
         end
     end
     
-    local fullText = table.concat(messageLines, "\n")
-    detailText:SetText(fullText)
-    
-    -- Update scroll child height based on text height
-    local textHeight = detailText:GetStringHeight()
-    detailScrollChild:SetHeight(math.max(textHeight + 10, detailScrollFrame:GetHeight()))
-    
     -- Scroll to bottom
     C_Timer.After(0, function()
-        local scrollBar = detailScrollFrame.ScrollBar
-        if scrollBar then
-            local _, maxValue = scrollBar:GetMinMaxValues()
-            scrollBar:SetValue(maxValue)
-        end
+        detailScroll:ScrollToBottom()
     end)
 end

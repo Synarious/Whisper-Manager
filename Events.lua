@@ -9,7 +9,14 @@ local addon = WhisperManager;
 -- ============================================================================
 
 function addon:RegisterEvents()
+    -- Prevent duplicate event registrations
+    if addon.__eventFrame then
+        addon:DebugMessage("Events already registered, skipping.")
+        return
+    end
+    
     local eventFrame = CreateFrame("Frame")
+    addon.__eventFrame = eventFrame
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:RegisterEvent("CHAT_MSG_WHISPER")
     eventFrame:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
@@ -18,11 +25,21 @@ function addon:RegisterEvents()
 
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "CHAT_MSG_WHISPER" then
-            local message, author = ...
+            local message, author, _, _, _, _, _, _, _, _, _, guid = ...
             local playerKey, _, displayName = addon:ResolvePlayerIdentifiers(author)
             if not playerKey then return end
 
-            addon:AddMessageToHistory(playerKey, displayName or author, author, message)
+            -- Try to extract class from GUID if available
+            local classToken = nil
+            if guid and guid ~= "" then
+                local _, class = GetPlayerInfoByGUID(guid)
+                if class then
+                    addon:SetPlayerClass(author, class)
+                    classToken = class
+                end
+            end
+
+            addon:AddMessageToHistory(playerKey, displayName or author, author, message, classToken)
             addon:UpdateRecentChat(playerKey, displayName or author, false)
             addon:OpenConversation(author)
             local window = addon.windows[playerKey]
@@ -30,11 +47,24 @@ function addon:RegisterEvents()
                 addon:DisplayHistory(window, playerKey)
             end
         elseif event == "CHAT_MSG_WHISPER_INFORM" then
-            local message, target = ...
+            local message, target, _, _, _, _, _, _, _, _, _, guid = ...
             local playerKey, resolvedTarget, displayName = addon:ResolvePlayerIdentifiers(target)
             if not playerKey then return end
 
-            addon:AddMessageToHistory(playerKey, displayName or resolvedTarget, "Me", message)
+            -- Try to extract class from GUID if available
+            local classToken = nil
+            if guid and guid ~= "" then
+                local _, class = GetPlayerInfoByGUID(guid)
+                if class then
+                    addon:SetPlayerClass(target, class)
+                    classToken = class
+                end
+            end
+
+            -- Use actual player character name instead of "Me"
+            local playerName = UnitName("player")
+            local _, playerClass = UnitClass("player")
+            addon:AddMessageToHistory(playerKey, displayName or resolvedTarget, playerName, message, playerClass)
             addon:UpdateRecentChat(playerKey, displayName or resolvedTarget, false)
             addon:OpenConversation(resolvedTarget)
             local window = addon.windows[playerKey]
@@ -54,9 +84,11 @@ function addon:RegisterEvents()
             local playerKey = "bnet_" .. accountInfo.battleTag
             local displayName = accountInfo.accountName or author or accountInfo.battleTag
             
-            addon:AddMessageToHistory(playerKey, displayName, author, message)
+            -- Use displayName for history so it's consistent, not the session-based author
+            -- BNet whispers don't have class info
+            addon:AddMessageToHistory(playerKey, displayName, displayName, message, nil)
             addon:UpdateRecentChat(playerKey, displayName, true)
-            addon:OpenBNetConversation(bnSenderID, author)
+            addon:OpenBNetConversation(bnSenderID, displayName)
             local window = addon.windows[playerKey]
             if window then
                 addon:DisplayHistory(window, playerKey)
@@ -74,7 +106,10 @@ function addon:RegisterEvents()
             local playerKey = "bnet_" .. accountInfo.battleTag
             local displayName = accountInfo.accountName or accountInfo.battleTag
             
-            addon:AddMessageToHistory(playerKey, displayName, "Me", message)
+            -- Use actual player character name instead of "Me"
+            local playerName = UnitName("player")
+            local _, playerClass = UnitClass("player")
+            addon:AddMessageToHistory(playerKey, displayName, playerName, message, playerClass)
             addon:UpdateRecentChat(playerKey, displayName, true)
             addon:OpenBNetConversation(bnSenderID, displayName)
             local window = addon.windows[playerKey]
@@ -100,6 +135,13 @@ end
 -- ============================================================================
 
 function addon:SetupHooks()
+    -- Prevent duplicate hooks
+    if addon.__hooksInstalled then
+        addon:DebugMessage("Hooks already installed, skipping.")
+        return
+    end
+    addon.__hooksInstalled = true
+    
     -- Hook whisper command extraction
     hooksecurefunc("ChatEdit_ExtractTellTarget", function(editBox, text)
         local target = addon:ExtractWhisperTarget(text)
@@ -169,6 +211,13 @@ end
 -- ============================================================================
 
 function addon:SetupContextMenu()
+    -- Prevent duplicate menu modifications
+    if addon.__contextMenuInstalled then
+        addon:DebugMessage("Context menu already installed, skipping.")
+        return
+    end
+    addon.__contextMenuInstalled = true
+    
     local function AddWhisperManagerButton(owner, rootDescription, contextData)
         addon:DebugMessage("AddWhisperManagerButton fired.")
     

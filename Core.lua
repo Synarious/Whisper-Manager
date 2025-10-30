@@ -14,11 +14,14 @@ addon.windows = {};
 addon.playerDisplayNames = {};
 addon.debugEnabled = DEFAULT_DEBUG_MODE;
 addon.recentChats = {};  -- Track recent conversations with read status
+addon.nextFrameLevel = 1;  -- Track frame levels for stacking windows
 
 -- Constants
 addon.MAX_HISTORY_LINES = 200;
 addon.CHAT_MAX_LETTERS = 245;
 addon.RECENT_CHAT_EXPIRY = 72 * 60 * 60;  -- 72 hours in seconds
+addon.FOCUSED_ALPHA = 1.0;  -- Full opacity for focused window
+addon.UNFOCUSED_ALPHA = 0.65;  -- Reduced opacity for unfocused windows
 
 -- ============================================================================
 -- Debug Functions
@@ -26,7 +29,11 @@ addon.RECENT_CHAT_EXPIRY = 72 * 60 * 60;  -- 72 hours in seconds
 
 function addon:DebugMessage(...)
     if self.debugEnabled then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r " .. table.concat({...}, " "));
+        local args = {...}
+        for i = 1, #args do
+            args[i] = tostring(args[i])
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r " .. table.concat(args, " "));
     end
 end
 
@@ -43,18 +50,83 @@ function addon:SetDebugEnabled(enabled)
     self:Print(string.format("Debug logging %s.", stateLabel))
 end
 
--- ============================================================================
--- Utility Functions
--- ============================================================================
 
 function addon:TrimWhitespace(value)
     if type(value) ~= "string" then return nil end
     return value:gsub("^%s+", ""):gsub("%s+$", "")
 end
 
--- ============================================================================
--- Emote and Speech Detection (TotalRP3-style)
--- ============================================================================
+-- ---------------------------------------------------------------------------
+-- Player Context Menu Helpers
+-- ---------------------------------------------------------------------------
+
+local function StripRealmFromName(name)
+    if type(name) ~= "string" then return nil end
+    return name:match("^[^%-]+")
+end
+
+function addon:OpenPlayerContextMenu(playerName, displayName, isBNet, bnSenderID)
+    if not playerName and not isBNet then return end
+    
+    addon:DebugMessage("OpenPlayerContextMenu called:", playerName, displayName, isBNet, bnSenderID)
+
+    -- Use the modern Menu API introduced in Dragonflight
+    local menu = MenuUtil.CreateContextMenu(UIParent, function(owner, rootDescription)
+        local label = displayName or StripRealmFromName(playerName) or playerName
+        
+        if label and label ~= "" then
+            rootDescription:CreateTitle(label)
+        end
+
+        if not isBNet and playerName and playerName ~= "" then
+            rootDescription:CreateButton(WHISPER, function()
+                ChatFrame_SendTell(playerName)
+            end)
+            
+            rootDescription:CreateButton(INVITE, function()
+                C_PartyInfo.InviteUnit(playerName)
+            end)
+            
+            -- Raid target submenu
+            local raidTargetButton = rootDescription:CreateButton(RAID_TARGET_ICON)
+            raidTargetButton:CreateButton(RAID_TARGET_NONE, function()
+                SetRaidTarget(playerName, 0)
+            end)
+            for i = 1, 8 do
+                raidTargetButton:CreateButton(_G["RAID_TARGET_" .. i], function()
+                    SetRaidTarget(playerName, i)
+                end)
+            end
+            
+            rootDescription:CreateButton(ADD_FRIEND, function()
+                C_FriendList.AddFriend(playerName)
+            end)
+            
+            rootDescription:CreateButton(PLAYER_REPORT, function()
+                local guid = C_PlayerInfo.GUIDFromPlayerName(playerName)
+                if guid then
+                    C_ReportSystem.OpenReportPlayerDialog(guid, playerName)
+                end
+            end)
+        elseif isBNet and bnSenderID then
+            if ChatFrame_SendBNetTell then
+                rootDescription:CreateButton(WHISPER, function()
+                    ChatFrame_SendBNetTell(displayName or playerName)
+                end)
+            end
+            if BNInviteFriend then
+                rootDescription:CreateButton(INVITE, function()
+                    BNInviteFriend(bnSenderID)
+                end)
+            end
+        end
+
+        rootDescription:CreateButton(CANCEL, function() end)
+    end)
+    
+    addon:DebugMessage("Opening menu...")
+end
+
 
 -- Format message to detect and colorize emotes (*text*) and speech ("text")
 function addon:FormatEmotesAndSpeech(message)
@@ -190,6 +262,9 @@ function addon:InitializeCore()
     SlashCmdList.WHISPERMANAGER = function(msg)
         addon:HandleSlashCommand(msg)
     end
+
+    -- Load settings
+    addon.settings = addon:LoadSettings()
 
     self:DebugMessage("Core initialized.");
 end

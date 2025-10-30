@@ -5,6 +5,29 @@
 local addon = WhisperManager;
 
 -- ============================================================================
+-- Window Focus Management
+-- ============================================================================
+
+function addon:FocusWindow(window)
+    if not window then return end
+    
+    -- Unfocus all other windows
+    for _, win in pairs(self.windows) do
+        if win ~= window and win:IsShown() then
+            win:SetAlpha(self.UNFOCUSED_ALPHA)
+        end
+    end
+    
+    -- Focus this window
+    window:SetAlpha(self.FOCUSED_ALPHA)
+    
+    -- Bring to front with new frame level
+    self.nextFrameLevel = self.nextFrameLevel + 10
+    window:SetFrameLevel(self.nextFrameLevel)
+    window:Raise()
+end
+
+-- ============================================================================
 -- Helper Functions
 -- ============================================================================
 
@@ -148,7 +171,7 @@ function addon:OpenConversation(playerName)
     end
     self:ApplyWindowPosition(win)
     win:Show()
-    win:Raise()
+    self:FocusWindow(win)
     if win.Input then
         win.Input:SetFocus()
     end
@@ -196,7 +219,7 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     end
     self:ApplyWindowPosition(win)
     win:Show()
-    win:Raise()
+    self:FocusWindow(win)
     if win.Input then
         win.Input:SetFocus()
     end
@@ -238,10 +261,26 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win:EnableMouse(true)
     win:SetUserPlaced(true)
     win:RegisterForDrag("LeftButton")
-    win:SetScript("OnDragStart", win.StartMoving)
+    
+    -- Set higher strata to appear above action bars
+    win:SetFrameStrata("DIALOG")
+    
+    -- Assign unique frame level for proper stacking
+    addon.nextFrameLevel = addon.nextFrameLevel + 10
+    win:SetFrameLevel(addon.nextFrameLevel)
+    
+    win:SetScript("OnDragStart", function(frame)
+        frame:StartMoving()
+        addon:FocusWindow(frame)
+    end)
     win:SetScript("OnDragStop", function(frame)
         frame:StopMovingOrSizing()
         addon:SaveWindowPosition(frame)
+    end)
+    
+    -- Focus window on mouse down
+    win:SetScript("OnMouseDown", function(frame)
+        addon:FocusWindow(frame)
     end)
     win:SetScript("OnHide", function(frame)
         -- Set flag to prevent hooks from triggering during window close
@@ -250,13 +289,14 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         addon:SaveWindowPosition(frame)
         if frame.Input then
             frame.Input:ClearFocus()
-            frame.Input:Hide()
         end
-        if frame.InputBg then
-            frame.InputBg:Hide()
-        end
-        if frame.InputBorder then
-            frame.InputBorder:Hide()
+        
+        -- Refocus another visible window if one exists
+        for _, win in pairs(addon.windows) do
+            if win:IsShown() and win ~= frame then
+                addon:FocusWindow(win)
+                break
+            end
         end
         
         -- Clear flag after a short delay
@@ -267,15 +307,11 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win:SetScript("OnShow", function(frame)
         addon:ApplyWindowPosition(frame)
         if frame.Input then
-            frame.Input:Show()
             frame.Input:SetFocus()
         end
-        if frame.InputBg then
-            frame.InputBg:Show()
-        end
-        if frame.InputBorder then
-            frame.InputBorder:Show()
-        end
+        
+        -- Focus this window when shown
+        addon:FocusWindow(frame)
     end)
     win:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
@@ -300,81 +336,19 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.Title:SetText(titlePrefix .. (displayName or playerTarget or playerKey))
     win.Title:SetTextColor(1, 0.82, 0, 1)
     
-    -- Make title clickable for right-click menu
+    -- Make title text clickable for right-click menu
     win.TitleButton = CreateFrame("Button", nil, win)
+    -- Cover only the title text area for more precise clicking
     win.TitleButton:SetAllPoints(win.Title)
+    win.TitleButton:EnableMouse(true)
     win.TitleButton:RegisterForClicks("RightButtonUp")
-    win.TitleButton:SetScript("OnClick", function(self, button)
-        if button == "RightButton" then
-            -- Open unit popup menu for the player
-            if win.playerTarget then
-                local dropDown = CreateFrame("Frame", "WhisperManager_DropDown", UIParent, "UIDropDownMenuTemplate")
-                local menuList = {
-                    {
-                        text = win.playerDisplay or win.playerTarget,
-                        isTitle = true,
-                        notCheckable = true,
-                    },
-                }
-                
-                -- Only show regular player options for non-BNet whispers
-                if not win.isBNet then
-                    table.insert(menuList, {
-                        text = WHISPER,
-                        func = function()
-                            ChatFrame_SendTell(win.playerTarget)
-                        end,
-                        notCheckable = true,
-                    })
-                    table.insert(menuList, {
-                        text = INVITE,
-                        func = function()
-                            C_PartyInfo.InviteUnit(win.playerTarget)
-                        end,
-                        notCheckable = true,
-                    })
-                    table.insert(menuList, {
-                        text = RAID_TARGET_ICON,
-                        hasArrow = true,
-                        notCheckable = true,
-                        menuList = {},
-                    })
-                    
-                    -- Add raid target icons dynamically
-                    for i = 1, 8 do
-                        table.insert(menuList[#menuList].menuList, {
-                            text = _G["RAID_TARGET_"..i],
-                            func = function()
-                                SetRaidTarget(win.playerTarget, i)
-                            end,
-                            notCheckable = true,
-                        })
-                    end
-                    
-                    table.insert(menuList, {
-                        text = ADD_FRIEND,
-                        func = function()
-                            C_FriendList.AddFriend(win.playerTarget)
-                        end,
-                        notCheckable = true,
-                    })
-                    table.insert(menuList, {
-                        text = PLAYER_REPORT,
-                        func = function()
-                            C_ReportSystem.OpenReportPlayerDialog(C_PlayerInfo.GUIDFromPlayerName(win.playerTarget), win.playerTarget)
-                        end,
-                        notCheckable = true,
-                    })
-                end
-                
-                table.insert(menuList, {
-                    text = CANCEL,
-                    func = function() end,
-                    notCheckable = true,
-                })
-                
-                EasyMenu(menuList, dropDown, "cursor", 0, 0, "MENU")
-            end
+    win.TitleButton:SetScript("OnClick", function(_, button)
+        if button ~= "RightButton" then return end
+
+        if win.isBNet then
+            addon:OpenPlayerContextMenu(nil, win.playerDisplay or win.playerTarget, true, win.bnSenderID)
+        else
+            addon:OpenPlayerContextMenu(win.playerTarget, win.playerDisplay or win.playerTarget, false)
         end
     end)
     win.TitleButton:SetScript("OnEnter", function(self)
@@ -407,16 +381,19 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         end
     end)
 
-    -- Input EditBox (positioned outside/below the main window frame)
+    -- Input EditBox (positioned inside the window at the bottom)
     local inputName = frameName .. "Input"
-    win.Input = CreateFrame("EditBox", inputName, UIParent)
+    win.Input = CreateFrame("EditBox", inputName, win)
     win.Input:SetHeight(24)  -- Initial height, will grow dynamically
-    win.Input:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, -4)
-    win.Input:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, -4)
+    win.Input:SetPoint("BOTTOMLEFT", win, "BOTTOMLEFT", 8, 8)
+    win.Input:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -8, 8)
+    win.Input:SetFrameLevel(win:GetFrameLevel() + 2)
     
-    -- Set font properly for EditBox
-    local fontFile, _, fontFlags = ChatFontNormal:GetFont()
-    win.Input:SetFont(fontFile, 14, fontFlags)
+    -- Set font properly for EditBox with settings (with fallback)
+    local fontPath = addon:GetSetting("fontFamily") or "Fonts\\FRIZQT__.TTF"
+    local inputSize = addon:GetSetting("inputFontSize") or 14
+    local _, _, fontFlags = ChatFontNormal:GetFont()
+    win.Input:SetFont(fontPath, inputSize, fontFlags or "")
     win.Input:SetTextColor(1, 1, 1, 1)
     
     -- Enable multiline with proper mouse support
@@ -429,10 +406,18 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.Input:EnableKeyboard(true)
     win.Input:SetHitRectInsets(0, 0, 0, 0)  -- Fix mouse clicking for multiline
     win.Input:SetTextInsets(6, 6, 4, 4)  -- Add some padding
+    
+    -- Focus window when clicking input box
+    win.Input:SetScript("OnMouseDown", function(self)
+        addon:FocusWindow(win)
+    end)
 
-    -- Input Box Background
-    win.InputBg = win:CreateTexture(nil, "BACKGROUND")
-    win.InputBg:SetColorTexture(0, 0, 0, 0.6)
+    -- Input Box Background (create as frame to control strata properly)
+    win.InputBg = CreateFrame("Frame", nil, win)
+    win.InputBg:SetFrameLevel(win:GetFrameLevel())
+    local bgTexture = win.InputBg:CreateTexture(nil, "BACKGROUND")
+    bgTexture:SetColorTexture(0, 0, 0, 0.6)
+    bgTexture:SetAllPoints(win.InputBg)
     win.InputBg:SetPoint("TOPLEFT", win.Input, "TOPLEFT", -4, 4)
     win.InputBg:SetPoint("BOTTOMRIGHT", win.Input, "BOTTOMRIGHT", 4, -4)
 
@@ -447,18 +432,52 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     })
     win.InputBorder:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
     win.InputBorder:EnableMouse(false)
-    win.InputBorder:SetFrameStrata("LOW")
+    win.InputBorder:SetFrameLevel(win:GetFrameLevel() + 1)
 
-    -- History ScrollingMessageFrame
+    -- History ScrollingMessageFrame (adjusted to leave space for input box at bottom)
     win.History = CreateFrame("ScrollingMessageFrame", nil, win)
     win.History:SetPoint("TOPLEFT", win, "TOPLEFT", 12, -40)
-    win.History:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -12, 12)
+    win.History:SetPoint("BOTTOMRIGHT", win.InputBorder, "TOPRIGHT", -8, 8)
     win.History:SetMaxLines(addon.MAX_HISTORY_LINES)
     win.History:SetFading(false)
-    win.History:SetFontObject(ChatFontNormal)
+    -- Apply font settings (with fallback)
+    local fontPath = addon:GetSetting("fontFamily") or "Fonts\\FRIZQT__.TTF"
+    local messageSize = addon:GetSetting("messageFontSize") or 14
+    local _, _, flags = ChatFontNormal:GetFont()
+    win.History:SetFont(fontPath, messageSize, flags or "")
     win.History:SetJustifyH("LEFT")
     win.History:SetHyperlinksEnabled(true)
-    win.History:SetScript("OnHyperlinkClick", ChatFrame_OnHyperlinkShow)
+    win.History:EnableMouse(true)
+    win.History:SetMouseMotionEnabled(true)
+    win.History:SetMouseClickEnabled(true)
+    -- Set hyperlink click handler using the default chat frame handler
+    win.History:SetScript("OnHyperlinkClick", function(self, link, text, button)
+        addon:DebugMessage("Hyperlink clicked in window:", link, text, button)
+        if button == "RightButton" and type(link) == "string" then
+            local linkType, linkTarget = link:match("^(%a+):([^:]+)")
+            if linkType == "player" and linkTarget then
+                local display = (text and text:gsub("|c[0-9a-fA-F]+", ""):gsub("|r", "")) or linkTarget
+                display = display:gsub("%[", ""):gsub("%]", "")
+                addon:OpenPlayerContextMenu(linkTarget, display, false)
+                return
+            elseif linkType == "BNplayer" then
+                local bnID = tonumber(linkTarget)
+                addon:OpenPlayerContextMenu(nil, win.playerDisplay or text, true, bnID or win.bnSenderID)
+                return
+            end
+        end
+
+        ChatFrame_OnHyperlinkClick(self, link, text, button)
+    end)
+    win.History:SetScript("OnHyperlinkEnter", function(self, link, text, button)
+        ShowUIPanel(GameTooltip)
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+        GameTooltip:SetHyperlink(link)
+        GameTooltip:Show()
+    end)
+    win.History:SetScript("OnHyperlinkLeave", function(self)
+        HideUIPanel(GameTooltip)
+    end)
     
     -- Enable mouse wheel scrolling for history
     win.History:EnableMouseWheel(true)
@@ -472,7 +491,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
 
     -- Character Count
     local inputCount = win:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    inputCount:SetPoint("BOTTOMRIGHT", win.Input, "TOPRIGHT", -4, 2)
+    inputCount:SetPoint("BOTTOMRIGHT", win.Input, "TOPRIGHT", -4, 4)
     inputCount:SetTextColor(0.6, 0.6, 0.6)
     inputCount:SetText("0/" .. addon.CHAT_MAX_LETTERS)
 

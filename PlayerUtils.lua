@@ -108,3 +108,110 @@ function addon:MarkChatAsRead(playerKey)
         WhisperManager_RecentChats[playerKey].isRead = true
     end
 end
+
+-- ============================================================================
+-- Class Color Functions
+-- ============================================================================
+
+-- Get class color for a character name (returns hex color string or nil)
+function addon:GetClassColorForPlayer(playerName)
+    if not playerName or playerName == "" then return nil end
+    
+    -- Initialize class cache in saved variables
+    if not WhisperManager_Config then
+        WhisperManager_Config = {}
+    end
+    if not WhisperManager_Config.classCache then
+        WhisperManager_Config.classCache = {}
+    end
+    
+    -- Check cache first
+    if WhisperManager_Config.classCache[playerName] then
+        local classColor = RAID_CLASS_COLORS[WhisperManager_Config.classCache[playerName]]
+        if classColor then
+            return string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+        end
+    end
+    
+    -- Strip realm if present to get just the character name
+    local name = playerName:match("^([^%-]+)") or playerName
+    
+    -- Try to get class info from UnitClass (works for party/raid members)
+    local _, class = UnitClass(name)
+    if not class then
+        -- Try with hyphenated version for same-server players
+        _, class = UnitClass(playerName)
+    end
+    
+    -- Try checking if they're in a group
+    if not class then
+        -- Check raid members
+        if IsInRaid() then
+            for i = 1, GetNumGroupMembers() do
+                local unitId = "raid" .. i
+                local unitName = GetUnitName(unitId, true)  -- true = include realm
+                if unitName and (unitName == playerName or unitName == name) then
+                    _, class = UnitClass(unitId)
+                    break
+                end
+            end
+        elseif IsInGroup() then
+            -- Check party members
+            for i = 1, GetNumSubgroupMembers() do
+                local unitId = "party" .. i
+                local unitName = GetUnitName(unitId, true)
+                if unitName and (unitName == playerName or unitName == name) then
+                    _, class = UnitClass(unitId)
+                    break
+                end
+            end
+        end
+    end
+    
+    -- Try checking guild members
+    if not class and IsInGuild() then
+        local numTotalMembers = GetNumGuildMembers()
+        for i = 1, numTotalMembers do
+            local guildName, _, _, _, _, _, _, _, _, _, classFileName = GetGuildRosterInfo(i)
+            if guildName then
+                local guildNameShort = guildName:match("^([^%-]+)") or guildName
+                if guildName == playerName or guildNameShort == name then
+                    class = classFileName
+                    break
+                end
+            end
+        end
+    end
+    
+    if class then
+        -- Cache the result in saved variables
+        if not WhisperManager_Config then
+            WhisperManager_Config = {}
+        end
+        if not WhisperManager_Config.classCache then
+            WhisperManager_Config.classCache = {}
+        end
+        WhisperManager_Config.classCache[playerName] = class
+        
+        local classColor = RAID_CLASS_COLORS[class]
+        if classColor then
+            return string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+        end
+    end
+    
+    return nil  -- No class info available
+end
+
+-- Function to manually set class info (can be called when receiving GUID info from whisper events)
+function addon:SetPlayerClass(playerName, class)
+    if playerName and class then
+        -- Store in saved variables for persistence
+        if not WhisperManager_Config then
+            WhisperManager_Config = {}
+        end
+        if not WhisperManager_Config.classCache then
+            WhisperManager_Config.classCache = {}
+        end
+        WhisperManager_Config.classCache[playerName] = class
+    end
+end
