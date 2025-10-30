@@ -450,6 +450,19 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.History:EnableMouse(true)
     win.History:SetMouseMotionEnabled(true)
     win.History:SetMouseClickEnabled(true)
+    
+    -- Add a right-click handler directly on the frame for easier clicking
+    win.History:SetScript("OnMouseUp", function(self, button)
+        if button == "RightButton" then
+            -- Open context menu for the conversation partner
+            if win.isBNet then
+                addon:OpenPlayerContextMenu(nil, win.playerDisplay or win.playerTarget, true, win.bnSenderID)
+            else
+                addon:OpenPlayerContextMenu(win.playerTarget, win.playerDisplay or win.playerTarget, false)
+            end
+        end
+    end)
+    
     -- Set hyperlink click handler using the default chat frame handler
     win.History:SetScript("OnHyperlinkClick", function(self, link, text, button)
         addon:DebugMessage("Hyperlink clicked in window:", link, text, button)

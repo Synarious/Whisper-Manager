@@ -105,18 +105,6 @@ function addon:DisplayHistory(window, playerKey)
             local coloredAuthor
             local messageColor
             if author == "Me" or author == playerName or author == fullPlayerName then
-                -- Use player's class color for own messages (send)
-                local _, playerClass = UnitClass("player")
-                local classColor = playerClass and RAID_CLASS_COLORS[playerClass]
-                local classColorHex
-                if classColor then
-                    classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
-                else
-                    classColorHex = "ffd100"
-                end
-                -- Format: |Hplayer:Name-Realm|h[Name]:|h - include colon in hyperlink for larger click area
-                coloredAuthor = string.format("|Hplayer:%s|h|cff%s[%s]:|r|h", fullPlayerName, classColorHex, playerName)
-                
                 -- Use customizable send color for message text
                 if window.isBNet then
                     local color = self.settings.bnetSendColor or {r = 0.0, g = 0.66, b = 1.0}
@@ -127,6 +115,18 @@ function addon:DisplayHistory(window, playerKey)
                     local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
                     messageColor = "|cff" .. colorHex
                 end
+                
+                -- Use player's class color for name only, brackets use message color
+                local _, playerClass = UnitClass("player")
+                local classColor = playerClass and RAID_CLASS_COLORS[playerClass]
+                local classColorHex
+                if classColor then
+                    classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+                else
+                    classColorHex = "ffd100"
+                end
+                -- Format: brackets in message color, name in class color
+                coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", fullPlayerName, messageColor, classColorHex, playerName, messageColor)
             else
                 -- Color based on whisper type (receive)
                 if window.isBNet then
@@ -140,6 +140,11 @@ function addon:DisplayHistory(window, playerKey)
                     local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
                     messageColor = "|cff" .. colorHex
                 else
+                    -- Use customizable receive color for whisper message text
+                    local color = self.settings.whisperReceiveColor or {r = 1.0, g = 0.5, b = 1.0}
+                    local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
+                    messageColor = "|cff" .. colorHex
+                    
                     -- Regular whispers: try to use stored class color, fallback to lookup then gold
                     -- Strip realm name from author (Name-Realm -> Name)
                     local authorDisplayName = author:match("^([^%-]+)") or author
@@ -161,13 +166,8 @@ function addon:DisplayHistory(window, playerKey)
                     end
                     
                     local nameColorHex = classColorHex or "ffd100"  -- Class color or gold
-                    -- Format: |Hplayer:Name-Realm|h[Name]:|h - include colon in hyperlink for larger click area
-                    coloredAuthor = string.format("|Hplayer:%s|h|cff%s[%s]:|r|h", author, nameColorHex, authorDisplayName)
-                    
-                    -- Use customizable receive color for whisper message text
-                    local color = self.settings.whisperReceiveColor or {r = 1.0, g = 0.5, b = 1.0}
-                    local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
-                    messageColor = "|cff" .. colorHex
+                    -- Format: brackets in message color, name in class color
+                    coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", author, messageColor, nameColorHex, authorDisplayName, messageColor)
                 end
             end
             
