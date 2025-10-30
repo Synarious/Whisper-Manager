@@ -40,12 +40,14 @@ function addon:ResolvePlayerIdentifiers(playerName)
     local baseName = namePart or target
     
     -- Use full name-realm as canonical key (prefixed with c_)
+    -- Remove spaces from realm names (e.g., "Moon Guard" -> "MoonGuard")
     local canonicalKey
     if realmPart and realmPart ~= "" then
-        canonicalKey = "c_" .. baseName .. "-" .. realmPart
+        local normalizedRealm = realmPart:gsub("%s+", "")
+        canonicalKey = "c_" .. baseName .. "-" .. normalizedRealm
     else
-        -- If no realm, add current realm
-        local currentRealm = GetRealmName()
+        -- If no realm, add current realm (normalized)
+        local currentRealm = GetRealmName():gsub("%s+", "")
         canonicalKey = "c_" .. baseName .. "-" .. currentRealm
     end
 
@@ -760,9 +762,10 @@ function addon:AddMessageToHistory(playerKey, displayName, author, message)
     local history = WhisperManager_HistoryDB[playerKey]
     
     -- Use optimized format: m = message, a = author, t = timestamp
-    -- For "Me", use actual character name with realm
+    -- For "Me", use actual character name with realm (normalized, no spaces)
     local playerName, playerRealm = UnitName("player")
-    local fullPlayerName = playerName .. "-" .. (playerRealm or GetRealmName())
+    local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
+    local fullPlayerName = playerName .. "-" .. realm
     local authorName = (author == "Me") and fullPlayerName or author
     
     table.insert(history, { m = message, a = authorName, t = time() })
@@ -787,7 +790,8 @@ function addon:DisplayHistory(window, playerKey)
     end
     
     local playerName, playerRealm = UnitName("player")
-    local fullPlayerName = playerName .. "-" .. (playerRealm or GetRealmName())
+    local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
+    local fullPlayerName = playerName .. "-" .. realm
 
     for _, entry in ipairs(history) do
         -- Support both old and new format
@@ -1424,7 +1428,8 @@ function addon:ShowHistoryDetail(playerKey, displayName)
     local history = WhisperManager_HistoryDB[playerKey]
     local messageLines = {}
     local playerName, playerRealm = UnitName("player")
-    local fullPlayerName = playerName .. "-" .. (playerRealm or GetRealmName())
+    local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
+    local fullPlayerName = playerName .. "-" .. realm
     
     for _, entry in ipairs(history) do
         -- Support both old and new format
