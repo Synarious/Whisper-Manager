@@ -1,28 +1,23 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <!--
-        The XML is a minimal blueprint. All properties, styling, and behavior
-        are applied in WhisperManager.lua to ensure maximum compatibility.
+        WhisperManager - Modular addon structure
+        Load order matters: Core -> Utilities -> UI Components -> Events
     -->
-    <Frame name="WhisperManager_WindowTemplate" virtual="true">
-        <Layers>
-            <Layer level="ARTWORK">
-                <FontString name="$parentTitle"/>
-            </Layer>
-        </Layers>
-        <Frames>
-            <Button name="$parentCloseButton"/>
-            <ScrollingMessageFrame name="$parentHistory"/>
-            <EditBox name="$parentInput">
-                <Layers>
-                    <Layer level="BACKGROUND">
-                        <Texture name="$parentLeft"/>
-                        <Texture name="$parentRight"/>
-                        <Texture name="$parentMid"/>
-                    </Layer>
-                </Layers>
-                <!-- THIS IS THE FIX: The FontString is now named and inherits a standard font style. -->
-                <FontString name="$parentFontString" inherits="ChatFontNormal"/>
-            </EditBox>
-        </Frames>
-    </Frame>
+    
+    <!-- Core initialization and utilities -->
+    <Script file="Core.lua"/>
+    <Script file="PlayerUtils.lua"/>
+    <Script file="History.lua"/>
+    
+    <!-- UI Components -->
+    <Script file="Window.lua"/>
+    <Script file="RecentChats.lua"/>
+    <Script file="HistoryViewer.lua"/>
+    <Script file="FloatingButton.lua"/>
+    
+    <!-- Event handlers (must be loaded after all UI components) -->
+    <Script file="Events.lua"/>
+    
+    <!-- Main initialization (must be loaded last) -->
+    <Script file="WhisperManager.lua"/>
 </Ui>
