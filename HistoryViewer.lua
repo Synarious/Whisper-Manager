@@ -346,18 +346,44 @@ function addon:ShowHistoryDetail(playerKey, displayName)
             local coloredAuthor
             local messageColor
             if author == "Me" or author == playerName or author == fullPlayerName then
-                -- Darker purple for own messages - make it a clickable hyperlink (without brackets, we'll add them separately)
-                coloredAuthor = "|Hplayer:" .. fullPlayerName .. "|h|cff7070bb" .. playerName .. "|r|h"
-                messageColor = "|cffb0b0d0"  -- Lighter purple for message text
-            else
-                -- Color based on whisper type
+                -- Use customizable send color for message text
                 if isBNet then
-                    -- Blue for BNet whispers - BNet names aren't clickable in the same way
-                    -- Strip battletag number for display
-                    local authorDisplayName = author:match("^([^#]+)") or author
-                    coloredAuthor = "|TInterface\\ChatFrame\\UI-ChatIcon-Blizz:14:14:0:-1|t|cff3399ff" .. authorDisplayName .. "|r"
-                    messageColor = "|cffccddff"  -- Light blue for BNet message text
+                    local color = self.settings.bnetSendColor or {r = 0.0, g = 0.66, b = 1.0}
+                    local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
+                    messageColor = "|cff" .. colorHex
                 else
+                    local color = self.settings.whisperSendColor or {r = 1.0, g = 0.5, b = 1.0}
+                    local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
+                    messageColor = "|cff" .. colorHex
+                end
+                
+                -- Use player's class color for name only, brackets use message color
+                local _, playerClass = UnitClass("player")
+                local classColor = playerClass and RAID_CLASS_COLORS[playerClass]
+                local classColorHex
+                if classColor then
+                    classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+                else
+                    classColorHex = "ffd100"
+                end
+                -- Format: brackets in message color, name in class color
+                coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", fullPlayerName, messageColor, classColorHex, playerName, messageColor)
+            else
+                -- Color based on whisper type (receive)
+                if isBNet then
+                    -- Use the display name for BNet
+                    local bnetDisplayName = displayName or author
+                    -- For BNet, use a fixed color for the name (cyan) - BNet names aren't clickable in the same way
+                    local color = self.settings.bnetReceiveColor or {r = 0.0, g = 0.66, b = 1.0}
+                    local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
+                    messageColor = "|cff" .. colorHex
+                    coloredAuthor = "|TInterface\\ChatFrame\\UI-ChatIcon-Blizz:14:14:0:-1|t|cff00ddff" .. bnetDisplayName .. "|r"
+                else
+                    -- Use customizable receive color for whisper message text
+                    local color = self.settings.whisperReceiveColor or {r = 1.0, g = 0.5, b = 1.0}
+                    local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
+                    messageColor = "|cff" .. colorHex
+                    
                     -- Regular whispers: use stored class color if available, fallback to lookup then gold
                     -- Strip realm name from author (Name-Realm -> Name)
                     local authorDisplayName = author:match("^([^%-]+)") or author
@@ -376,10 +402,9 @@ function addon:ShowHistoryDetail(playerKey, displayName)
                         classColorHex = self:GetClassColorForPlayer(author)
                     end
                     
-                    local nameColor = classColorHex and ("|cff" .. classColorHex) or "|cffffd100"  -- Class color or gold
-                    -- Make player name a clickable hyperlink (without brackets, we'll add them separately)
-                    coloredAuthor = "|Hplayer:" .. author .. "|h" .. nameColor .. authorDisplayName .. "|r|h"
-                    messageColor = "|cffffffff"  -- White for regular message text
+                    local nameColorHex = classColorHex or "ffd100"  -- Class color or gold
+                    -- Format: brackets in message color, name in class color
+                    coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", author, messageColor, nameColorHex, authorDisplayName, messageColor)
                 end
             end
             
@@ -388,8 +413,8 @@ function addon:ShowHistoryDetail(playerKey, displayName)
             -- Apply emote and speech formatting
             safeMessage = self:FormatEmotesAndSpeech(safeMessage)
             
-            -- Format message - brackets use message color, player name is hyperlink
-            local formattedMessage = string.format("%s %s[%s%s]: %s%s|r", timeString, messageColor, coloredAuthor, messageColor, messageColor, safeMessage)
+            -- Format message - player name hyperlink now includes brackets and colon
+            local formattedMessage = string.format("%s %s %s%s|r", timeString, coloredAuthor, messageColor, safeMessage)
             detailScroll:AddMessage(formattedMessage)
         end
     end

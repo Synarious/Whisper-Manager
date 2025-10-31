@@ -407,6 +407,35 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.Input:SetHitRectInsets(0, 0, 0, 0)  -- Fix mouse clicking for multiline
     win.Input:SetTextInsets(6, 6, 4, 4)  -- Add some padding
     
+    -- Enable hyperlinks in the input box for tooltips
+    win.Input:SetHyperlinksEnabled(true)
+    
+    -- Store reference for link insertion - track the focused edit box globally
+    win.Input:SetScript("OnEditFocusGained", function(self)
+        -- Store this as the active WhisperManager edit box
+        addon.activeEditBox = self
+        addon:FocusWindow(win)
+    end)
+    
+    win.Input:SetScript("OnEditFocusLost", function(self)
+        -- Clear the active edit box when focus is lost
+        if addon.activeEditBox == self then
+            addon.activeEditBox = nil
+        end
+    end)
+    
+    -- Enable hyperlink tooltips in the input box
+    win.Input:SetScript("OnHyperlinkEnter", function(self, link, text)
+        ShowUIPanel(GameTooltip)
+        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+        GameTooltip:SetHyperlink(link)
+        GameTooltip:Show()
+    end)
+    
+    win.Input:SetScript("OnHyperlinkLeave", function(self)
+        HideUIPanel(GameTooltip)
+    end)
+    
     -- Focus window when clicking input box
     win.Input:SetScript("OnMouseDown", function(self)
         addon:FocusWindow(win)

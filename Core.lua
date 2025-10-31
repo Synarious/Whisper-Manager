@@ -265,6 +265,19 @@ function addon:InitializeCore()
 
     -- Load settings
     addon.settings = addon:LoadSettings()
+    
+    -- Hook ChatEdit_InsertLink to support shift-clicking items/achievements into our edit boxes
+    local originalChatEdit_InsertLink = ChatEdit_InsertLink
+    ChatEdit_InsertLink = function(link)
+        if addon.activeEditBox and addon.activeEditBox:IsVisible() and addon.activeEditBox:HasFocus() then
+            -- Insert the link into our active WhisperManager edit box
+            addon.activeEditBox:Insert(link)
+            return true
+        else
+            -- Fall back to default behavior
+            return originalChatEdit_InsertLink(link)
+        end
+    end
 
     self:DebugMessage("Core initialized.");
 end
