@@ -263,6 +263,11 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
             return
         end
         addon:FocusWindow(self)
+        
+        -- Mark messages as read when window is focused
+        if self.playerKey then
+            addon:MarkChatAsRead(self.playerKey)
+        end
     end)
     
     win:SetScript("OnHide", function(self)
@@ -304,6 +309,18 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         
         -- Focus this window when shown
         addon:FocusWindow(self)
+        
+        -- Mark messages as read when window is shown/focused
+        if self.playerKey then
+            addon:MarkChatAsRead(self.playerKey)
+        end
+    end)
+    
+    -- Mark messages as read when mouse enters the window
+    win:SetScript("OnEnter", function(self)
+        if self.playerKey then
+            addon:MarkChatAsRead(self.playerKey)
+        end
     end)
     
     win:SetBackdrop({

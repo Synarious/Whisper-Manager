@@ -36,6 +36,53 @@ function addon:DebugMessage(...)
     end
 end
 
+-- Print to chat (always visible, not debug-only)
+function addon:Print(message)
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r " .. tostring(message))
+end
+
+-- Trigger a Windows taskbar alert (flash the window)
+function addon:TriggerTaskbarAlert()
+    if not GameTooltip or not GameTooltip:GetParent() then return end
+    
+    -- Flash the game window on the taskbar
+    -- This uses the FlashWindowEx API through WoW's native functionality
+    -- The simplest way is to use RequestBattlenetData or create a temporary visual
+    
+    -- Alternative approach: Use a brief visual effect
+    -- Create a frame that flashes to get the user's attention
+    if not self.alertFrame then
+        self.alertFrame = CreateFrame("Frame", "WhisperManager_AlertFrame", UIParent)
+        self.alertFrame:SetSize(1, 1)
+        self.alertFrame:SetPoint("CENTER")
+        self.alertFrame:SetFrameStrata("TOOLTIP")
+        self.alertFrame:Hide()
+    end
+    
+    local alertFrame = self.alertFrame
+    
+    -- Flash 3 times
+    local flashCount = 0
+    local function Flash()
+        flashCount = flashCount + 1
+        if flashCount % 2 == 1 then
+            alertFrame:Show()
+        else
+            alertFrame:Hide()
+        end
+        
+        if flashCount < 6 then
+            C_Timer.After(0.3, Flash)
+        else
+            alertFrame:Hide()
+        end
+    end
+    
+    Flash()
+    
+    self:DebugMessage("Taskbar alert triggered")
+end
+
 -- Trim leading/trailing whitespace from a string; returns nil for non-strings
 function addon:TrimWhitespace(value)
     if type(value) ~= "string" then return nil end

@@ -19,6 +19,11 @@ local DEFAULT_SETTINGS = {
     bnetReceiveColor = {r = 0.0, g = 0.66, b = 1.0}, -- Blue (default BNet receive)
     bnetSendColor = {r = 0.0, g = 0.66, b = 1.0}, -- Blue (default BNet send)
     timestampColor = {r = 0.5, g = 0.5, b = 0.5}, -- Gray (timestamp color)
+    
+    -- Notification settings
+    notificationSound = SOUNDKIT.TELL_MESSAGE, -- Default notification sound (using sound kit ID)
+    soundChannel = "Master", -- Sound channel (Master, SFX, Music, Ambience, Dialog)
+    enableTaskbarAlert = true, -- Enable Windows taskbar alert on whisper
 }
 
 -- Available fonts
@@ -27,6 +32,27 @@ local FONT_OPTIONS = {
     {name = "Arial", path = "Fonts\\ARIALN.TTF"},
     {name = "Skurri", path = "Fonts\\skurri.ttf"},
     {name = "Morpheus", path = "Fonts\\MORPHEUS.TTF"},
+}
+
+-- Available notification sounds
+-- Using WoW Sound Kit IDs (more reliable than file paths)
+local SOUND_OPTIONS = {
+    {name = "None (Disabled)", soundKit = nil},
+    {name = "Tell Message", soundKit = SOUNDKIT.TELL_MESSAGE},
+    {name = "Whisper Inform", soundKit = SOUNDKIT.WHISPER_INFORM},
+    {name = "UI Quest Complete", soundKit = SOUNDKIT.UI_QUEST_OBJECTIVES_COMPLETE},
+    {name = "Level Up", soundKit = SOUNDKIT.LEVEL_UP},
+    {name = "Auction Open", soundKit = SOUNDKIT.AUCTION_WINDOW_OPEN},
+    {name = "Ready Check", soundKit = SOUNDKIT.READY_CHECK},
+}
+
+-- Available sound channels
+local SOUND_CHANNEL_OPTIONS = {
+    {name = "Master", value = "Master"},
+    {name = "SFX", value = "SFX"},
+    {name = "Music", value = "Music"},
+    {name = "Ambience", value = "Ambience"},
+    {name = "Dialog", value = "Dialog"},
 }
 
 -- ============================================================================
@@ -110,6 +136,48 @@ function addon:ApplyFontSettings()
 end
 
 -- ============================================================================
+-- Sound Notification Functions
+-- ============================================================================
+
+function addon:PlayNotificationSound()
+    local soundKitID = self:GetSetting("notificationSound")
+    
+    if not soundKitID then
+        addon:Print("|cffff8800Sound notification disabled|r")
+        self:DebugMessage("Sound notification disabled (nil soundKit)")
+        return -- Sound disabled
+    end
+    
+    -- Debug output
+    addon:Print("|cff00ff00Attempting to play sound kit ID: " .. tostring(soundKitID) .. "|r")
+    self:DebugMessage("Attempting to play sound kit ID: " .. tostring(soundKitID))
+    
+    -- PlaySound API:
+    -- PlaySound(soundKitID, channel, forceNoDuplicateSounds, runFinishCallback)
+    -- Returns true if successful
+    -- Channel is optional, uses Master by default
+    
+    local success = PlaySound(soundKitID)
+    
+    self:DebugMessage("PlaySound result: " .. tostring(success))
+    if success then
+        addon:Print("|cff00ff00✓ Sound played successfully!|r")
+        self:DebugMessage("Playing notification sound with kit ID: " .. tostring(soundKitID))
+    else
+        addon:Print("|cffff0000ERROR: Failed to play sound kit ID: " .. tostring(soundKitID) .. "|r")
+        addon:Print("|cffff8800Try a different sound option from the dropdown|r")
+        self:DebugMessage("|cffff0000ERROR: Failed to play sound|r")
+    end
+end
+
+-- Preview the notification sound
+function addon:PreviewNotificationSound()
+    addon:Print("|cff00ff00Preview Sound button clicked|r")
+    self:DebugMessage("PreviewNotificationSound called")
+    self:PlayNotificationSound()
+end
+
+-- ============================================================================
 -- Settings Frame Creation
 -- ============================================================================
 
@@ -168,7 +236,7 @@ end
 
 function addon:CreateSettingsFrame()
     local frame = CreateFrame("Frame", "WhisperManager_Settings", UIParent, "BackdropTemplate")
-    frame:SetSize(450, 500)
+    frame:SetSize(500, 700)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetMovable(true)
@@ -197,13 +265,38 @@ function addon:CreateSettingsFrame()
     frame.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     frame.closeBtn:SetSize(24, 24)
     
-    -- Font Family Section
-    local fontLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    fontLabel:SetPoint("TOPLEFT", 20, -50)
-    fontLabel:SetText("Font Family:")
+    -- Scroll frame for all settings
+    frame.scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    frame.scrollFrame:SetPoint("TOPLEFT", 10, -40)
+    frame.scrollFrame:SetPoint("BOTTOMRIGHT", -30, 40)
     
-    local fontDropdown = CreateFrame("Frame", "WhisperManager_FontDropdown", frame, "UIDropDownMenuTemplate")
-    fontDropdown:SetPoint("TOPLEFT", fontLabel, "BOTTOMLEFT", -15, -5)
+    frame.scrollChild = CreateFrame("Frame", nil, frame.scrollFrame)
+    frame.scrollChild:SetSize(450, 1)
+    frame.scrollFrame:SetScrollChild(frame.scrollChild)
+    
+    -- Enable mouse wheel scrolling
+    frame.scrollFrame:EnableMouseWheel(true)
+    frame.scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local scrollBar = self.ScrollBar
+        if scrollBar then
+            local current = scrollBar:GetValue()
+            local _, maxValue = scrollBar:GetMinMaxValues()
+            local step = 50 * delta
+            scrollBar:SetValue(math.max(0, math.min(maxValue, current - step)))
+        end
+    end)
+    
+    local scrollChild = frame.scrollChild
+    local yOffset = 0
+    
+    -- Font Family Section
+    local fontLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    fontLabel:SetPoint("TOPLEFT", 10, yOffset)
+    fontLabel:SetText("Font Family:")
+    yOffset = yOffset - 25
+    
+    local fontDropdown = CreateFrame("Frame", "WhisperManager_FontDropdown", scrollChild, "UIDropDownMenuTemplate")
+    fontDropdown:SetPoint("TOPLEFT", 0, yOffset)
     
     UIDropDownMenu_SetWidth(fontDropdown, 250)
     UIDropDownMenu_Initialize(fontDropdown, function(self, level)
@@ -222,19 +315,21 @@ function addon:CreateSettingsFrame()
     end)
     
     UIDropDownMenu_SetSelectedValue(fontDropdown, addon:GetSetting("fontFamily"))
+    yOffset = yOffset - 30
     
     -- Message Font Size Section
-    local messageSizeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    messageSizeLabel:SetPoint("TOPLEFT", 20, -110)
+    local messageSizeLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    messageSizeLabel:SetPoint("TOPLEFT", 10, yOffset)
     messageSizeLabel:SetText("Message Font Size:")
     
-    local messageSizeValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local messageSizeValue = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     messageSizeValue:SetPoint("LEFT", messageSizeLabel, "RIGHT", 10, 0)
     messageSizeValue:SetText(tostring(addon:GetSetting("messageFontSize")))
     messageSizeValue:SetTextColor(1, 1, 1)
+    yOffset = yOffset - 25
     
-    local messageSizeSlider = CreateFrame("Slider", "WhisperManager_MessageSizeSlider", frame, "OptionsSliderTemplate")
-    messageSizeSlider:SetPoint("TOPLEFT", messageSizeLabel, "BOTTOMLEFT", 5, -10)
+    local messageSizeSlider = CreateFrame("Slider", "WhisperManager_MessageSizeSlider", scrollChild, "OptionsSliderTemplate")
+    messageSizeSlider:SetPoint("TOPLEFT", 5, yOffset)
     messageSizeSlider:SetMinMaxValues(8, 36)
     messageSizeSlider:SetValue(addon:GetSetting("messageFontSize"))
     messageSizeSlider:SetValueStep(1)
@@ -248,19 +343,21 @@ function addon:CreateSettingsFrame()
         addon:SetSetting("messageFontSize", value)
         addon:ApplyFontSettings()
     end)
+    yOffset = yOffset - 40
     
     -- Input Font Size Section
-    local inputSizeLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    inputSizeLabel:SetPoint("TOPLEFT", 20, -190)
+    local inputSizeLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    inputSizeLabel:SetPoint("TOPLEFT", 10, yOffset)
     inputSizeLabel:SetText("Input Box Font Size:")
     
-    local inputSizeValue = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local inputSizeValue = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     inputSizeValue:SetPoint("LEFT", inputSizeLabel, "RIGHT", 10, 0)
     inputSizeValue:SetText(tostring(addon:GetSetting("inputFontSize")))
     inputSizeValue:SetTextColor(1, 1, 1)
+    yOffset = yOffset - 25
     
-    local inputSizeSlider = CreateFrame("Slider", "WhisperManager_InputSizeSlider", frame, "OptionsSliderTemplate")
-    inputSizeSlider:SetPoint("TOPLEFT", inputSizeLabel, "BOTTOMLEFT", 5, -10)
+    local inputSizeSlider = CreateFrame("Slider", "WhisperManager_InputSizeSlider", scrollChild, "OptionsSliderTemplate")
+    inputSizeSlider:SetPoint("TOPLEFT", 5, yOffset)
     inputSizeSlider:SetMinMaxValues(8, 36)
     inputSizeSlider:SetValue(addon:GetSetting("inputFontSize"))
     inputSizeSlider:SetValueStep(1)
@@ -274,32 +371,128 @@ function addon:CreateSettingsFrame()
         addon:SetSetting("inputFontSize", value)
         addon:ApplyFontSettings()
     end)
+    yOffset = yOffset - 50
     
     -- Color Settings Section Header
-    local colorHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    colorHeader:SetPoint("TOPLEFT", 20, -270)
+    local colorHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    colorHeader:SetPoint("TOPLEFT", 10, yOffset)
     colorHeader:SetText("Message Colors")
     colorHeader:SetTextColor(1, 0.82, 0)
+    yOffset = yOffset - 30
     
     -- Whisper Receive Color
-    frame.whisperReceiveColor = CreateColorPicker(frame, "Whisper Receive:", "whisperReceiveColor", 20, -300)
+    frame.whisperReceiveColor = CreateColorPicker(scrollChild, "Whisper Receive:", "whisperReceiveColor", 10, yOffset)
+    yOffset = yOffset - 30
     
     -- Whisper Send Color
-    frame.whisperSendColor = CreateColorPicker(frame, "Whisper Send:", "whisperSendColor", 20, -330)
+    frame.whisperSendColor = CreateColorPicker(scrollChild, "Whisper Send:", "whisperSendColor", 10, yOffset)
+    yOffset = yOffset - 30
     
     -- BNet Receive Color
-    frame.bnetReceiveColor = CreateColorPicker(frame, "BNet Receive:", "bnetReceiveColor", 20, -360)
+    frame.bnetReceiveColor = CreateColorPicker(scrollChild, "BNet Receive:", "bnetReceiveColor", 10, yOffset)
+    yOffset = yOffset - 30
     
     -- BNet Send Color
-    frame.bnetSendColor = CreateColorPicker(frame, "BNet Send:", "bnetSendColor", 20, -390)
+    frame.bnetSendColor = CreateColorPicker(scrollChild, "BNet Send:", "bnetSendColor", 10, yOffset)
+    yOffset = yOffset - 30
     
     -- Timestamp Color
-    frame.timestampColor = CreateColorPicker(frame, "Timestamp:", "timestampColor", 20, -420)
+    frame.timestampColor = CreateColorPicker(scrollChild, "Timestamp:", "timestampColor", 10, yOffset)
+    yOffset = yOffset - 50
     
-    -- Reset button
+    -- Notification Settings Header
+    local notificationHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    notificationHeader:SetPoint("TOPLEFT", 10, yOffset)
+    notificationHeader:SetText("Notification Settings")
+    notificationHeader:SetTextColor(1, 0.82, 0)
+    yOffset = yOffset - 30
+    
+    -- Notification Sound Dropdown
+    local soundLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    soundLabel:SetPoint("TOPLEFT", 10, yOffset)
+    soundLabel:SetText("Notification Sound:")
+    yOffset = yOffset - 25
+    
+    local soundDropdown = CreateFrame("Frame", "WhisperManager_SoundDropdown", scrollChild, "UIDropDownMenuTemplate")
+    soundDropdown:SetPoint("TOPLEFT", 0, yOffset)
+    
+    UIDropDownMenu_SetWidth(soundDropdown, 300)
+    UIDropDownMenu_Initialize(soundDropdown, function(self, level)
+        for i, sound in ipairs(SOUND_OPTIONS) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = sound.name
+            info.value = sound.soundKit
+            info.func = function(self)
+                addon:SetSetting("notificationSound", self.value)
+                UIDropDownMenu_SetSelectedValue(soundDropdown, self.value)
+            end
+            info.checked = (addon:GetSetting("notificationSound") == sound.soundKit)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    
+    UIDropDownMenu_SetSelectedValue(soundDropdown, addon:GetSetting("notificationSound"))
+    yOffset = yOffset - 30
+    
+    -- Sound Channel Dropdown
+    local channelLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    channelLabel:SetPoint("TOPLEFT", 10, yOffset)
+    channelLabel:SetText("Sound Channel:")
+    yOffset = yOffset - 25
+    
+    local channelDropdown = CreateFrame("Frame", "WhisperManager_ChannelDropdown", scrollChild, "UIDropDownMenuTemplate")
+    channelDropdown:SetPoint("TOPLEFT", 0, yOffset)
+    
+    UIDropDownMenu_SetWidth(channelDropdown, 150)
+    UIDropDownMenu_Initialize(channelDropdown, function(self, level)
+        for i, channel in ipairs(SOUND_CHANNEL_OPTIONS) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = channel.name
+            info.value = channel.value
+            info.func = function(self)
+                addon:SetSetting("soundChannel", self.value)
+                UIDropDownMenu_SetSelectedValue(channelDropdown, self.value)
+            end
+            info.checked = (addon:GetSetting("soundChannel") == channel.value)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    
+    UIDropDownMenu_SetSelectedValue(channelDropdown, addon:GetSetting("soundChannel"))
+    yOffset = yOffset - 30
+    
+    -- Preview Sound Button
+    local previewBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
+    previewBtn:SetSize(100, 25)
+    previewBtn:SetPoint("TOPLEFT", 10, yOffset)
+    previewBtn:SetText("Preview Sound")
+    previewBtn:SetScript("OnClick", function()
+        addon:PreviewNotificationSound()
+    end)
+    yOffset = yOffset - 30
+    
+    -- Taskbar Alert Checkbox
+    local taskbarCheckbox = CreateFrame("CheckButton", nil, scrollChild, "UICheckButtonTemplate")
+    taskbarCheckbox:SetPoint("TOPLEFT", 10, yOffset)
+    taskbarCheckbox:SetSize(24, 24)
+    taskbarCheckbox:SetChecked(addon:GetSetting("enableTaskbarAlert"))
+    
+    local taskbarLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    taskbarLabel:SetPoint("LEFT", taskbarCheckbox, "RIGHT", 5, 0)
+    taskbarLabel:SetText("Enable Windows Taskbar Alert on Whisper")
+    
+    taskbarCheckbox:SetScript("OnClick", function(self)
+        addon:SetSetting("enableTaskbarAlert", self:GetChecked())
+    end)
+    yOffset = yOffset - 40
+    
+    -- Update scroll child height
+    scrollChild:SetHeight(-yOffset + 20)
+    
+    -- Reset button (at bottom of frame)
     local resetBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     resetBtn:SetSize(100, 25)
-    resetBtn:SetPoint("BOTTOM", 0, 20)
+    resetBtn:SetPoint("BOTTOM", 0, 10)
     resetBtn:SetText("Reset Defaults")
     resetBtn:SetScript("OnClick", function()
         for key, value in pairs(DEFAULT_SETTINGS) do
@@ -310,6 +503,9 @@ function addon:CreateSettingsFrame()
         UIDropDownMenu_SetSelectedValue(fontDropdown, DEFAULT_SETTINGS.fontFamily)
         messageSizeSlider:SetValue(DEFAULT_SETTINGS.messageFontSize)
         inputSizeSlider:SetValue(DEFAULT_SETTINGS.inputFontSize)
+        UIDropDownMenu_SetSelectedValue(soundDropdown, DEFAULT_SETTINGS.notificationSound)
+        UIDropDownMenu_SetSelectedValue(channelDropdown, DEFAULT_SETTINGS.soundChannel)
+        taskbarCheckbox:SetChecked(DEFAULT_SETTINGS.enableTaskbarAlert)
         
         -- Update color swatches
         local whisperReceive = DEFAULT_SETTINGS.whisperReceiveColor

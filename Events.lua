@@ -42,6 +42,15 @@ function addon:RegisterEvents()
 
             addon:AddMessageToHistory(playerKey, displayName or author, author, message, classToken)
             addon:UpdateRecentChat(playerKey, displayName or author, false)
+            
+            -- Play notification sound if enabled
+            addon:PlayNotificationSound()
+            
+            -- Trigger Windows taskbar alert if enabled
+            if addon:GetSetting("enableTaskbarAlert") then
+                addon:TriggerTaskbarAlert()
+            end
+            
             addon:OpenConversation(author)
             local window = addon.windows[playerKey]
             if window then
@@ -100,6 +109,15 @@ function addon:RegisterEvents()
             -- BNet whispers don't have class info
             addon:AddMessageToHistory(playerKey, displayName, displayName, message, nil)
             addon:UpdateRecentChat(playerKey, displayName, true)
+            
+            -- Play notification sound if enabled
+            addon:PlayNotificationSound()
+            
+            -- Trigger Windows taskbar alert if enabled
+            if addon:GetSetting("enableTaskbarAlert") then
+                addon:TriggerTaskbarAlert()
+            end
+            
             addon:OpenBNetConversation(bnSenderID, displayName)
             local window = addon.windows[playerKey]
             if window then
