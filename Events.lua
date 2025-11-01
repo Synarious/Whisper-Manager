@@ -142,6 +142,20 @@ function addon:SetupHooks()
     end
     addon.__hooksInstalled = true
     
+    -- Hook SetItemRef globally to track all hyperlink clicks
+    hooksecurefunc("SetItemRef", function(link, text, button, chatFrame)
+        addon:DebugMessage("=== GLOBAL SetItemRef Hook ===")
+        addon:DebugMessage("Link:", link)
+        addon:DebugMessage("Text:", text)
+        addon:DebugMessage("Button:", button)
+        addon:DebugMessage("ChatFrame:", chatFrame and chatFrame:GetName() or "nil")
+        addon:DebugMessage("Link type:", link and link:match("^([^:]+):") or "unknown")
+        
+        -- Log the call stack
+        local stackInfo = debugstack(2, 3, 3)
+        addon:DebugMessage("Call stack:", stackInfo)
+    end)
+    
     -- Hook whisper command extraction
     hooksecurefunc("ChatEdit_ExtractTellTarget", function(editBox, text)
         local target = addon:ExtractWhisperTarget(text)
@@ -219,14 +233,24 @@ function addon:SetupContextMenu()
     addon.__contextMenuInstalled = true
     
     local function AddWhisperManagerButton(owner, rootDescription, contextData)
-        addon:DebugMessage("AddWhisperManagerButton fired.")
+        addon:DebugMessage("=== AddWhisperManagerButton START ===")
+        addon:DebugMessage("owner:", owner and owner:GetName() or "nil")
+        addon:DebugMessage("rootDescription:", rootDescription ~= nil)
+        addon:DebugMessage("contextData:", contextData ~= nil)
     
         if not contextData then
             addon:DebugMessage("|cffff0000ERROR: contextData is nil!|r")
             return
         end
     
-        addon:DebugMessage("Inspecting contextData:")
+        addon:DebugMessage("=== Inspecting contextData ===")
+        addon:DebugMessage("contextData type:", type(contextData))
+        
+        -- Log all contextData fields
+        for k, v in pairs(contextData) do
+            addon:DebugMessage(string.format("- contextData.%s: %s (type: %s)", tostring(k), tostring(v), type(v)))
+        end
+        
         if contextData.unit then
             addon:DebugMessage("- contextData.unit:", contextData.unit)
         else
@@ -296,7 +320,14 @@ function addon:SetupContextMenu()
     for i = 1, 40 do
         table.insert(tagsToModify, "MENU_UNIT_RAID_PLAYER"..i)
     end
+    
+    addon:DebugMessage("=== Modifying Context Menus ===")
+    addon:DebugMessage("Total menu tags to modify:", #tagsToModify)
+    
     for _, tag in ipairs(tagsToModify) do 
+        addon:DebugMessage("Modifying menu tag:", tag)
         Menu.ModifyMenu(tag, AddWhisperManagerButton) 
     end
+    
+    addon:DebugMessage("=== Context Menu Setup Complete ===")
 end

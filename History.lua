@@ -167,9 +167,8 @@ function addon:DisplayHistory(window, playerKey)
                     end
                     
                     local nameColorHex = classColorHex or "ffd100"  -- Class color or gold
-                    -- Use WIM-style formatting: brackets outside, hyperlink only around the name
-                    local nameLink = string.format("|Hplayer:%s|h|cff%s%s|r|h", author, nameColorHex, authorDisplayName)
-                    coloredAuthor = string.format("%s[%s]|r: ", messageColor, nameLink)
+                    -- Format: brackets in message color, name in class color
+                    coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", author, messageColor, nameColorHex, authorDisplayName, messageColor)
                 end
             end
             

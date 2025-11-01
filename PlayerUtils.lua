@@ -37,23 +37,36 @@ end
 
 -- Extract display name from a key (works for both c_ and bnet_ keys)
 function addon:GetDisplayNameFromKey(playerKey)
-    if not playerKey then return "Unknown" end
+    if not playerKey then 
+        addon:DebugMessage("GetDisplayNameFromKey: playerKey is nil")
+        return "Unknown" 
+    end
+    
+    addon:DebugMessage("GetDisplayNameFromKey: playerKey =", playerKey)
     
     -- For BNet keys: bnet_Name#1234 -> Name
-    if playerKey:match("^bnet_(.+)") then
+    if playerKey:match("^bnet_") then
         local battleTag = playerKey:match("^bnet_(.+)")
-        local name = battleTag:match("^([^#]+)") or battleTag
-        return name
+        if battleTag then
+            local name = battleTag:match("^([^#]+)") or battleTag
+            addon:DebugMessage("GetDisplayNameFromKey: BNet name =", name)
+            return name or "Unknown"
+        end
     end
     
     -- For character keys: c_Name-Realm -> Name
-    if playerKey:match("^c_(.+)") then
+    if playerKey:match("^c_") then
         local fullName = playerKey:match("^c_(.+)")
-        local name = fullName:match("^([^%-]+)") or fullName
-        return name
+        if fullName then
+            -- Split on the first hyphen to get name
+            local name = fullName:match("^([^-]+)")  -- Everything before first hyphen
+            addon:DebugMessage("GetDisplayNameFromKey: Character name =", name or fullName)
+            return name or fullName
+        end
     end
     
     -- Fallback for old format keys
+    addon:DebugMessage("GetDisplayNameFromKey: Using fallback, returning playerKey as-is")
     return playerKey
 end
 
@@ -77,6 +90,8 @@ end
 
 -- Update recent chat entry
 function addon:UpdateRecentChat(playerKey, displayName, isBNet)
+    if not playerKey then return end
+    
     if not WhisperManager_RecentChats then
         WhisperManager_RecentChats = {}
     end
@@ -85,7 +100,7 @@ function addon:UpdateRecentChat(playerKey, displayName, isBNet)
     
     -- Clean up old entries (older than 72 hours)
     for key, data in pairs(WhisperManager_RecentChats) do
-        if (now - data.lastMessageTime) > self.RECENT_CHAT_EXPIRY then
+        if data and data.lastMessageTime and (now - data.lastMessageTime) > self.RECENT_CHAT_EXPIRY then
             WhisperManager_RecentChats[key] = nil
         end
     end
@@ -98,7 +113,9 @@ function addon:UpdateRecentChat(playerKey, displayName, isBNet)
             isBNet = isBNet or false,
         }
     else
-        WhisperManager_RecentChats[playerKey].lastMessageTime = now
+        if WhisperManager_RecentChats[playerKey] then
+            WhisperManager_RecentChats[playerKey].lastMessageTime = now
+        end
     end
 end
 

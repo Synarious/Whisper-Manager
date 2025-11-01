@@ -136,11 +136,11 @@ function addon:CreateHistoryFrame()
             if linkType == "player" and linkTarget then
                 local display = (text and text:gsub("|c[0-9a-fA-F]+", ""):gsub("|r", "")) or linkTarget
                 display = display:gsub("%[", ""):gsub("%]", "")
-                addon:OpenPlayerContextMenu(linkTarget, display, false)
+                addon:OpenPlayerContextMenu(self, linkTarget, display, false)
                 return
             elseif linkType == "BNplayer" then
                 local bnID = tonumber(linkTarget)
-                addon:OpenPlayerContextMenu(nil, text, true, bnID)
+                addon:OpenPlayerContextMenu(self, nil, text, true, bnID)
                 return
             end
         end

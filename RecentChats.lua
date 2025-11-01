@@ -129,13 +129,17 @@ function addon:RefreshRecentChats()
     -- Convert to sorted array
     local chats = {}
     for playerKey, data in pairs(WhisperManager_RecentChats) do
-        table.insert(chats, {
-            playerKey = playerKey,
-            displayName = self:GetDisplayNameFromKey(playerKey),  -- Extract from key
-            lastMessageTime = data.lastMessageTime,
-            isRead = data.isRead,
-            isBNet = data.isBNet,
-        })
+        if playerKey and data and data.lastMessageTime then
+            local displayName = self:GetDisplayNameFromKey(playerKey) or "Unknown"
+            self:DebugMessage("RecentChats: playerKey =", playerKey, "displayName =", displayName)
+            table.insert(chats, {
+                playerKey = playerKey,
+                displayName = displayName,
+                lastMessageTime = data.lastMessageTime,
+                isRead = data.isRead or false,
+                isBNet = data.isBNet or false,
+            })
+        end
     end
     
     -- Sort by most recent first
@@ -163,7 +167,7 @@ function addon:RefreshRecentChats()
         -- Name text
         btn.nameText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         btn.nameText:SetPoint("TOPLEFT", 5, -5)
-        btn.nameText:SetText(chat.displayName)
+        btn.nameText:SetText(chat.displayName or "Unknown")
         btn.nameText:SetJustifyH("LEFT")
         
         -- Desaturate if read
