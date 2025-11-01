@@ -237,6 +237,9 @@ function addon:DisplayHistory(window, playerKey)
                 -- Apply emote and speech formatting (this function preserves hyperlinks)
                 local formattedText = self:FormatEmotesAndSpeech(message)
                 
+                -- Convert URLs to clickable links
+                formattedText = self:ConvertURLsToLinks(formattedText)
+                
                 -- Format message - concatenate parts WITHOUT string.format to preserve hyperlinks
                 -- WIM/Prat3 method: Simple concatenation preserves all escape sequences
                 local formattedMessage = timeString .. " " .. coloredAuthor .. " " .. messageColor .. formattedText .. "|r"

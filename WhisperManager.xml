@@ -8,6 +8,8 @@
     <Script file="Core.lua"/>
     <Script file="PlayerUtils.lua"/>
     <Script file="History.lua"/>
+    <Script file="URLHandler.lua"/>
+    <Script file="CopyChat.lua"/>
     
     <!-- UI Components -->
     <Script file="Window.lua"/>
