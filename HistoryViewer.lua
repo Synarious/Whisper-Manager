@@ -131,20 +131,9 @@ function addon:CreateHistoryFrame()
     frame.detailScrollFrame:SetMouseClickEnabled(true)
     frame.detailScrollFrame:SetScript("OnHyperlinkClick", function(self, link, text, button)
         addon:DebugMessage("Hyperlink clicked in history:", link, text, button)
-        if button == "RightButton" and type(link) == "string" then
-            local linkType, linkTarget = link:match("^(%a+):([^:]+)")
-            if linkType == "player" and linkTarget then
-                local display = (text and text:gsub("|c[0-9a-fA-F]+", ""):gsub("|r", "")) or linkTarget
-                display = display:gsub("%[", ""):gsub("%]", "")
-                addon:OpenPlayerContextMenu(self, linkTarget, display, false)
-                return
-            elseif linkType == "BNplayer" then
-                local bnID = tonumber(linkTarget)
-                addon:OpenPlayerContextMenu(self, nil, text, true, bnID)
-                return
-            end
-        end
-        ChatFrame_OnHyperlinkClick(self, link, text, button)
+        -- Use SetItemRef which allows other addons to hook and modify behavior
+        -- This is the standard WoW API for handling all hyperlink clicks
+        SetItemRef(link, text, button, self)
     end)
     frame.detailScrollFrame:SetScript("OnHyperlinkEnter", function(self, link, text, button)
         ShowUIPanel(GameTooltip)

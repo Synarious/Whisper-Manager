@@ -3,7 +3,7 @@
 -- ============================================================================
 
 -- Configuration
-local DEFAULT_DEBUG_MODE = true -- Toggle via settings/slash to show diagnostic messages.
+local DEFAULT_DEBUG_MODE = false -- Toggle via settings/slash to show diagnostic messages.
 
 -- Create the main addon table
 WhisperManager = {};
