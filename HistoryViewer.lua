@@ -408,13 +408,13 @@ function addon:ShowHistoryDetail(playerKey, displayName)
                 end
             end
             
-            local safeMessage = message:gsub("%%", "%%%%")
+            -- CRITICAL: Don't use gsub on message - preserve hyperlinks as-is
+            -- Apply emote and speech formatting (this function preserves hyperlinks)
+            local formattedText = self:FormatEmotesAndSpeech(message)
             
-            -- Apply emote and speech formatting
-            safeMessage = self:FormatEmotesAndSpeech(safeMessage)
-            
-            -- Format message - player name hyperlink now includes brackets and colon
-            local formattedMessage = string.format("%s %s %s%s|r", timeString, coloredAuthor, messageColor, safeMessage)
+            -- Format message - concatenate parts WITHOUT string.format to preserve hyperlinks
+            -- WIM/Prat3 method: Simple concatenation preserves all escape sequences
+            local formattedMessage = timeString .. " " .. coloredAuthor .. " " .. messageColor .. formattedText .. "|r"
             detailScroll:AddMessage(formattedMessage)
         end
     end

@@ -96,7 +96,7 @@ function addon:DisplayHistory(window, playerKey)
         local message = entry.m or entry.message
         local classToken = entry.c  -- Get stored class token
         
-        if timestamp and author and message then
+                if timestamp and author and message then
             -- Timestamp with customizable color
             local tsColor = self.settings.timestampColor or {r = 0.5, g = 0.5, b = 0.5}
             local tsColorHex = string.format("%02x%02x%02x", tsColor.r * 255, tsColor.g * 255, tsColor.b * 255)
@@ -125,8 +125,9 @@ function addon:DisplayHistory(window, playerKey)
                 else
                     classColorHex = "ffd100"
                 end
-                -- Format: brackets in message color, name in class color
-                coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", fullPlayerName, messageColor, classColorHex, playerName, messageColor)
+                -- Use WIM-style formatting: brackets outside, hyperlink only around the name
+                local nameLink = string.format("|Hplayer:%s|h|cff%s%s|r|h", fullPlayerName, classColorHex, playerName)
+                coloredAuthor = string.format("%s[%s]|r: ", messageColor, nameLink)
             else
                 -- Color based on whisper type (receive)
                 if window.isBNet then
@@ -166,18 +167,19 @@ function addon:DisplayHistory(window, playerKey)
                     end
                     
                     local nameColorHex = classColorHex or "ffd100"  -- Class color or gold
-                    -- Format: brackets in message color, name in class color
-                    coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", author, messageColor, nameColorHex, authorDisplayName, messageColor)
+                    -- Use WIM-style formatting: brackets outside, hyperlink only around the name
+                    local nameLink = string.format("|Hplayer:%s|h|cff%s%s|r|h", author, nameColorHex, authorDisplayName)
+                    coloredAuthor = string.format("%s[%s]|r: ", messageColor, nameLink)
                 end
             end
             
-            local safeMessage = message:gsub("%%", "%%%%")
+            -- CRITICAL: Don't use gsub on message - preserve hyperlinks as-is
+            -- Apply emote and speech formatting (this function preserves hyperlinks)
+            local formattedText = self:FormatEmotesAndSpeech(message)
             
-            -- Apply emote and speech formatting
-            safeMessage = self:FormatEmotesAndSpeech(safeMessage)
-            
-            -- Format message - player name hyperlink now includes the colon for larger click area
-            local formattedMessage = string.format("%s %s %s%s|r", timeString, coloredAuthor, messageColor, safeMessage)
+            -- Format message - concatenate parts WITHOUT string.format to preserve hyperlinks
+            -- WIM/Prat3 method: Simple concatenation preserves all escape sequences
+            local formattedMessage = timeString .. " " .. coloredAuthor .. " " .. messageColor .. formattedText .. "|r"
             historyFrame:AddMessage(formattedMessage)
         end
     end

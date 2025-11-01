@@ -278,8 +278,14 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         addon:SaveWindowPosition(frame)
     end)
     
-    -- Focus window on mouse down
-    win:SetScript("OnMouseDown", function(frame)
+    -- Focus window on mouse down, but don't consume clicks meant for History frame
+    -- WIM method: Check if mouse is over history frame first
+    win:SetScript("OnMouseDown", function(frame, button)
+        -- Don't handle clicks when mouse is over the history frame
+        -- Let the history frame handle its own mouse events (higher strata/level)
+        if frame.History and MouseIsOver(frame.History) then
+            return
+        end
         addon:FocusWindow(frame)
     end)
     win:SetScript("OnHide", function(frame)
@@ -338,8 +344,45 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     -- Make title text clickable for right-click menu
     win.TitleButton = CreateFrame("Button", nil, win)
-    -- Cover only the title text area for more precise clicking
-    win.TitleButton:SetAllPoints(win.Title)
+    -- Instead of SetAllPoints (which can be larger than the text), measure the
+    -- title FontString and size the button to the text bounds so clicks only
+    -- register over the visible title text.
+    do
+        -- Create a hidden measurement FontString if needed
+        if not win.titleMeasure then
+            win.titleMeasure = win:CreateFontString(nil, "OVERLAY")
+            win.titleMeasure:Hide()
+        end
+
+        local function UpdateTitleButton()
+            local text = win.Title:GetText() or ""
+            local font, size, flags = win.Title:GetFont()
+            win.titleMeasure:SetFont(font, size, flags)
+            win.titleMeasure:SetText(text)
+
+            local width = win.titleMeasure:GetStringWidth() or 0
+            -- Prefer GetLineHeight when available for accurate font height
+            local lineHeight = win.titleMeasure.GetLineHeight and win.titleMeasure:GetLineHeight() or win.titleMeasure:GetStringHeight() or 14
+
+            -- Use lineHeight as base and add small vertical padding to ensure consistent clicks
+            local padX = 10
+            local padY = math.max(6, math.floor(lineHeight * 0.25))
+            win.TitleButton:ClearAllPoints()
+            -- Anchor vertically centered on the title to match the visual text
+            win.TitleButton:SetPoint("CENTER", win.Title, "CENTER", 0, 0)
+            win.TitleButton:SetSize(width + padX, lineHeight + padY)
+        end
+
+        -- Initial placement
+        UpdateTitleButton()
+
+        -- Hook SetText so when title updates (e.g., displayName changes) we resize
+        local origSetText = win.Title.SetText
+        function win.Title:SetText(...)
+            origSetText(self, ...)
+            UpdateTitleButton()
+        end
+    end
     win.TitleButton:EnableMouse(true)
     win.TitleButton:RegisterForClicks("RightButtonUp")
     win.TitleButton:SetScript("OnClick", function(_, button)
@@ -444,6 +487,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Input Box Background (create as frame to control strata properly)
     win.InputBg = CreateFrame("Frame", nil, win)
     win.InputBg:SetFrameLevel(win:GetFrameLevel())
+    win.InputBg:EnableMouse(false)  -- Don't consume mouse events
     local bgTexture = win.InputBg:CreateTexture(nil, "BACKGROUND")
     bgTexture:SetColorTexture(0, 0, 0, 0.6)
     bgTexture:SetAllPoints(win.InputBg)
@@ -460,7 +504,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         insets = { left = 2, right = 2, top = 2, bottom = 2 }
     })
     win.InputBorder:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
-    win.InputBorder:EnableMouse(false)
+    win.InputBorder:EnableMouse(false)  -- Already set, but ensuring it's explicit
     win.InputBorder:SetFrameLevel(win:GetFrameLevel() + 1)
 
     -- History ScrollingMessageFrame (adjusted to leave space for input box at bottom)
@@ -480,45 +524,18 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.History:SetMouseMotionEnabled(true)
     win.History:SetMouseClickEnabled(true)
     
-    -- Add a right-click handler directly on the frame for easier clicking
-    win.History:SetScript("OnMouseUp", function(self, button)
-        if button == "RightButton" then
-            -- Open context menu for the conversation partner
-            if win.isBNet then
-                addon:OpenPlayerContextMenu(nil, win.playerDisplay or win.playerTarget, true, win.bnSenderID)
-            else
-                addon:OpenPlayerContextMenu(win.playerTarget, win.playerDisplay or win.playerTarget, false)
-            end
-        end
+    -- CRITICAL WIM METHOD: Keep same strata as parent (DIALOG) but much higher frame level
+    -- Don't change strata or text will render above the window background
+    win.History:SetFrameLevel(win:GetFrameLevel() + 50)
+    
+    -- CRITICAL: Intercept mouse events to prevent click-through to parent frame
+    -- WIM method: Add OnMouseDown/OnMouseUp handlers that do nothing but stop propagation
+    win.History:SetScript("OnMouseDown", function(self, button)
+        -- Don't do anything, but prevents clicks from passing through to parent
     end)
     
-    -- Set hyperlink click handler using the default chat frame handler
-    win.History:SetScript("OnHyperlinkClick", function(self, link, text, button)
-        addon:DebugMessage("Hyperlink clicked in window:", link, text, button)
-        if button == "RightButton" and type(link) == "string" then
-            local linkType, linkTarget = link:match("^(%a+):([^:]+)")
-            if linkType == "player" and linkTarget then
-                local display = (text and text:gsub("|c[0-9a-fA-F]+", ""):gsub("|r", "")) or linkTarget
-                display = display:gsub("%[", ""):gsub("%]", "")
-                addon:OpenPlayerContextMenu(linkTarget, display, false)
-                return
-            elseif linkType == "BNplayer" then
-                local bnID = tonumber(linkTarget)
-                addon:OpenPlayerContextMenu(nil, win.playerDisplay or text, true, bnID or win.bnSenderID)
-                return
-            end
-        end
-
-        ChatFrame_OnHyperlinkClick(self, link, text, button)
-    end)
-    win.History:SetScript("OnHyperlinkEnter", function(self, link, text, button)
-        ShowUIPanel(GameTooltip)
-        GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
-        GameTooltip:SetHyperlink(link)
-        GameTooltip:Show()
-    end)
-    win.History:SetScript("OnHyperlinkLeave", function(self)
-        HideUIPanel(GameTooltip)
+    win.History:SetScript("OnMouseUp", function(self, button)
+        -- Hyperlinks are processed on mouse up, not mouse down
     end)
     
     -- Enable mouse wheel scrolling for history
@@ -529,6 +546,24 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         else
             self:ScrollDown()
         end
+    end)
+    
+    -- Set hyperlink click handler - use SetItemRef for all link types
+    win.History:SetScript("OnHyperlinkClick", function(self, link, text, button)
+        SetItemRef(link, text, button, self)
+    end)
+    
+    win.History:SetScript("OnHyperlinkEnter", function(self, link, text)
+        if link and link ~= "" then
+            ShowUIPanel(GameTooltip)
+            GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+            GameTooltip:SetHyperlink(link)
+            GameTooltip:Show()
+        end
+    end)
+    
+    win.History:SetScript("OnHyperlinkLeave", function(self)
+        GameTooltip:Hide()
     end)
 
     -- Character Count

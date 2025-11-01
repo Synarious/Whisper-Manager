@@ -129,6 +129,7 @@ end
 
 
 -- Format message to detect and colorize emotes (*text*) and speech ("text")
+-- IMPORTANT: This function must preserve hyperlinks (|H....|h....|h sequences)
 function addon:FormatEmotesAndSpeech(message)
     if not message or message == "" then return message end
     
@@ -141,12 +142,14 @@ function addon:FormatEmotesAndSpeech(message)
     local sayHex = string.format("|cff%02x%02x%02x", sayColor.r * 255, sayColor.g * 255, sayColor.b * 255)
     
     -- Detect and colorize emotes surrounded by asterisks: *emote*
-    message = message:gsub("(%*.-%*)", function(emote)
+    -- Use non-greedy match and avoid matching inside hyperlinks
+    message = message:gsub("(%*[^%*|]+%*)", function(emote)
         return emoteHex .. emote .. "|r"
     end)
     
     -- Detect and colorize speech surrounded by quotes: "speech"
-    message = message:gsub('(".-")', function(speech)
+    -- Use non-greedy match and avoid matching inside hyperlinks
+    message = message:gsub('("[^"|]+")' , function(speech)
         return sayHex .. speech .. "|r"
     end)
     

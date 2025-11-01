@@ -11,7 +11,7 @@ local addon = WhisperManager;
 local DEFAULT_SETTINGS = {
     messageFontSize = 14,
     inputFontSize = 14,
-    fontFamily = "Fonts\\FRIZQT__.TTF", -- Default WoW font
+    fontFamily = "Fonts\\ARIALN.TTF", -- Default to Arial per user request
     
     -- Message colors (using WoW's default whisper colors)
     whisperReceiveColor = {r = 1.0, g = 0.5, b = 1.0}, -- Pink (default whisper receive)
@@ -235,13 +235,13 @@ function addon:CreateSettingsFrame()
     
     local messageSizeSlider = CreateFrame("Slider", "WhisperManager_MessageSizeSlider", frame, "OptionsSliderTemplate")
     messageSizeSlider:SetPoint("TOPLEFT", messageSizeLabel, "BOTTOMLEFT", 5, -10)
-    messageSizeSlider:SetMinMaxValues(8, 24)
+    messageSizeSlider:SetMinMaxValues(8, 36)
     messageSizeSlider:SetValue(addon:GetSetting("messageFontSize"))
     messageSizeSlider:SetValueStep(1)
     messageSizeSlider:SetObeyStepOnDrag(true)
     messageSizeSlider:SetWidth(300)
     _G[messageSizeSlider:GetName().."Low"]:SetText("8")
-    _G[messageSizeSlider:GetName().."High"]:SetText("24")
+    _G[messageSizeSlider:GetName().."High"]:SetText("36")
     messageSizeSlider:SetScript("OnValueChanged", function(self, value)
         value = math.floor(value + 0.5)
         messageSizeValue:SetText(tostring(value))
@@ -261,13 +261,13 @@ function addon:CreateSettingsFrame()
     
     local inputSizeSlider = CreateFrame("Slider", "WhisperManager_InputSizeSlider", frame, "OptionsSliderTemplate")
     inputSizeSlider:SetPoint("TOPLEFT", inputSizeLabel, "BOTTOMLEFT", 5, -10)
-    inputSizeSlider:SetMinMaxValues(10, 20)
+    inputSizeSlider:SetMinMaxValues(8, 36)
     inputSizeSlider:SetValue(addon:GetSetting("inputFontSize"))
     inputSizeSlider:SetValueStep(1)
     inputSizeSlider:SetObeyStepOnDrag(true)
     inputSizeSlider:SetWidth(300)
-    _G[inputSizeSlider:GetName().."Low"]:SetText("10")
-    _G[inputSizeSlider:GetName().."High"]:SetText("20")
+    _G[inputSizeSlider:GetName().."Low"]:SetText("8")
+    _G[inputSizeSlider:GetName().."High"]:SetText("36")
     inputSizeSlider:SetScript("OnValueChanged", function(self, value)
         value = math.floor(value + 0.5)
         inputSizeValue:SetText(tostring(value))
