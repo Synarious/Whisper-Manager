@@ -7,4 +7,3 @@
 ## SavedVariables: WhisperManager_HistoryDB, WhisperManager_WindowDB, WhisperManager_Config, WhisperManager_RecentChats
 
 WhisperManager.xml
-WhisperManager.lua

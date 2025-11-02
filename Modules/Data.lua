@@ -1,39 +1,24 @@
 -- ============================================================================
--- History.lua - Message history management
+-- Data.lua - Database management for history, recent chats, and class cache
+-- ============================================================================
+-- This module handles all persistent data storage including:
+-- - Message history (WhisperManager_HistoryDB)
+-- - Recent conversations (WhisperManager_RecentChats)
+-- - Player class cache (WhisperManager_Config.classCache)
 -- ============================================================================
 
 local addon = WhisperManager;
 
 -- ============================================================================
--- Helper Functions
+-- SECTION 1: Message History Management
 -- ============================================================================
 
--- Helper function to convert timestamp to "time ago" format
-local function GetTimeAgo(timestamp)
-    local now = time()
-    local diff = now - timestamp
-    
-    if diff < 60 then
-        return "Just now"
-    elseif diff < 3600 then
-        local minutes = math.floor(diff / 60)
-        return minutes .. " minute" .. (minutes ~= 1 and "s" or "") .. " ago"
-    elseif diff < 86400 then
-        local hours = math.floor(diff / 3600)
-        return hours .. " hour" .. (hours ~= 1 and "s" or "") .. " ago"
-    else
-        local days = math.floor(diff / 86400)
-        return days .. " day" .. (days ~= 1 and "s" or "") .. " ago"
-    end
-end
-
--- Make GetTimeAgo accessible to other modules
-addon.GetTimeAgo = GetTimeAgo;
-
--- ============================================================================
--- History Management Functions
--- ============================================================================
-
+--- Add a message to the history database
+-- @param playerKey string Canonical player key (c_Name-Realm or bnet_Tag)
+-- @param displayName string Display name for the player
+-- @param author string Message author (character name or "Me")
+-- @param message string Message content
+-- @param classToken string Optional class token (e.g., "WARRIOR", "MAGE")
 function addon:AddMessageToHistory(playerKey, displayName, author, message, classToken)
     if not playerKey then return end
     if not WhisperManager_HistoryDB then WhisperManager_HistoryDB = {} end
@@ -70,6 +55,10 @@ function addon:AddMessageToHistory(playerKey, displayName, author, message, clas
     end
 end
 
+--- Add a system message to history (errors, offline notices, etc.)
+-- @param playerKey string Canonical player key
+-- @param displayName string Display name for the player (unused but kept for compatibility)
+-- @param systemMessage string System message content
 function addon:AddSystemMessageToHistory(playerKey, displayName, systemMessage)
     addon:DebugMessage("=== AddSystemMessageToHistory called ===")
     addon:DebugMessage("PlayerKey:", playerKey)
@@ -103,6 +92,9 @@ function addon:AddSystemMessageToHistory(playerKey, displayName, systemMessage)
     end
 end
 
+--- Display message history in a window
+-- @param window table The whisper window frame
+-- @param playerKey string Canonical player key
 function addon:DisplayHistory(window, playerKey)
     addon:DebugMessage("=== DisplayHistory called ===")
     addon:DebugMessage("PlayerKey:", playerKey)
@@ -249,3 +241,179 @@ function addon:DisplayHistory(window, playerKey)
     end
     historyFrame:ScrollToBottom()
 end
+
+-- ============================================================================
+-- SECTION 2: Recent Chat Management
+-- ============================================================================
+
+--- Update recent chat entry (adds or updates last message time)
+-- @param playerKey string Canonical player key
+-- @param displayName string Display name (unused, kept for compatibility)
+-- @param isBNet boolean Whether this is a BNet conversation
+function addon:UpdateRecentChat(playerKey, displayName, isBNet)
+    if not playerKey then return end
+    
+    if not WhisperManager_RecentChats then
+        WhisperManager_RecentChats = {}
+    end
+    
+    local now = time()
+    
+    -- Clean up old entries (older than 72 hours)
+    for key, data in pairs(WhisperManager_RecentChats) do
+        if data and data.lastMessageTime and (now - data.lastMessageTime) > self.RECENT_CHAT_EXPIRY then
+            WhisperManager_RecentChats[key] = nil
+        end
+    end
+    
+    -- Update or create entry
+    if not WhisperManager_RecentChats[playerKey] then
+        WhisperManager_RecentChats[playerKey] = {
+            lastMessageTime = now,
+            isRead = false,
+            isBNet = isBNet or false,
+        }
+    else
+        WhisperManager_RecentChats[playerKey].lastMessageTime = now
+    end
+end
+
+--- Mark a conversation as read
+-- @param playerKey string Canonical player key
+function addon:MarkChatAsRead(playerKey)
+    if WhisperManager_RecentChats and WhisperManager_RecentChats[playerKey] then
+        WhisperManager_RecentChats[playerKey].isRead = true
+    end
+end
+
+-- ============================================================================
+-- SECTION 3: Class Cache Management
+-- ============================================================================
+
+--- Get class color for a player (returns hex color string or nil)
+-- @param playerName string Player name (with or without realm)
+-- @return string|nil Hex color string (e.g., "ffc41f3b") or nil if not found
+function addon:GetClassColorForPlayer(playerName)
+    if not playerName or playerName == "" then return nil end
+    
+    -- Initialize class cache in saved variables
+    if not WhisperManager_Config then
+        WhisperManager_Config = {}
+    end
+    if not WhisperManager_Config.classCache then
+        WhisperManager_Config.classCache = {}
+    end
+    
+    -- Check cache first
+    if WhisperManager_Config.classCache[playerName] then
+        local classColor = RAID_CLASS_COLORS[WhisperManager_Config.classCache[playerName]]
+        if classColor then
+            return string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+        end
+    end
+    
+    -- Strip realm if present to get just the character name
+    local name = playerName:match("^([^%-]+)") or playerName
+    
+    -- Try to get class info from UnitClass (works for party/raid members)
+    local _, class = UnitClass(name)
+    if not class then
+        -- Try with hyphenated version for same-server players
+        _, class = UnitClass(playerName)
+    end
+    
+    -- Try checking if they're in a group
+    if not class then
+        -- Check raid members
+        if IsInRaid() then
+            for i = 1, GetNumGroupMembers() do
+                local unitId = "raid" .. i
+                local unitName = GetUnitName(unitId, true)  -- true = include realm
+                if unitName and (unitName == playerName or unitName == name) then
+                    _, class = UnitClass(unitId)
+                    break
+                end
+            end
+        elseif IsInGroup() then
+            -- Check party members
+            for i = 1, GetNumSubgroupMembers() do
+                local unitId = "party" .. i
+                local unitName = GetUnitName(unitId, true)
+                if unitName and (unitName == playerName or unitName == name) then
+                    _, class = UnitClass(unitId)
+                    break
+                end
+            end
+        end
+    end
+    
+    -- Try checking guild members
+    if not class and IsInGuild() then
+        local numTotalMembers = GetNumGuildMembers()
+        for i = 1, numTotalMembers do
+            local guildName, _, _, _, _, _, _, _, _, _, classFileName = GetGuildRosterInfo(i)
+            if guildName then
+                local guildNameShort = guildName:match("^([^%-]+)") or guildName
+                if guildName == playerName or guildNameShort == name then
+                    class = classFileName
+                    break
+                end
+            end
+        end
+    end
+    
+    if class then
+        -- Cache the result
+        addon:SetPlayerClass(playerName, class)
+        
+        local classColor = RAID_CLASS_COLORS[class]
+        if classColor then
+            return string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+        end
+    end
+    
+    return nil  -- No class info available
+end
+
+--- Set player class info in cache (called when we get GUID info from events)
+-- @param playerName string Player name
+-- @param class string Class token (e.g., "WARRIOR")
+function addon:SetPlayerClass(playerName, class)
+    if playerName and class then
+        if not WhisperManager_Config then
+            WhisperManager_Config = {}
+        end
+        if not WhisperManager_Config.classCache then
+            WhisperManager_Config.classCache = {}
+        end
+        WhisperManager_Config.classCache[playerName] = class
+    end
+end
+
+-- ============================================================================
+-- SECTION 4: Utility Functions
+-- ============================================================================
+
+--- Convert timestamp to "time ago" format
+-- @param timestamp number Unix timestamp
+-- @return string Formatted time string (e.g., "2 hours ago")
+local function GetTimeAgo(timestamp)
+    local now = time()
+    local diff = now - timestamp
+    
+    if diff < 60 then
+        return "Just now"
+    elseif diff < 3600 then
+        local minutes = math.floor(diff / 60)
+        return minutes .. " minute" .. (minutes ~= 1 and "s" or "") .. " ago"
+    elseif diff < 86400 then
+        local hours = math.floor(diff / 3600)
+        return hours .. " hour" .. (hours ~= 1 and "s" or "") .. " ago"
+    else
+        local days = math.floor(diff / 86400)
+        return days .. " day" .. (days ~= 1 and "s" or "") .. " ago"
+    end
+end
+
+-- Export GetTimeAgo for use in other modules
+addon.GetTimeAgo = GetTimeAgo;

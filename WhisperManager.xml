@@ -1,26 +1,36 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <!--
-        WhisperManager - Modular addon structure
-        Load order matters: Core -> Utilities -> UI Components -> Events
+        WhisperManager - Minimal Core Architecture
+        
+        LOAD ORDER:
+        1. Core - Creates addon namespace and global state only
+        2. Utils - General utilities (strings, formatting, notifications, context menus)
+        3. Modules - Data management, commands, dialogs, events
+        4. UI - Window components and settings
+        
+        Events.lua calls Initialize() after all modules load.
     -->
     
-    <!-- Core initialization and utilities -->
+    <!-- CORE: Minimal core - namespace and state only -->
     <Script file="Core.lua"/>
-    <Script file="PlayerUtils.lua"/>
-    <Script file="History.lua"/>
-    <Script file="URLHandler.lua"/>
-    <Script file="CopyChat.lua"/>
     
-    <!-- UI Components -->
-    <Script file="Window.lua"/>
-    <Script file="RecentChats.lua"/>
-    <Script file="HistoryViewer.lua"/>
-    <Script file="FloatingButton.lua"/>
-    <Script file="Settings.lua"/>
+    <!-- UTILITIES: Helper functions -->
+    <Script file="Utils\Utils.lua"/>            <!-- String utils, formatting, notifications -->
+    <Script file="Utils\PlayerUtils.lua"/>      <!-- Player name parsing -->
+    <Script file="Utils\ContextMenu.lua"/>      <!-- Right-click context menus -->
     
-    <!-- Event handlers (must be loaded after all UI components) -->
-    <Script file="Events.lua"/>
+    <!-- MODULES: Feature modules -->
+    <Script file="Modules\Data.lua"/>           <!-- History, recent chats, class cache -->
+    <Script file="Modules\Commands.lua"/>       <!-- Slash command handlers -->
+    <Script file="Modules\Dialogs.lua"/>        <!-- URL copy and chat export dialogs -->
+    <Script file="Modules\RecentChats.lua"/>    <!-- Recent conversations UI -->
     
-    <!-- Main initialization (must be loaded last) -->
-    <Script file="WhisperManager.lua"/>
+    <!-- UI COMPONENTS: Window and interface -->
+    <Script file="UI\Window.lua"/>              <!-- Individual whisper windows -->
+    <Script file="UI\HistoryViewer.lua"/>       <!-- History browser -->
+    <Script file="UI\FloatingButton.lua"/>      <!-- Floating action button -->
+    <Script file="UI\Settings.lua"/>            <!-- Settings panel -->
+    
+    <!-- EVENTS: Event handlers and initialization trigger -->
+    <Script file="Modules\Events.lua"/>         <!-- Whisper events + calls Initialize() -->
 </Ui>

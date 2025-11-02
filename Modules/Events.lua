@@ -23,9 +23,15 @@ function addon:RegisterEvents()
     eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER")
     eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER_INFORM")
     eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+    eventFrame:RegisterEvent("PLAYER_STARTED_MOVING")  -- Detect when player tabs back in
 
     eventFrame:SetScript("OnEvent", function(self, event, ...)
-        if event == "CHAT_MSG_WHISPER" then
+        if event == "PLAYER_STARTED_MOVING" then
+            -- Player moved = window is focused, stop taskbar alert
+            if addon.isFlashing then
+                addon:StopTaskbarAlert()
+            end
+        elseif event == "CHAT_MSG_WHISPER" then
             local message, author, _, _, _, _, _, _, _, _, _, guid = ...
             local playerKey, _, displayName = addon:ResolvePlayerIdentifiers(author)
             if not playerKey then return end
@@ -516,3 +522,10 @@ function addon:SetupContextMenu()
     
     addon:DebugMessage("=== Context Menu Setup Complete ===")
 end
+
+-- ============================================================================
+-- Initialize Addon (called after all modules are loaded)
+-- ============================================================================
+
+-- Start the addon now that all modules (Core, Utils, Data, Settings) are loaded
+addon:Initialize()

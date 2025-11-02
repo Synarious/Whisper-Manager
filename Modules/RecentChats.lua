@@ -34,6 +34,14 @@ function addon:CreateRecentChatsFrame()
     frame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     frame:Hide()
     
+    -- ESC key handling - don't use UISpecialFrames to avoid conflicts
+    frame:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            self:Hide()
+        end
+    end)
+    frame:SetPropagateKeyboardInput(true)
+    
     -- Title
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOP", 0, -10)

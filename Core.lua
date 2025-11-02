@@ -1,31 +1,43 @@
 -- ============================================================================
--- Core.lua - Core addon initialization and utility functions
+-- Core.lua - Minimal addon core (initialization and global state only)
+-- ============================================================================
+-- This file creates the addon namespace and initializes saved variables.
+-- All other functionality is split into specialized modules.
 -- ============================================================================
 
 -- Configuration
-local DEFAULT_DEBUG_MODE = false -- Toggle via settings/slash to show diagnostic messages.
+local DEFAULT_DEBUG_MODE = false
 
--- Create the main addon table
+-- Create the main addon table (global namespace)
 WhisperManager = {};
 local addon = WhisperManager;
 
--- Core properties
-addon.windows = {};
-addon.playerDisplayNames = {};
-addon.debugEnabled = DEFAULT_DEBUG_MODE;
-addon.recentChats = {};  -- Track recent conversations with read status
-addon.nextFrameLevel = 1;  -- Track frame levels for stacking windows
+-- ============================================================================
+-- Addon State (runtime data structures)
+-- ============================================================================
 
+addon.windows = {};              -- Active whisper window frames
+addon.playerDisplayNames = {};   -- Cached display names
+addon.recentChats = {};          -- Recent conversation tracking
+addon.nextFrameLevel = 1;        -- Z-order tracking for windows
+
+-- ============================================================================
 -- Constants
+-- ============================================================================
+
 addon.MAX_HISTORY_LINES = 200;
 addon.CHAT_MAX_LETTERS = 245;
 addon.RECENT_CHAT_EXPIRY = 72 * 60 * 60;  -- 72 hours in seconds
-addon.FOCUSED_ALPHA = 1.0;  -- Full opacity for focused window
-addon.UNFOCUSED_ALPHA = 0.65;  -- Reduced opacity for unfocused windows
+addon.FOCUSED_ALPHA = 1.0;
+addon.UNFOCUSED_ALPHA = 0.65;
 
 -- ============================================================================
--- Debug Functions
+-- Debug System
 -- ============================================================================
+
+addon.debugEnabled = DEFAULT_DEBUG_MODE;
+
+--- Output debug message (only if debug enabled)
 function addon:DebugMessage(...)
     if self.debugEnabled then
         local args = {...}
@@ -36,259 +48,32 @@ function addon:DebugMessage(...)
     end
 end
 
--- Print to chat (always visible, not debug-only)
+--- Print message to chat (always visible)
 function addon:Print(message)
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r " .. tostring(message))
-end
-
--- Trigger a Windows taskbar alert (flash the window)
-function addon:TriggerTaskbarAlert()
-    if not GameTooltip or not GameTooltip:GetParent() then return end
-    
-    -- Flash the game window on the taskbar
-    -- This uses the FlashWindowEx API through WoW's native functionality
-    -- The simplest way is to use RequestBattlenetData or create a temporary visual
-    
-    -- Alternative approach: Use a brief visual effect
-    -- Create a frame that flashes to get the user's attention
-    if not self.alertFrame then
-        self.alertFrame = CreateFrame("Frame", "WhisperManager_AlertFrame", UIParent)
-        self.alertFrame:SetSize(1, 1)
-        self.alertFrame:SetPoint("CENTER")
-        self.alertFrame:SetFrameStrata("TOOLTIP")
-        self.alertFrame:Hide()
-    end
-    
-    local alertFrame = self.alertFrame
-    
-    -- Flash 3 times
-    local flashCount = 0
-    local function Flash()
-        flashCount = flashCount + 1
-        if flashCount % 2 == 1 then
-            alertFrame:Show()
-        else
-            alertFrame:Hide()
-        end
-        
-        if flashCount < 6 then
-            C_Timer.After(0.3, Flash)
-        else
-            alertFrame:Hide()
-        end
-    end
-    
-    Flash()
-    
-    self:DebugMessage("Taskbar alert triggered")
-end
-
--- Trim leading/trailing whitespace from a string; returns nil for non-strings
-function addon:TrimWhitespace(value)
-    if type(value) ~= "string" then return nil end
-    return value:gsub("^%s+", ""):gsub("%s+$", "")
-end
-
--- ---------------------------------------------------------------------------
--- Player Context Menu Helpers
--- ---------------------------------------------------------------------------
-
-local function StripRealmFromName(name)
-    if type(name) ~= "string" then return nil end
-    return name:match("^[^%-]+")
-end
-
-function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnSenderID)
-    -- Support legacy signature where owner isn't provided
-    if type(owner) == "string" or owner == nil then
-        owner, playerName, displayName, isBNet, bnSenderID = nil, owner, playerName, displayName, isBNet
-    end
-    addon:DebugMessage("=== OpenPlayerContextMenu START ===")
-    addon:DebugMessage("playerName:", playerName)
-    addon:DebugMessage("displayName:", displayName)
-    addon:DebugMessage("isBNet:", isBNet)
-    addon:DebugMessage("bnSenderID:", bnSenderID)
-
-    if not playerName and not isBNet then 
-        addon:DebugMessage("ERROR: No playerName and not BNet, returning")
-        return 
-    end
-
-    addon:DebugMessage("MenuUtil available:", MenuUtil ~= nil)
-    addon:DebugMessage("MenuUtil.CreateContextMenu available:", MenuUtil and MenuUtil.CreateContextMenu ~= nil)
-
-    local function menuGenerator(ownerFrame, rootDescription)
-        local label = displayName or StripRealmFromName(playerName) or playerName
-        if label and label ~= "" then
-            rootDescription:CreateTitle(label)
-        end
-
-        if not isBNet and playerName and playerName ~= "" then
-            rootDescription:CreateButton(WHISPER, function() ChatFrame_SendTell(playerName) end)
-            rootDescription:CreateButton(INVITE, function() C_PartyInfo.InviteUnit(playerName) end)
-            local raidTargetButton = rootDescription:CreateButton(RAID_TARGET_ICON)
-            raidTargetButton:CreateButton(RAID_TARGET_NONE, function() SetRaidTarget(playerName, 0) end)
-            for i = 1, 8 do
-                raidTargetButton:CreateButton(_G["RAID_TARGET_" .. i], function() SetRaidTarget(playerName, i) end)
-            end
-            rootDescription:CreateButton(ADD_FRIEND, function() C_FriendList.AddFriend(playerName) end)
-            rootDescription:CreateButton(PLAYER_REPORT, function()
-                local guid = C_PlayerInfo.GUIDFromPlayerName(playerName)
-                if guid then C_ReportSystem.OpenReportPlayerDialog(guid, playerName) end
-            end)
-        elseif isBNet and bnSenderID then
-            if ChatFrame_SendBNetTell then
-                rootDescription:CreateButton(WHISPER, function() ChatFrame_SendBNetTell(displayName or playerName) end)
-            end
-            if BNInviteFriend then
-                rootDescription:CreateButton(INVITE, function() BNInviteFriend(bnSenderID) end)
-            end
-        end
-
-        rootDescription:CreateButton(CANCEL, function() end)
-    end
-
-    -- Attempt to create and show the modern MenuUtil menu, preferring the provided owner.
-    local createOwner = owner or UIParent
-    local menu = nil
-    local ok1, err1 = pcall(function() menu = MenuUtil.CreateContextMenu(createOwner, menuGenerator) end)
-    addon:DebugMessage("Menu create (owner) pcall ok:", ok1, "owner:", createOwner and createOwner:GetName() or "UIParent", "menu created:", menu ~= nil, "err:", err1)
-
-    local shown = false
-    if menu and type(menu.Show) == "function" then
-        local okShow = pcall(function() menu:Show() end)
-        shown = okShow
-        addon:DebugMessage("Called menu:Show(), success:", okShow)
-    end
-
-    -- Try creating with mouse owner if not shown
-    if not shown then
-        local ok2, mouseFrame = pcall(function() return GetMouseFocus() end)
-        if ok2 and mouseFrame then
-            local altMenu = nil
-            local ok3, err3 = pcall(function() altMenu = MenuUtil.CreateContextMenu(mouseFrame, menuGenerator) end)
-            addon:DebugMessage("Menu create (mouse owner) pcall ok:", ok3, "altMenu created:", altMenu ~= nil, "err:", err3)
-            if altMenu and type(altMenu.Show) == "function" then
-                local okShow2 = pcall(function() altMenu:Show() end)
-                shown = okShow2
-                addon:DebugMessage("Called altMenu:Show(), success:", okShow2)
-            end
-        else
-            addon:DebugMessage("GetMouseFocus not available or returned nil; owner fallback skipped")
-        end
-    end
-
-    -- Fallback to EasyMenu if modern menu didn't show
-    if not shown then
-        addon:DebugMessage("Modern menu not shown; attempting EasyMenu fallback")
-        if type(EasyMenu) == "function" then
-            local menuList = {}
-            if not isBNet and playerName and playerName ~= "" then
-                table.insert(menuList, { text = WHISPER, func = function() ChatFrame_SendTell(playerName) end })
-                table.insert(menuList, { text = INVITE, func = function() C_PartyInfo.InviteUnit(playerName) end })
-                table.insert(menuList, { text = ADD_FRIEND, func = function() C_FriendList.AddFriend(playerName) end })
-            elseif isBNet and bnSenderID then
-                if ChatFrame_SendBNetTell then
-                    table.insert(menuList, { text = WHISPER, func = function() ChatFrame_SendBNetTell(displayName or playerName) end })
-                end
-            end
-            table.insert(menuList, { text = CANCEL, func = function() end })
-            if not _G.WhisperManager_EasyMenuFrame then
-                _G.WhisperManager_EasyMenuFrame = CreateFrame("Frame", "WhisperManager_EasyMenuFrame", UIParent, "UIDropDownMenuTemplate")
-            end
-            EasyMenu(menuList, _G.WhisperManager_EasyMenuFrame, "cursor", 0, 0, "MENU")
-            addon:DebugMessage("EasyMenu displayed (fallback)")
-        else
-            addon:DebugMessage("EasyMenu not available; cannot show fallback menu")
-        end
-    end
-
-    addon:DebugMessage("=== OpenPlayerContextMenu END ===")
-end
-
-
--- Format message to detect and colorize emotes (*text*) and speech ("text")
--- IMPORTANT: This function must preserve hyperlinks (|H....|h....|h sequences)
-function addon:FormatEmotesAndSpeech(message)
-    if not message or message == "" then return message end
-    
-    -- Get WoW's emote color (orange)
-    local emoteColor = ChatTypeInfo["EMOTE"]
-    local emoteHex = string.format("|cff%02x%02x%02x", emoteColor.r * 255, emoteColor.g * 255, emoteColor.b * 255)
-    
-    -- Get WoW's say color (white)
-    local sayColor = ChatTypeInfo["SAY"]
-    local sayHex = string.format("|cff%02x%02x%02x", sayColor.r * 255, sayColor.g * 255, sayColor.b * 255)
-    
-    -- Detect and colorize emotes surrounded by asterisks: *emote*
-    -- Use non-greedy match and avoid matching inside hyperlinks
-    message = message:gsub("(%*[^%*|]+%*)", function(emote)
-        return emoteHex .. emote .. "|r"
-    end)
-    
-    -- Detect and colorize speech surrounded by quotes: "speech"
-    -- Use non-greedy match and avoid matching inside hyperlinks
-    message = message:gsub('("[^"|]+")' , function(speech)
-        return sayHex .. speech .. "|r"
-    end)
-    
-    return message
-end
-
--- ============================================================================
--- Slash Command Handling
--- ============================================================================
-
-function addon:HandleSlashCommand(message)
-    local input = self:TrimWhitespace(message or "") or ""
-    if input == "" or input:lower() == "help" then
-        self:Print("Usage:")
-        self:Print("/wm <player> - Open a WhisperManager window.")
-        self:Print("/wm debug [on|off|toggle] - Control diagnostic chat output.")
-        self:Print("/wm resetwindows - Reset saved window positions.")
-        self:Print("/wm reset_all_data - Clear all saved data (history, windows, config).")
-        return
-    end
-
-    local command, rest = input:match("^(%S+)%s*(.-)$")
-    command = command and command:lower() or ""
-    if command == "debug" then
-        local directive = rest and rest:lower() or ""
-        if directive == "on" or directive == "1" or directive == "true" then
-            self:SetDebugEnabled(true)
-        elseif directive == "off" or directive == "0" or directive == "false" then
-            self:SetDebugEnabled(false)
-        else
-            self:SetDebugEnabled(not self.debugEnabled)
-        end
-    elseif command == "resetwindows" then
-        self:ResetWindowPositions()
-    elseif command == "reset_all_data" then
-        WhisperManager_HistoryDB = {}
-        WhisperManager_WindowDB = {}
-        WhisperManager_Config = {}
-        WhisperManager_RecentChats = {}
-        self:Print("|cffff0000All WhisperManager data has been cleared!|r")
-        self:Print("Please /reload to apply changes.")
-    else
-        if not self:OpenConversation(input) then
-            self:Print(string.format("Unable to open a whisper window for '%s'.", input))
-        end
-    end
 end
 
 -- ============================================================================
 -- Initialization
 -- ============================================================================
 
-function addon:InitializeCore()
-    -- Initialize databases
+--- Initialize the addon (called from Events.lua after all modules load)
+function addon:Initialize()
+    -- Initialize saved variable tables
     if type(WhisperManager_HistoryDB) ~= "table" then
         WhisperManager_HistoryDB = {}
     end
     
     if type(WhisperManager_RecentChats) ~= "table" then
         WhisperManager_RecentChats = {}
+    end
+    
+    if type(WhisperManager_WindowDB) ~= "table" then
+        WhisperManager_WindowDB = {}
+    end
+    
+    if type(WhisperManager_Config) ~= "table" then
+        WhisperManager_Config = {}
     end
 
     -- Migrate old history format if needed
@@ -317,49 +102,50 @@ function addon:InitializeCore()
         WhisperManager_HistoryDB = migrated
     end
 
-    -- Load display names
+    -- Load display names from history
     for key, history in pairs(WhisperManager_HistoryDB) do
         if key ~= "__schema" and type(history) == "table" and history.__display then
             addon.playerDisplayNames[key] = history.__display
         end
     end
 
-    -- Initialize config
-    if type(WhisperManager_Config) ~= "table" then
-        WhisperManager_Config = {}
-    end
+    -- Load debug setting
     if WhisperManager_Config.debug == nil then
         WhisperManager_Config.debug = DEFAULT_DEBUG_MODE
     end
     addon.debugEnabled = not not WhisperManager_Config.debug
 
-    -- Initialize window DB
-    if type(WhisperManager_WindowDB) ~= "table" then
-        WhisperManager_WindowDB = {}
+    -- Register slash commands (defined in Commands.lua)
+    if addon.RegisterSlashCommands then
+        addon:RegisterSlashCommands()
     end
 
-    -- Register slash commands
-    SLASH_WHISPERMANAGER1 = "/wm"
-    SLASH_WHISPERMANAGER2 = "/whispermanager"
-    SlashCmdList.WHISPERMANAGER = function(msg)
-        addon:HandleSlashCommand(msg)
+    -- Load settings (defined in Settings.lua)
+    if addon.LoadSettings then
+        addon.settings = addon:LoadSettings()
+        self:DebugMessage("Settings loaded in Initialize():")
+        self:DebugMessage("  addon.settings.spawnAnchorX =", addon.settings.spawnAnchorX)
+        self:DebugMessage("  addon.settings.spawnAnchorY =", addon.settings.spawnAnchorY)
+        self:DebugMessage("  addon.settings.windowSpacing =", addon.settings.windowSpacing)
     end
-
-    -- Load settings
-    addon.settings = addon:LoadSettings()
     
-    -- Hook ChatEdit_InsertLink to support shift-clicking items/achievements into our edit boxes
+    -- Hook shift-click item linking into our edit boxes
     local originalChatEdit_InsertLink = ChatEdit_InsertLink
     ChatEdit_InsertLink = function(link)
         if addon.activeEditBox and addon.activeEditBox:IsVisible() and addon.activeEditBox:HasFocus() then
-            -- Insert the link into our active WhisperManager edit box
             addon.activeEditBox:Insert(link)
             return true
         else
-            -- Fall back to default behavior
             return originalChatEdit_InsertLink(link)
         end
     end
 
-    self:DebugMessage("Core initialized.");
+    -- Register events (defined in Events.lua)
+    if addon.RegisterEvents then
+        addon:RegisterEvents()
+    end
+
+    self:DebugMessage("WhisperManager initialized.");
 end
+
+-- Note: Initialize() is called from Events.lua after all modules are loaded

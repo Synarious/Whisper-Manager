@@ -11,20 +11,70 @@ local addon = WhisperManager;
 function addon:FocusWindow(window)
     if not window then return end
     
-    -- Unfocus all other windows
+    -- Unfocus all other windows - move them to MEDIUM strata
     for _, win in pairs(self.windows) do
         if win ~= window and win:IsShown() then
             win:SetAlpha(self.UNFOCUSED_ALPHA)
+            win:SetFrameStrata("MEDIUM")
+            -- Update all child frame stratas to match
+            if win.InputContainer then
+                win.InputContainer:SetFrameStrata("MEDIUM")
+            end
+            if win.closeBtn then
+                win.closeBtn:SetFrameStrata("MEDIUM")
+            end
+            if win.copyBtn then
+                win.copyBtn:SetFrameStrata("MEDIUM")
+            end
+            if win.resizeBtn then
+                win.resizeBtn:SetFrameStrata("MEDIUM")
+            end
         end
     end
     
-    -- Focus this window
+    -- Focus this window - bring to DIALOG strata
     window:SetAlpha(self.FOCUSED_ALPHA)
+    window:SetFrameStrata("DIALOG")
+    
+    -- Update all child frame stratas to match
+    if window.InputContainer then
+        window.InputContainer:SetFrameStrata("DIALOG")
+    end
+    if window.closeBtn then
+        window.closeBtn:SetFrameStrata("DIALOG")
+    end
+    if window.copyBtn then
+        window.copyBtn:SetFrameStrata("DIALOG")
+    end
+    if window.resizeBtn then
+        window.resizeBtn:SetFrameStrata("DIALOG")
+    end
     
     -- Bring to front with new frame level
     self.nextFrameLevel = self.nextFrameLevel + 10
     window:SetFrameLevel(self.nextFrameLevel)
     window:Raise()
+end
+
+-- ============================================================================
+-- Window Closing
+-- ============================================================================
+
+--- Close all open whisper windows
+function addon:CloseAllWindows()
+    local windowsClosed = 0
+    for playerKey, win in pairs(self.windows) do
+        if win and win:IsShown() then
+            win:Hide()
+            windowsClosed = windowsClosed + 1
+        end
+    end
+    
+    if windowsClosed > 0 then
+        self:DebugMessage("Closed " .. windowsClosed .. " window(s)")
+    end
+    
+    return windowsClosed > 0
 end
 
 -- ============================================================================
@@ -126,12 +176,9 @@ function addon:OpenConversation(playerName)
     if win.title then
         win.title:SetText("Whisper: " .. (displayName or playerTarget))
     end
-    self:LoadWindowPosition(win)
     win:Show()
     self:FocusWindow(win)
-    if win.Input then
-        win.Input:SetFocus()
-    end
+    -- Don't auto-focus input - let user click to focus
     
     -- Mark as read and update recent chats
     self:UpdateRecentChat(playerKey, displayName, false)
@@ -173,12 +220,9 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     if win.title then
         win.title:SetText("BNet Whisper: " .. displayName)
     end
-    self:LoadWindowPosition(win)
     win:Show()
     self:FocusWindow(win)
-    if win.Input then
-        win.Input:SetFocus()
-    end
+    -- Don't auto-focus input - let user click to focus
     
     -- Mark as read and update recent chats
     self:UpdateRecentChat(playerKey, displayName, true)
@@ -223,12 +267,56 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Create new window
     local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
     local win = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
-    
-    -- Create new window
-    local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
-    local win = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
     win:SetSize(400, 300)
-    win:SetPoint("CENTER")
+    
+    -- Calculate spawn position based on settings and number of existing windows
+    -- Ensure settings are loaded first
+    if not addon.settings then
+        addon.settings = addon:LoadSettings()
+    end
+    
+    local spawnX, spawnY
+    
+    -- Find the currently focused window (highest frame level)
+    local focusedWindow = nil
+    local highestLevel = 0
+    for _, window in pairs(addon.windows) do
+        if window and window:IsShown() then
+            local level = window:GetFrameLevel()
+            if level > highestLevel then
+                highestLevel = level
+                focusedWindow = window
+            end
+        end
+    end
+    
+    if focusedWindow then
+        -- Position below the focused window
+        local _, _, _, focusedX, focusedY = focusedWindow:GetPoint(1)
+        spawnX = focusedX or 0
+        spawnY = (focusedY or 0) - 200  -- 200px below focused window
+        
+        addon:DebugMessage("Spawning below focused window at X:", spawnX, "Y:", spawnY)
+        
+        -- Check bounds - make sure window won't spawn off bottom of screen
+        local screenHeight = UIParent:GetHeight()
+        local windowHeight = 300  -- Default window height
+        local minY = -(screenHeight / 2) + windowHeight / 2 + 50  -- 50px margin from bottom
+        
+        if spawnY < minY then
+            -- Window would be off-screen, use default anchor instead
+            addon:DebugMessage("Would spawn off-screen (minY:", minY, "), using default anchor")
+            spawnX = addon:GetSetting("spawnAnchorX") or 0
+            spawnY = addon:GetSetting("spawnAnchorY") or 200
+        end
+    else
+        -- No focused window, use default anchor point
+        spawnX = addon:GetSetting("spawnAnchorX") or 0
+        spawnY = addon:GetSetting("spawnAnchorY") or 200
+        addon:DebugMessage("No focused window, using default anchor X:", spawnX, "Y:", spawnY)
+    end
+    
+    win:SetPoint("CENTER", UIParent, "CENTER", spawnX, spawnY)
     win:SetFrameStrata("DIALOG")
     win:SetMovable(true)
     win:SetResizable(true)
@@ -251,8 +339,15 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end)
     win:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        addon:SaveWindowPosition(self)
     end)
+    
+    -- ESC key handling to close all whisper windows at once
+    win:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            addon:CloseAllWindows()
+        end
+    end)
+    win:SetPropagateKeyboardInput(true)
     
     -- Focus window on mouse down, but don't consume clicks meant for History frame
     -- WIM method: Check if mouse is over history frame first
@@ -278,7 +373,6 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         
         -- Set flag to prevent hooks from triggering during window close
         addon.__closingWindow = true
-        addon:SaveWindowPosition(self)
         
         -- Refocus another visible window if one exists
         for _, w in pairs(addon.windows) do
@@ -302,10 +396,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
             self.InputContainer:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, 1)
         end
         
-        addon:LoadWindowPosition(self)
-        if self.Input then
-            self.Input:SetFocus()
-        end
+        -- Don't auto-focus input - let user click to focus
         
         -- Focus this window when shown
         addon:FocusWindow(self)
@@ -314,6 +405,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         if self.playerKey then
             addon:MarkChatAsRead(self.playerKey)
         end
+        
+        -- ESC key handling is done via OnKeyDown script below
     end)
     
     -- Mark messages as read when mouse enters the window
@@ -379,7 +472,6 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end)
     win.resizeBtn:SetScript("OnMouseUp", function()
         win:StopMovingOrSizing()
-        addon:SaveWindowPosition(win)
     end)
     
     -- History ScrollingMessageFrame (now fills the entire window)
@@ -542,7 +634,6 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     -- Store window and load history
     self.windows[playerKey] = win
-    addon:LoadWindowPosition(win)
     addon:LoadWindowHistory(win)
     
     return win
@@ -778,46 +869,6 @@ end
 -- ============================================================================
 -- Window Position Management
 -- ============================================================================
-
-function addon:SaveWindowPosition(window)
-    if not window then return end
-    if not WhisperManager_Config then WhisperManager_Config = {} end
-    if not WhisperManager_Config.windowPositions then
-        WhisperManager_Config.windowPositions = {}
-    end
-    
-    local playerKey = window.playerKey
-    local point, _, relativePoint, xOfs, yOfs = window:GetPoint(1)
-    local width, height = window:GetSize()
-    
-    if point then
-        WhisperManager_Config.windowPositions[playerKey] = {
-            point = point,
-            relativePoint = relativePoint,
-            xOfs = xOfs,
-            yOfs = yOfs,
-            width = width,
-            height = height,
-        }
-    end
-end
-
-function addon:LoadWindowPosition(window)
-    if not window then return end
-    if not WhisperManager_Config or not WhisperManager_Config.windowPositions then return end
-    
-    local playerKey = window.playerKey
-    local pos = WhisperManager_Config.windowPositions[playerKey]
-    
-    if pos then
-        window:ClearAllPoints()
-        window:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
-        
-        if pos.width and pos.height then
-            window:SetSize(pos.width, pos.height)
-        end
-    end
-end
 
 -- ============================================================================
 -- Window Show/Hide Management
