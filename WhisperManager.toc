@@ -1,4 +1,4 @@
-## Interface: 100207
+## Interface: 110007
 ## Title: WhisperManager
 ## Notes: Whisper addon with window managment, editbox improvements and cross-character history without dependencies or complexity! 
 ## Author: Synarion (Cephrax)

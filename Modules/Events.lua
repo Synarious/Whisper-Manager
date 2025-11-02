@@ -11,22 +11,25 @@ local addon = WhisperManager;
 function addon:RegisterEvents()
     -- Prevent duplicate event registrations
     if addon.__eventFrame then
-        addon:DebugMessage("Events already registered, skipping.")
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Events already registered, skipping.")
         return
     end
     
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Creating event frame and registering events...")
+    
     local eventFrame = CreateFrame("Frame")
     addon.__eventFrame = eventFrame
-    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    eventFrame:RegisterEvent("CHAT_MSG_WHISPER")
-    eventFrame:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
-    eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER")
-    eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER_INFORM")
-    eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
-    eventFrame:RegisterEvent("PLAYER_STARTED_MOVING")  -- Detect when player tabs back in
-
+    
     eventFrame:SetScript("OnEvent", function(self, event, ...)
-        if event == "PLAYER_STARTED_MOVING" then
+        if event == "ADDON_LOADED" then
+            local addonName = ...
+            if addonName == "WhisperManager" then
+                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Loaded successfully!")
+                -- Saved variables are now loaded, initialize the addon
+                addon:Initialize()
+                eventFrame:UnregisterEvent("ADDON_LOADED") -- Only need this once
+            end
+        elseif event == "PLAYER_STARTED_MOVING" then
             -- Player moved = window is focused, stop taskbar alert
             if addon.isFlashing then
                 addon:StopTaskbarAlert()
@@ -166,7 +169,15 @@ function addon:RegisterEvents()
         end
     end)
     
-    addon:DebugMessage("Events registered.");
+    -- Register all events
+    eventFrame:RegisterEvent("ADDON_LOADED")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:RegisterEvent("CHAT_MSG_WHISPER")
+    eventFrame:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
+    eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER")
+    eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER_INFORM")
+    eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
+    eventFrame:RegisterEvent("PLAYER_STARTED_MOVING")
 end
 
 -- ============================================================================
@@ -524,8 +535,11 @@ function addon:SetupContextMenu()
 end
 
 -- ============================================================================
--- Initialize Addon (called after all modules are loaded)
+-- Initialize Addon (called after saved variables are loaded)
 -- ============================================================================
 
--- Start the addon now that all modules (Core, Utils, Data, Settings) are loaded
-addon:Initialize()
+-- Initialize() is now called from the ADDON_LOADED event handler above
+-- This ensures saved variables are loaded before we try to read settings
+
+-- Start event registration when this file loads
+addon:RegisterEvents()

@@ -47,14 +47,34 @@ function addon:CreateRecentChatsFrame()
     frame.title:SetPoint("TOP", 0, -10)
     frame.title:SetText("Recent Chats")
     
+    -- Combat status indicator
+    frame.combatWarning = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.combatWarning:SetPoint("TOP", 0, -30)
+    frame.combatWarning:SetTextColor(1, 0.5, 0)
+    frame.combatWarning:SetText("|cffff8800⚔ In Combat - New windows queued|r")
+    frame.combatWarning:Hide()
+    
+    -- Update combat status on show and periodically
+    frame:SetScript("OnUpdate", function(self)
+        if InCombatLockdown() then
+            if not self.combatWarning:IsShown() then
+                self.combatWarning:Show()
+            end
+        else
+            if self.combatWarning:IsShown() then
+                self.combatWarning:Hide()
+            end
+        end
+    end)
+    
     -- Close button
     frame.closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     frame.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     frame.closeBtn:SetSize(24, 24)
     
-    -- Scroll frame for chat list
+    -- Scroll frame for chat list (adjust top to account for combat warning)
     frame.scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    frame.scrollFrame:SetPoint("TOPLEFT", 10, -40)
+    frame.scrollFrame:SetPoint("TOPLEFT", 10, -50)
     frame.scrollFrame:SetPoint("BOTTOMRIGHT", -30, 10)
     
     frame.scrollChild = CreateFrame("Frame", nil, frame.scrollFrame)
@@ -193,6 +213,7 @@ function addon:RefreshRecentChats()
         
         -- Click to open
         btn:SetScript("OnClick", function()
+            local success = false
             if chat.isBNet then
                 -- Extract BattleTag from key
                 local battleTag = chat.playerKey:match("bnet_(.+)")
@@ -202,7 +223,7 @@ function addon:RefreshRecentChats()
                     for i = 1, numBNetTotal do
                         local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
                         if accountInfo and accountInfo.battleTag == battleTag then
-                            addon:OpenBNetConversation(accountInfo.bnetAccountID, chat.displayName)
+                            success = addon:OpenBNetConversation(accountInfo.bnetAccountID, chat.displayName)
                             break
                         end
                     end
@@ -210,9 +231,13 @@ function addon:RefreshRecentChats()
             else
                 -- Extract player name from key
                 local playerName = chat.displayName
-                addon:OpenConversation(playerName)
+                success = addon:OpenConversation(playerName)
             end
-            addon.recentChatsFrame:Hide()
+            -- Only close the menu if the window was successfully opened/shown
+            -- If in combat, the operation is queued and success=false, so keep menu open
+            if success then
+                addon.recentChatsFrame:Hide()
+            end
         end)
         
         yOffset = yOffset + 45

@@ -5,117 +5,26 @@
 local addon = WhisperManager;
 
 -- ============================================================================
--- Combat Lockdown Queue (WIM Method)
--- ============================================================================
-
-local combatQueue = {};
-
--- Create combat event handler
-local combatFrame = CreateFrame("Frame");
-combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED"); -- Entering combat
-combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED");  -- Leaving combat
-combatFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_REGEN_ENABLED" then
-        -- Process queued operations after combat ends
-        local queueCount = #combatQueue
-        if queueCount > 0 then
-            addon:DebugMessage("Combat ended - processing " .. queueCount .. " queued operations")
-            addon:Print("|cff00ff00Combat ended - opening queued whisper windows...|r")
-            for _, queuedFunc in ipairs(combatQueue) do
-                local success, err = pcall(queuedFunc)
-                if not success then
-                    addon:DebugMessage("Error processing combat queue:", err)
-                end
-            end
-            wipe(combatQueue)
-        end
-    elseif event == "PLAYER_REGEN_DISABLED" then
-        addon:DebugMessage("Entered combat - queueing frame operations")
-    end
-end)
-
--- ============================================================================
 -- Window Focus Management
 -- ============================================================================
 
 function addon:FocusWindow(window)
     if not window then return end
     
-    -- Queue operation if in combat (WIM method)
-    if InCombatLockdown() then
-        self:DebugMessage("In combat - queueing FocusWindow operation")
-        table.insert(combatQueue, function() addon:FocusWindow(window) end)
-        return
-    end
-    
-    -- Unfocus all other windows - move them to MEDIUM strata
+    -- Unfocus all other windows
     for _, win in pairs(self.windows) do
         if win ~= window and win:IsShown() then
             win:SetAlpha(self.UNFOCUSED_ALPHA)
-            win:SetFrameStrata("MEDIUM")
-            -- Update all child frame stratas to match
-            if win.InputContainer then
-                win.InputContainer:SetFrameStrata("MEDIUM")
-            end
-            if win.closeBtn then
-                win.closeBtn:SetFrameStrata("MEDIUM")
-            end
-            if win.copyBtn then
-                win.copyBtn:SetFrameStrata("MEDIUM")
-            end
-            if win.resizeBtn then
-                win.resizeBtn:SetFrameStrata("MEDIUM")
-            end
         end
     end
     
-    -- Focus this window - bring to DIALOG strata
+    -- Focus this window
     window:SetAlpha(self.FOCUSED_ALPHA)
-    window:SetFrameStrata("DIALOG")
     
-    -- Update all child frame stratas to match
-    if window.InputContainer then
-        window.InputContainer:SetFrameStrata("DIALOG")
-    end
-    if window.copyBtn then
-        window.copyBtn:SetFrameStrata("DIALOG")
-    end
-    if window.resizeBtn then
-        window.resizeBtn:SetFrameStrata("DIALOG")
-    end
-    
-    -- Bring to front with new frame level (also protected during combat)
+    -- Bring to front with new frame level
     self.nextFrameLevel = self.nextFrameLevel + 10
     window:SetFrameLevel(self.nextFrameLevel)
-    
-    -- Set close button to highest level to prevent overlap
-    if window.closeBtn then
-        window.closeBtn:SetFrameStrata("DIALOG")
-        window.closeBtn:SetFrameLevel(self.nextFrameLevel + 100)
-    end
-    
     window:Raise()
-end
-
--- ============================================================================
--- Window Closing
--- ============================================================================
-
---- Close all open whisper windows
-function addon:CloseAllWindows()
-    local windowsClosed = 0
-    for playerKey, win in pairs(self.windows) do
-        if win and win:IsShown() then
-            win:Hide()
-            windowsClosed = windowsClosed + 1
-        end
-    end
-    
-    if windowsClosed > 0 then
-        self:DebugMessage("Closed " .. windowsClosed .. " window(s)")
-    end
-    
-    return windowsClosed > 0
 end
 
 -- ============================================================================
@@ -131,76 +40,66 @@ local function UpdateInputHeight(inputBox)
     
     C_Timer.After(0, function()
         if not inputBox:IsVisible() then return end
-        
-    local text = inputBox:GetText() or ""
-    local font, fontSize, flags = inputBox:GetFont()
-    fontSize = fontSize or 14
+        local text = inputBox:GetText() or ""
+        local font, fontSize, flags = inputBox:GetFont()
+        fontSize = fontSize or 14
 
-    -- Compute dynamic padding based on font size so large fonts get more breathing room.
-    -- Keep a sensible minimum of 7px (historical default).
-    local topBottomPadding = math.max(7, math.floor(fontSize / 2))
+        -- Dynamic top/bottom padding based on font size (minimum 7px)
+        local topBottomPadding = math.max(7, math.floor(fontSize / 2))
 
-    local minInputHeight = math.ceil(fontSize) + 4
-    local minContainerHeight = minInputHeight + (2 * topBottomPadding)  -- top + bottom padding
-        
-        if text == "" then
-            -- Empty text: size container to minimum and anchor the editbox to fill with padding
-            container:SetHeight(minContainerHeight)
-            inputBox.__wm_topBottomPadding = topBottomPadding
-            inputBox:ClearAllPoints()
-            inputBox:SetPoint("TOPLEFT", container, "TOPLEFT", 8, -topBottomPadding)
-            inputBox:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, topBottomPadding)
-            return
+        local minInputHeight = math.ceil(fontSize) + 4
+        local minContainerHeight = minInputHeight + (2 * topBottomPadding)
+
+            if text == "" then
+                -- Empty text: size container to minimum and anchor the editbox to fill with padding
+                container:SetHeight(minContainerHeight)
+                inputBox.__wm_topBottomPadding = topBottomPadding
+                inputBox:ClearAllPoints()
+                inputBox:SetPoint("TOPLEFT", container, "TOPLEFT", 8, -topBottomPadding)
+                inputBox:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, topBottomPadding)
+                return
         end
-        
+
         -- Create a hidden FontString for measurement if it doesn't exist
         if not inputBox.measureString then
             inputBox.measureString = inputBox:CreateFontString(nil, "OVERLAY")
             inputBox.measureString:Hide()
         end
-        
-        -- Get the actual width available for text
-        -- Account for text insets if set, otherwise the EditBox width is the usable width
+
+        -- Get the actual width available for text and measure
         local left, right = inputBox:GetTextInsets()
         local usableWidth = inputBox:GetWidth()
         if left and right then
             usableWidth = usableWidth - left - right
         end
-        
-        -- Ensure we have a valid width
-        if usableWidth <= 0 then
-            usableWidth = 100  -- Fallback minimum width
-        end
-        
-    inputBox.measureString:SetFont(font, fontSize, flags)
-    inputBox.measureString:SetWidth(usableWidth)
-    inputBox.measureString:SetText(text)
+        if usableWidth <= 0 then usableWidth = 100 end
 
-    -- Prefer the measured line height but ensure it's at least the font size.
-    local measuredLineHeight = inputBox.measureString:GetLineHeight()
-    local lineHeight = math.max(measuredLineHeight or 0, fontSize)
-    local numLines = inputBox.measureString:GetNumLines() or 1
+        inputBox.measureString:SetFont(font, fontSize, flags)
+        inputBox.measureString:SetWidth(usableWidth)
+        inputBox.measureString:SetText(text)
+
+        local measuredLineHeight = inputBox.measureString:GetLineHeight()
+        local lineHeight = math.max(measuredLineHeight or 0, fontSize)
+        local numLines = inputBox.measureString:GetNumLines() or 1
         if numLines < 1 then numLines = 1 end
-        
-    local textHeight = math.ceil(numLines * lineHeight)
-        
+
+        local textHeight = math.ceil(numLines * lineHeight)
+
     -- Cap at reasonable max height (now 20 lines)
     local maxTextHeight = 20 * lineHeight
-    if textHeight > maxTextHeight then textHeight = maxTextHeight end
-        
-        -- Ensure minimum height (single line + small padding)
+        if textHeight > maxTextHeight then textHeight = maxTextHeight end
+
         if textHeight < minInputHeight then textHeight = minInputHeight end
-        
-        -- Container height = input height + dynamic padding (top + bottom)
+
         local containerHeight = textHeight + (2 * topBottomPadding)
         if containerHeight < minContainerHeight then containerHeight = minContainerHeight end
 
-        -- Size container and anchor the editbox to fill the internal area with symmetric padding
-        container:SetHeight(containerHeight)
-        inputBox.__wm_topBottomPadding = topBottomPadding
-        inputBox:ClearAllPoints()
-        inputBox:SetPoint("TOPLEFT", container, "TOPLEFT", 8, -topBottomPadding)
-        inputBox:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, topBottomPadding)
+            -- Size container and anchor the editbox to fill the internal area with symmetric padding
+            container:SetHeight(containerHeight)
+            inputBox.__wm_topBottomPadding = topBottomPadding
+            inputBox:ClearAllPoints()
+            inputBox:SetPoint("TOPLEFT", container, "TOPLEFT", 8, -topBottomPadding)
+            inputBox:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, topBottomPadding)
     end)
 end
 
@@ -225,15 +124,6 @@ function addon:OpenConversation(playerName)
     displayName = self:GetDisplayNameFromKey(playerKey)
 
     local win = self.windows[playerKey]
-    
-    -- If window doesn't exist and we're in combat, queue the creation
-    if not win and InCombatLockdown() then
-        self:DebugMessage("In combat - queueing window creation (messages will display after combat)")
-        self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
-        table.insert(combatQueue, function() addon:OpenConversation(playerName) end)
-        return false
-    end
-    
     if not win then
         self:DebugMessage("No existing window. Calling CreateWindow.")
         win = self:CreateWindow(playerKey, playerTarget, displayName, false)
@@ -243,22 +133,21 @@ function addon:OpenConversation(playerName)
         end
         self.windows[playerKey] = win
     else
-        -- Window exists - update it (works even in combat)
         win.playerTarget = playerTarget
         win.displayName = displayName
         win.playerKey = playerKey
     end
 
-    -- Update display (works in combat for existing windows)
     self:DisplayHistory(win, playerKey)
     if win.title then
         win.title:SetText("Whisper: " .. (displayName or playerTarget))
     end
+    self:LoadWindowPosition(win)
     win:Show()
-    
-    -- Focus window (will queue strata changes if in combat)
     self:FocusWindow(win)
-    -- Don't auto-focus input - let user click to focus
+    if win.Input then
+        win.Input:SetFocus()
+    end
     
     -- Mark as read and update recent chats
     self:UpdateRecentChat(playerKey, displayName, false)
@@ -281,15 +170,6 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     displayName = accountInfo.accountName or displayName or accountInfo.battleTag
     
     local win = self.windows[playerKey]
-    
-    -- If window doesn't exist and we're in combat, queue the creation
-    if not win and InCombatLockdown() then
-        self:DebugMessage("In combat - queueing BNet window creation (messages will display after combat)")
-        self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
-        table.insert(combatQueue, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
-        return false
-    end
-    
     if not win then
         self:DebugMessage("No existing BNet window. Calling CreateWindow.")
         win = self:CreateWindow(playerKey, bnSenderID, displayName, true)
@@ -309,9 +189,12 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     if win.title then
         win.title:SetText("BNet Whisper: " .. displayName)
     end
+    self:LoadWindowPosition(win)
     win:Show()
     self:FocusWindow(win)
-    -- Don't auto-focus input - let user click to focus
+    if win.Input then
+        win.Input:SetFocus()
+    end
     
     -- Mark as read and update recent chats
     self:UpdateRecentChat(playerKey, displayName, true)
@@ -357,72 +240,11 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
     local win = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
     
-    -- Ensure settings are loaded first
-    if not addon.settings then
-        addon.settings = addon:LoadSettings()
-    end
-    
-    -- Set default window size from settings
-    local defaultWidth = addon:GetSetting("defaultWindowWidth") or 400
-    local defaultHeight = addon:GetSetting("defaultWindowHeight") or 300
-    win:SetSize(defaultWidth, defaultHeight)
-    
-    local spawnX, spawnY
-    
-    -- Find the currently focused window (highest frame level)
-    local focusedWindow = nil
-    local highestLevel = 0
-    for _, window in pairs(addon.windows) do
-        if window and window:IsShown() then
-            local level = window:GetFrameLevel()
-            if level > highestLevel then
-                highestLevel = level
-                focusedWindow = window
-            end
-        end
-    end
-    
-    if focusedWindow then
-        -- Position 300px below and 150px left/right of the focused window (alternating)
-        local _, _, _, focusedX, focusedY = focusedWindow:GetPoint(1)
-        focusedX = focusedX or 0
-        focusedY = focusedY or 0
-        
-        -- Increment cascade counter and determine horizontal offset
-        addon.cascadeCounter = addon.cascadeCounter + 1
-        local horizontalOffset = (addon.cascadeCounter % 2 == 0) and 150 or -150
-        
-        spawnX = focusedX + horizontalOffset
-        spawnY = focusedY - 300  -- 300px below focused window
-        
-        addon:DebugMessage("Spawning relative to focused window - Offset:", horizontalOffset, "at X:", spawnX, "Y:", spawnY)
-        
-        -- Check screen boundaries
-        local screenWidth = UIParent:GetWidth()
-        local screenHeight = UIParent:GetHeight()
-        local minX = -(screenWidth / 2) + defaultWidth / 2 + 50  -- 50px margin from left
-        local maxX = (screenWidth / 2) - defaultWidth / 2 - 50   -- 50px margin from right
-        local minY = -(screenHeight / 2) + defaultHeight / 2 + 50  -- 50px margin from bottom
-        
-        -- Clamp to screen boundaries
-        if spawnX < minX then spawnX = minX end
-        if spawnX > maxX then spawnX = maxX end
-        if spawnY < minY then
-            -- Window would be off-screen vertically, use default anchor instead
-            addon:DebugMessage("Would spawn off-screen (minY:", minY, "), using default anchor")
-            spawnX = addon:GetSetting("spawnAnchorX") or 0
-            spawnY = addon:GetSetting("spawnAnchorY") or 200
-            addon.cascadeCounter = 0  -- Reset counter when reverting to default
-        end
-    else
-        -- No focused window, use default anchor point
-        spawnX = addon:GetSetting("spawnAnchorX") or 0
-        spawnY = addon:GetSetting("spawnAnchorY") or 200
-        addon.cascadeCounter = 0  -- Reset counter
-        addon:DebugMessage("No focused window, using default anchor X:", spawnX, "Y:", spawnY)
-    end
-    
-    win:SetPoint("CENTER", UIParent, "CENTER", spawnX, spawnY)
+    -- Create new window
+    local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
+    local win = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
+    win:SetSize(400, 300)
+    win:SetPoint("CENTER")
     win:SetFrameStrata("DIALOG")
     win:SetMovable(true)
     win:SetResizable(true)
@@ -445,15 +267,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end)
     win:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
+        addon:SaveWindowPosition(self)
     end)
-    
-    -- ESC key handling to close all whisper windows at once
-    win:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            addon:CloseAllWindows()
-        end
-    end)
-    win:SetPropagateKeyboardInput(true)
     
     -- Focus window on mouse down, but don't consume clicks meant for History frame
     -- WIM method: Check if mouse is over history frame first
@@ -479,6 +294,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         
         -- Set flag to prevent hooks from triggering during window close
         addon.__closingWindow = true
+        addon:SaveWindowPosition(self)
         
         -- Refocus another visible window if one exists
         for _, w in pairs(addon.windows) do
@@ -502,7 +318,10 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
             self.InputContainer:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, 1)
         end
         
-        -- Don't auto-focus input - let user click to focus
+        addon:LoadWindowPosition(self)
+        if self.Input then
+            self.Input:SetFocus()
+        end
         
         -- Focus this window when shown
         addon:FocusWindow(self)
@@ -511,8 +330,6 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         if self.playerKey then
             addon:MarkChatAsRead(self.playerKey)
         end
-        
-        -- ESC key handling is done via OnKeyDown script below
     end)
     
     -- Mark messages as read when mouse enters the window
@@ -565,8 +382,6 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.closeBtn = CreateFrame("Button", nil, win, "UIPanelCloseButton")
     win.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     win.closeBtn:SetSize(24, 24)
-    -- Set high frame level to prevent being hidden behind other windows
-    win.closeBtn:SetFrameLevel(win:GetFrameLevel() + 100)
     
     -- Resize button
     win.resizeBtn = CreateFrame("Button", nil, win)
@@ -580,6 +395,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end)
     win.resizeBtn:SetScript("OnMouseUp", function()
         win:StopMovingOrSizing()
+        addon:SaveWindowPosition(win)
     end)
     
     -- History ScrollingMessageFrame (now fills the entire window)
@@ -621,14 +437,13 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         SetItemRef(link, text, button, self)
     end)
     win.History:SetScript("OnHyperlinkEnter", function(self, link, text, button)
-        -- Note: ShowUIPanel is protected, use GameTooltip:Show() instead
+        ShowUIPanel(GameTooltip)
         GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:SetHyperlink(link)
         GameTooltip:Show()
     end)
     win.History:SetScript("OnHyperlinkLeave", function(self)
-        -- Note: HideUIPanel is protected, use GameTooltip:Hide() instead
-        GameTooltip:Hide()
+        HideUIPanel(GameTooltip)
     end)
     
     -- Input Container Frame (separate frame below main window)
@@ -657,8 +472,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Input EditBox (inside the container)
     local inputName = frameName .. "Input"
     win.Input = CreateFrame("EditBox", inputName, win.InputContainer)
-    -- We'll compute vertical offset based on dynamic padding so the editbox background scales with font
-    -- Anchor will be set after font/padding is computed below; temporarily anchor to container
+    -- Anchor will be adjusted after initial font/padding computation below
     win.Input:SetPoint("TOPLEFT", win.InputContainer, "TOPLEFT", 8, 0)
     win.Input:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -8, 0)
     win.Input:SetMultiLine(true)
@@ -674,7 +488,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.Input:SetFont(fontPath, inputSize, fontFlags or "")
     win.Input:SetTextColor(1, 1, 1, 1)
     
-    -- Set initial height based on font size (input height + dynamic padding)
+    -- Set initial height and container height based on font size
     local _, fontHeight = win.Input:GetFont()
     fontHeight = fontHeight or 14
     local topBottomPadding = math.max(7, math.floor(fontHeight / 2))
@@ -682,16 +496,14 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     local initialContainerHeight = initialInputHeight + (2 * topBottomPadding)
     win.Input:SetHeight(initialInputHeight)
     win.InputContainer:SetHeight(initialContainerHeight)
-    -- store padding for later use by UpdateInputHeight
     win.Input.__wm_topBottomPadding = topBottomPadding
-    -- Re-anchor input vertically using the computed padding so the text sits centered within the container
+    -- Re-anchor input using computed padding so text is centered vertically inside the container
     win.Input:ClearAllPoints()
     win.Input:SetPoint("TOPLEFT", win.InputContainer, "TOPLEFT", 8, -topBottomPadding)
     win.Input:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -8, -topBottomPadding)
     
     win.Input:SetScript("OnHyperlinkLeave", function(self)
-        -- Note: HideUIPanel is protected, use GameTooltip:Hide() instead
-        GameTooltip:Hide()
+        HideUIPanel(GameTooltip)
     end)
     
     -- Focus window when clicking input box
@@ -701,7 +513,6 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     -- Character Count (positioned at top-right of input container)
     local inputCount = win.InputContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    -- Align character count relative to the dynamic top padding so it stays inside the container
     local countYOffset = -math.max(4, math.floor((win.Input.__wm_topBottomPadding or 7) / 2))
     inputCount:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -8, countYOffset)
     inputCount:SetTextColor(0.6, 0.6, 0.6)
@@ -758,14 +569,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     -- Store window and load history
     self.windows[playerKey] = win
+    addon:LoadWindowPosition(win)
     addon:LoadWindowHistory(win)
-    
-    -- Initialize input height (ensures proper sizing on first show)
-    C_Timer.After(0.1, function()
-        if win.Input and win.Input:IsVisible() then
-            UpdateInputHeight(win.Input)
-        end
-    end)
     
     return win
 end
@@ -1000,6 +805,46 @@ end
 -- ============================================================================
 -- Window Position Management
 -- ============================================================================
+
+function addon:SaveWindowPosition(window)
+    if not window then return end
+    if not WhisperManager_Config then WhisperManager_Config = {} end
+    if not WhisperManager_Config.windowPositions then
+        WhisperManager_Config.windowPositions = {}
+    end
+    
+    local playerKey = window.playerKey
+    local point, _, relativePoint, xOfs, yOfs = window:GetPoint(1)
+    local width, height = window:GetSize()
+    
+    if point then
+        WhisperManager_Config.windowPositions[playerKey] = {
+            point = point,
+            relativePoint = relativePoint,
+            xOfs = xOfs,
+            yOfs = yOfs,
+            width = width,
+            height = height,
+        }
+    end
+end
+
+function addon:LoadWindowPosition(window)
+    if not window then return end
+    if not WhisperManager_Config or not WhisperManager_Config.windowPositions then return end
+    
+    local playerKey = window.playerKey
+    local pos = WhisperManager_Config.windowPositions[playerKey]
+    
+    if pos then
+        window:ClearAllPoints()
+        window:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
+        
+        if pos.width and pos.height then
+            window:SetSize(pos.width, pos.height)
+        end
+    end
+end
 
 -- ============================================================================
 -- Window Show/Hide Management

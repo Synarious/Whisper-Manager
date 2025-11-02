@@ -20,6 +20,7 @@ addon.windows = {};              -- Active whisper window frames
 addon.playerDisplayNames = {};   -- Cached display names
 addon.recentChats = {};          -- Recent conversation tracking
 addon.nextFrameLevel = 1;        -- Z-order tracking for windows
+addon.cascadeCounter = 0;        -- Counter for alternating window positioning
 
 -- ============================================================================
 -- Constants
@@ -53,12 +54,25 @@ function addon:Print(message)
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r " .. tostring(message))
 end
 
+--- Set debug mode on or off
+function addon:SetDebugEnabled(enabled)
+    self.debugEnabled = enabled
+    WhisperManager_Config.debug = enabled
+    if enabled then
+        self:Print("|cff00ff00Debug mode enabled.|r")
+    else
+        self:Print("|cffff8800Debug mode disabled.|r")
+    end
+end
+
 -- ============================================================================
 -- Initialization
 -- ============================================================================
 
 --- Initialize the addon (called from Events.lua after all modules load)
 function addon:Initialize()
+    self:DebugMessage("=== WhisperManager Initializing ===")
+    
     -- Initialize saved variable tables
     if type(WhisperManager_HistoryDB) ~= "table" then
         WhisperManager_HistoryDB = {}
@@ -73,7 +87,33 @@ function addon:Initialize()
     end
     
     if type(WhisperManager_Config) ~= "table" then
+        self:DebugMessage("Creating new WhisperManager_Config (first time setup)")
         WhisperManager_Config = {}
+    else
+        self:DebugMessage("WhisperManager_Config exists, loading saved settings...")
+        if WhisperManager_Config.settings then
+            self:DebugMessage("Found existing settings table:")
+            self:DebugMessage("  spawnAnchorX: " .. tostring(WhisperManager_Config.settings.spawnAnchorX))
+            self:DebugMessage("  spawnAnchorY: " .. tostring(WhisperManager_Config.settings.spawnAnchorY))
+            self:DebugMessage("  windowSpacing: " .. tostring(WhisperManager_Config.settings.windowSpacing))
+            self:DebugMessage("  defaultWindowWidth: " .. tostring(WhisperManager_Config.settings.defaultWindowWidth))
+            self:DebugMessage("  defaultWindowHeight: " .. tostring(WhisperManager_Config.settings.defaultWindowHeight))
+        end
+    end
+
+    -- Load settings immediately on startup to prevent race conditions.
+    self:DebugMessage("Loading settings...")
+    self.settings = self:LoadSettings()
+    self:DebugMessage("Settings loaded into addon.settings")
+    self:DebugMessage("  addon.settings reference: " .. tostring(self.settings))
+    self:DebugMessage("  WhisperManager_Config.settings reference: " .. tostring(WhisperManager_Config.settings))
+    self:DebugMessage("  Are they the same table? " .. tostring(self.settings == WhisperManager_Config.settings))
+    
+    -- Force them to be the same if they're not
+    if self.settings ~= WhisperManager_Config.settings then
+        self:DebugMessage("WARNING: Table references are different! Forcing addon.settings to point to WhisperManager_Config.settings")
+        self.settings = WhisperManager_Config.settings
+        self:DebugMessage("  After fix, same table? " .. tostring(self.settings == WhisperManager_Config.settings))
     end
 
     -- Migrate old history format if needed

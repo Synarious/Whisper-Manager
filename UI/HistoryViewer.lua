@@ -144,13 +144,14 @@ function addon:CreateHistoryFrame()
         SetItemRef(link, text, button, self)
     end)
     frame.detailScrollFrame:SetScript("OnHyperlinkEnter", function(self, link, text, button)
-        ShowUIPanel(GameTooltip)
+        -- Note: ShowUIPanel is protected, use GameTooltip:Show() instead
         GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:SetHyperlink(link)
         GameTooltip:Show()
     end)
     frame.detailScrollFrame:SetScript("OnHyperlinkLeave", function(self)
-        HideUIPanel(GameTooltip)
+        -- Note: HideUIPanel is protected, use GameTooltip:Hide() instead
+        GameTooltip:Hide()
     end)
     
     -- Enable mouse wheel scrolling

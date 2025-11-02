@@ -26,15 +26,6 @@ local DEFAULT_SETTINGS = {
     notificationSound = SOUNDKIT.TELL_MESSAGE, -- Default notification sound (using sound kit ID)
     soundChannel = "Master", -- Sound channel (Master, SFX, Music, Ambience, Dialog)
     enableTaskbarAlert = true, -- Enable Windows taskbar alert on whisper
-    
-    -- Window spawn settings
-    spawnAnchorX = 450, -- X offset from center (default: screen center)
-    spawnAnchorY = 200, -- Y offset from center (default: upper center)
-    windowSpacing = 50, -- Vertical spacing between windows
-    
-    -- Default window size
-    defaultWindowWidth = 350,
-    defaultWindowHeight = 250,
 }
 
 -- Available fonts
@@ -71,82 +62,48 @@ local SOUND_CHANNEL_OPTIONS = {
 -- ============================================================================
 
 function addon:LoadSettings()
-    self:DebugMessage("[LoadSettings] Starting...")
-    
-    -- Ensure the global config table and its settings sub-table exist.
     if not WhisperManager_Config then
-        WhisperManager_Config = { settings = {} }
-        self:DebugMessage("[LoadSettings] Created new WhisperManager_Config table.")
-    elseif not WhisperManager_Config.settings then
-        WhisperManager_Config.settings = {}
-        self:DebugMessage("[LoadSettings] Created new WhisperManager_Config.settings sub-table.")
+        WhisperManager_Config = {}
     end
-
-    self:DebugMessage("[LoadSettings] Current values BEFORE applying defaults:")
-    self:DebugMessage("  spawnAnchorX: " .. tostring(WhisperManager_Config.settings.spawnAnchorX))
-    self:DebugMessage("  spawnAnchorY: " .. tostring(WhisperManager_Config.settings.spawnAnchorY))
-    self:DebugMessage("  windowSpacing: " .. tostring(WhisperManager_Config.settings.windowSpacing))
-    self:DebugMessage("  defaultWindowWidth: " .. tostring(WhisperManager_Config.settings.defaultWindowWidth))
-    self:DebugMessage("  defaultWindowHeight: " .. tostring(WhisperManager_Config.settings.defaultWindowHeight))
-
-    -- Set defaults for any missing values - DIRECTLY on the global table
+    
+    if not WhisperManager_Config.settings then
+        WhisperManager_Config.settings = {}
+    end
+    
+    -- Set defaults for any missing values
     for key, value in pairs(DEFAULT_SETTINGS) do
         if WhisperManager_Config.settings[key] == nil then
             WhisperManager_Config.settings[key] = value
-            self:DebugMessage("[LoadSettings] Applied default for '" .. key .. "' = " .. tostring(value))
         end
     end
-
-    self:DebugMessage("[LoadSettings] Values AFTER applying defaults:")
-    self:DebugMessage("  spawnAnchorX: " .. tostring(WhisperManager_Config.settings.spawnAnchorX))
-    self:DebugMessage("  spawnAnchorY: " .. tostring(WhisperManager_Config.settings.spawnAnchorY))
-    self:DebugMessage("  windowSpacing: " .. tostring(WhisperManager_Config.settings.windowSpacing))
-    self:DebugMessage("  defaultWindowWidth: " .. tostring(WhisperManager_Config.settings.defaultWindowWidth))
-    self:DebugMessage("  defaultWindowHeight: " .. tostring(WhisperManager_Config.settings.defaultWindowHeight))
     
-    self:DebugMessage("[LoadSettings] Returning DIRECT reference to WhisperManager_Config.settings")
-    -- Return the ACTUAL global table, not a local variable copy
     return WhisperManager_Config.settings
 end
 
 function addon:SaveSettings()
-    -- This function is now simpler, as we directly modify addon.settings
-    -- which is a reference to WhisperManager_Config.settings.
-    -- The game handles saving the global table automatically.
-    self:DebugMessage("Settings saved (via table reference).")
+    if not WhisperManager_Config then
+        WhisperManager_Config = {}
+    end
+    WhisperManager_Config.settings = self.settings
 end
 
 function addon:GetSetting(key)
-    -- addon.settings is now guaranteed to be loaded at startup.
+    if not self.settings then
+        self.settings = self:LoadSettings()
+    end
     local value = self.settings[key]
     if value == nil then
-        self:DebugMessage("Warning: No setting found for '", key, "'. Using default.")
-        return DEFAULT_SETTINGS[key]
+        value = DEFAULT_SETTINGS[key]
     end
     return value
 end
 
 function addon:SetSetting(key, value)
-    self:DebugMessage("[SetSetting] Called for key: '" .. key .. "' with value: " .. tostring(value))
-    
-    -- FORCE addon.settings to always be WhisperManager_Config.settings
-    if self.settings ~= WhisperManager_Config.settings then
-        self:DebugMessage("[SetSetting] WARNING: Table mismatch detected! Fixing reference...")
-        self.settings = WhisperManager_Config.settings
-    end
-    
     if not self.settings then
-        self:Print("[SetSetting] ERROR: addon.settings is nil!")
-        return
+        self.settings = self:LoadSettings()
     end
-    
-    -- Directly modify the settings table (which is now guaranteed to be the global one)
     self.settings[key] = value
-    
-    self:DebugMessage("[SetSetting] Updated addon.settings['" .. key .. "'] = " .. tostring(self.settings[key]))
-    self:DebugMessage("[SetSetting] Verifying write to global table...")
-    self:DebugMessage("[SetSetting] WhisperManager_Config.settings['" .. key .. "'] = " .. tostring(WhisperManager_Config.settings[key]))
-    self:DebugMessage("[SetSetting] Same table reference? " .. tostring(self.settings == WhisperManager_Config.settings))
+    self:SaveSettings()
 end
 
 -- ============================================================================
@@ -298,14 +255,6 @@ function addon:CreateSettingsFrame()
     frame:SetBackdropColor(0, 0, 0, 0.9)
     frame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     frame:Hide()
-    
-    -- ESC key handling - don't use UISpecialFrames to avoid conflicts
-    frame:SetScript("OnKeyDown", function(self, key)
-        if key == "ESCAPE" then
-            self:Hide()
-        end
-    end)
-    frame:SetPropagateKeyboardInput(true)
     
     -- Title
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -537,146 +486,7 @@ function addon:CreateSettingsFrame()
     taskbarCheckbox:SetScript("OnClick", function(self)
         addon:SetSetting("enableTaskbarAlert", self:GetChecked())
     end)
-    yOffset = yOffset - 50
-    
-    -- Window Spawn Settings Header
-    local spawnHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    spawnHeader:SetPoint("TOPLEFT", 10, yOffset)
-    spawnHeader:SetText("Window Spawn Position")
-    spawnHeader:SetTextColor(1, 0.82, 0)
-    yOffset = yOffset - 35
-    
-    -- Spawn Anchor X
-    local spawnXLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    spawnXLabel:SetPoint("TOPLEFT", 10, yOffset)
-    spawnXLabel:SetText("Horizontal Position (X):")
-    
-    local spawnXSlider = CreateFrame("Slider", nil, scrollChild, "OptionsSliderTemplate")
-    spawnXSlider:SetPoint("TOPLEFT", 20, yOffset - 20)
-    spawnXSlider:SetWidth(400)
-    spawnXSlider:SetMinMaxValues(-960, 960)
-    spawnXSlider:SetValueStep(10)
-    spawnXSlider:SetObeyStepOnDrag(true)
-    
-    -- Set the initial value first
-    spawnXSlider:SetValue(addon:GetSetting("spawnAnchorX") or 0)
-    spawnXSlider.Text:SetText("X Offset: " .. (addon:GetSetting("spawnAnchorX") or 0))
-    
-    -- Set up the callback
-    spawnXSlider:SetScript("OnValueChanged", function(self, value)
-        self.Text:SetText("X Offset: " .. math.floor(value))
-        addon:SetSetting("spawnAnchorX", math.floor(value))
-    end)
-    
-    yOffset = yOffset - 60
-    
-    -- Spawn Anchor Y
-    local spawnYLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    spawnYLabel:SetPoint("TOPLEFT", 10, yOffset)
-    spawnYLabel:SetText("Vertical Position (Y):")
-    
-    local spawnYSlider = CreateFrame("Slider", nil, scrollChild, "OptionsSliderTemplate")
-    spawnYSlider:SetPoint("TOPLEFT", 20, yOffset - 20)
-    spawnYSlider:SetWidth(400)
-    spawnYSlider:SetMinMaxValues(-540, 540)
-    spawnYSlider:SetValueStep(10)
-    spawnYSlider:SetObeyStepOnDrag(true)
-    
-    -- Set up the callback first
-    -- Set the initial value first
-    spawnYSlider:SetValue(addon:GetSetting("spawnAnchorY") or 200)
-    spawnYSlider.Text:SetText("Y Offset: " .. (addon:GetSetting("spawnAnchorY") or 200))
-    
-    -- Set up the callback
-    spawnYSlider:SetScript("OnValueChanged", function(self, value)
-        self.Text:SetText("Y Offset: " .. math.floor(value))
-        addon:SetSetting("spawnAnchorY", math.floor(value))
-    end)
-    
-    yOffset = yOffset - 60
-    
-    -- Window Spacing
-    local spacingLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    spacingLabel:SetPoint("TOPLEFT", 10, yOffset)
-    spacingLabel:SetText("Window Spacing:")
-    
-    local spacingSlider = CreateFrame("Slider", nil, scrollChild, "OptionsSliderTemplate")
-    spacingSlider:SetPoint("TOPLEFT", 20, yOffset - 20)
-    spacingSlider:SetWidth(400)
-    spacingSlider:SetMinMaxValues(0, 200)
-    spacingSlider:SetValueStep(5)
-    spacingSlider:SetObeyStepOnDrag(true)
-    
-    -- Set up the callback first
-    -- Set the initial value first
-    spacingSlider:SetValue(addon:GetSetting("windowSpacing") or 50)
-    spacingSlider.Text:SetText("Spacing: " .. (addon:GetSetting("windowSpacing") or 50) .. " pixels")
-    
-    -- Set up the callback
-    spacingSlider:SetScript("OnValueChanged", function(self, value)
-        self.Text:SetText("Spacing: " .. math.floor(value) .. " pixels")
-        addon:SetSetting("windowSpacing", math.floor(value))
-    end)
-    
-    yOffset = yOffset - 60
-    
-    -- Default Window Width
-    local widthLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    widthLabel:SetPoint("TOPLEFT", 10, yOffset)
-    widthLabel:SetText("Default Window Width:")
-    
-    local widthSlider = CreateFrame("Slider", nil, scrollChild, "OptionsSliderTemplate")
-    widthSlider:SetPoint("TOPLEFT", 20, yOffset - 20)
-    widthSlider:SetWidth(400)
-    widthSlider:SetMinMaxValues(250, 800)
-    widthSlider:SetValueStep(10)
-    widthSlider:SetObeyStepOnDrag(true)
-    
-    -- Set up the callback first
-    -- Set the initial value first
-    widthSlider:SetValue(addon:GetSetting("defaultWindowWidth") or 400)
-    widthSlider.Text:SetText("Width: " .. (addon:GetSetting("defaultWindowWidth") or 400) .. " pixels")
-    
-    -- Set up the callback
-    widthSlider:SetScript("OnValueChanged", function(self, value)
-        self.Text:SetText("Width: " .. math.floor(value) .. " pixels")
-        addon:SetSetting("defaultWindowWidth", math.floor(value))
-    end)
-    
-    yOffset = yOffset - 60
-    
-    -- Default Window Height
-    local heightLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    heightLabel:SetPoint("TOPLEFT", 10, yOffset)
-    heightLabel:SetText("Default Window Height:")
-    
-    local heightSlider = CreateFrame("Slider", nil, scrollChild, "OptionsSliderTemplate")
-    heightSlider:SetPoint("TOPLEFT", 20, yOffset - 20)
-    heightSlider:SetWidth(400)
-    heightSlider:SetMinMaxValues(200, 600)
-    heightSlider:SetValueStep(10)
-    heightSlider:SetObeyStepOnDrag(true)
-    
-    -- Set the initial value first
-    heightSlider:SetValue(addon:GetSetting("defaultWindowHeight") or 300)
-    heightSlider.Text:SetText("Height: " .. (addon:GetSetting("defaultWindowHeight") or 300) .. " pixels")
-    
-    -- Set up the callback
-    heightSlider:SetScript("OnValueChanged", function(self, value)
-        self.Text:SetText("Height: " .. math.floor(value) .. " pixels")
-        addon:SetSetting("defaultWindowHeight", math.floor(value))
-    end)
-    
-    yOffset = yOffset - 60
-    
-    -- Info text
-    local spawnInfo = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    spawnInfo:SetPoint("TOPLEFT", 10, yOffset)
-    spawnInfo:SetPoint("TOPRIGHT", -10, yOffset)
-    spawnInfo:SetJustifyH("LEFT")
-    spawnInfo:SetText("New windows spawn at the anchor position and cascade downward with spacing between them. Positions are not saved.")
-    spawnInfo:SetTextColor(0.7, 0.7, 0.7)
-    yOffset = yOffset - 50
+    yOffset = yOffset - 40
     
     -- Update scroll child height
     scrollChild:SetHeight(-yOffset + 20)
@@ -698,11 +508,6 @@ function addon:CreateSettingsFrame()
         UIDropDownMenu_SetSelectedValue(soundDropdown, DEFAULT_SETTINGS.notificationSound)
         UIDropDownMenu_SetSelectedValue(channelDropdown, DEFAULT_SETTINGS.soundChannel)
         taskbarCheckbox:SetChecked(DEFAULT_SETTINGS.enableTaskbarAlert)
-        spawnXSlider:SetValue(DEFAULT_SETTINGS.spawnAnchorX)
-        spawnYSlider:SetValue(DEFAULT_SETTINGS.spawnAnchorY)
-        spacingSlider:SetValue(DEFAULT_SETTINGS.windowSpacing)
-        widthSlider:SetValue(DEFAULT_SETTINGS.defaultWindowWidth)
-        heightSlider:SetValue(DEFAULT_SETTINGS.defaultWindowHeight)
         
         -- Update color swatches
         local whisperReceive = DEFAULT_SETTINGS.whisperReceiveColor
