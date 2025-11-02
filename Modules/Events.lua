@@ -8,6 +8,68 @@ local addon = WhisperManager;
 -- Event Registration and Handlers
 -- ============================================================================
 
+-- Chat message filter to suppress whispers that are handled by WhisperManager windows
+local function ChatMessageEventFilter(self, event, msg, ...)
+    -- Don't filter our own frames (History display)
+    if self and self._WhisperManager then
+        return false
+    end
+    
+    if event == "CHAT_MSG_WHISPER" then
+        -- Incoming whisper
+        local message, author = msg, (...)
+        local playerKey = addon:ResolvePlayerIdentifiers(author)
+        if playerKey then
+            local window = addon.windows[playerKey]
+            -- Suppress if we have a window for this conversation and setting is enabled
+            if window and addon:GetSetting("suppressDefaultChat") ~= false then
+                return true  -- Suppress from default chat
+            end
+        end
+    elseif event == "CHAT_MSG_WHISPER_INFORM" then
+        -- Outgoing whisper
+        local message, target = msg, (...)
+        local playerKey = addon:ResolvePlayerIdentifiers(target)
+        if playerKey then
+            local window = addon.windows[playerKey]
+            -- Suppress if we have a window for this conversation and setting is enabled
+            if window and addon:GetSetting("suppressDefaultChat") ~= false then
+                return true  -- Suppress from default chat
+            end
+        end
+    elseif event == "CHAT_MSG_BN_WHISPER" then
+        -- Incoming BNet whisper
+        local message, author, _, _, _, _, _, _, _, _, _, _, bnSenderID = msg, ...
+        if bnSenderID then
+            local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
+            if accountInfo and accountInfo.battleTag then
+                local playerKey = "bnet_" .. accountInfo.battleTag
+                local window = addon.windows[playerKey]
+                -- Suppress if we have a window for this conversation and setting is enabled
+                if window and addon:GetSetting("suppressDefaultChat") ~= false then
+                    return true  -- Suppress from default chat
+                end
+            end
+        end
+    elseif event == "CHAT_MSG_BN_WHISPER_INFORM" then
+        -- Outgoing BNet whisper
+        local message, _, _, _, _, _, _, _, _, _, _, _, bnSenderID = msg, ...
+        if bnSenderID then
+            local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
+            if accountInfo and accountInfo.battleTag then
+                local playerKey = "bnet_" .. accountInfo.battleTag
+                local window = addon.windows[playerKey]
+                -- Suppress if we have a window for this conversation and setting is enabled
+                if window and addon:GetSetting("suppressDefaultChat") ~= false then
+                    return true  -- Suppress from default chat
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
 function addon:RegisterEvents()
     -- Prevent duplicate event registrations
     if addon.__eventFrame then
@@ -16,6 +78,13 @@ function addon:RegisterEvents()
     end
     
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Creating event frame and registering events...")
+    
+    -- Register chat message filters to suppress whispers handled by our windows
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", ChatMessageEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", ChatMessageEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER", ChatMessageEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER_INFORM", ChatMessageEventFilter)
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Registered chat message filters")
     
     local eventFrame = CreateFrame("Frame")
     addon.__eventFrame = eventFrame
@@ -70,17 +139,6 @@ function addon:RegisterEvents()
             local playerKey, resolvedTarget, displayName = addon:ResolvePlayerIdentifiers(target)
             if not playerKey then return end
 
-            -- Track last whisper target for system message correlation
-            addon.lastWhisperTarget = resolvedTarget
-            addon.lastWhisperPlayerKey = playerKey
-            addon.lastWhisperDisplayName = displayName or resolvedTarget
-            addon.lastWhisperTime = GetTime()
-            
-            addon:DebugMessage("=== Tracking whisper for system messages ===")
-            addon:DebugMessage("Target:", resolvedTarget)
-            addon:DebugMessage("PlayerKey:", playerKey)
-            addon:DebugMessage("Time:", addon.lastWhisperTime)
-
             -- Try to extract class from GUID if available
             local classToken = nil
             if guid and guid ~= "" then
@@ -94,8 +152,10 @@ function addon:RegisterEvents()
             -- Use actual player character name instead of "Me"
             local playerName = UnitName("player")
             local _, playerClass = UnitClass("player")
+            
             addon:AddMessageToHistory(playerKey, displayName or resolvedTarget, playerName, message, playerClass)
             addon:UpdateRecentChat(playerKey, displayName or resolvedTarget, false)
+            
             addon:OpenConversation(resolvedTarget)
             local window = addon.windows[playerKey]
             if window then
@@ -155,9 +215,7 @@ function addon:RegisterEvents()
             if window then
                 addon:DisplayHistory(window, playerKey)
             end
-        elseif event == "CHAT_MSG_SYSTEM" then
-            local systemMessage = ...
-            addon:HandleSystemMessage(systemMessage)
+
         elseif event == "PLAYER_ENTERING_WORLD" then
             addon:DebugMessage("PLAYER_ENTERING_WORLD fired. Setting up hooks.");
             addon:SetupHooks()
@@ -176,99 +234,7 @@ function addon:RegisterEvents()
     eventFrame:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
     eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER")
     eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER_INFORM")
-    eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
     eventFrame:RegisterEvent("PLAYER_STARTED_MOVING")
-end
-
--- ============================================================================
--- System Message Handler
--- ============================================================================
-
-function addon:HandleSystemMessage(systemMessage)
-    if not systemMessage then return end
-    
-    addon:DebugMessage("=== CHAT_MSG_SYSTEM received ===")
-    addon:DebugMessage("System message:", systemMessage)
-    addon:DebugMessage("Last whisper time:", addon.lastWhisperTime)
-    addon:DebugMessage("Current time:", GetTime())
-    
-    -- Only process if we recently sent a whisper (within 2 seconds)
-    if not addon.lastWhisperTime or (GetTime() - addon.lastWhisperTime) > 2 then
-        addon:DebugMessage("Ignoring - no recent whisper or timeout")
-        return
-    end
-    
-    local playerKey = addon.lastWhisperPlayerKey
-    local displayName = addon.lastWhisperDisplayName
-    local target = addon.lastWhisperTarget
-    
-    addon:DebugMessage("Last whisper target:", target)
-    addon:DebugMessage("Player key:", playerKey)
-    
-    if not playerKey or not target then 
-        addon:DebugMessage("Missing playerKey or target")
-        return 
-    end
-    
-    -- WoW system messages for offline/ignored players
-    -- These are the error strings that appear when messages fail
-    local isOfflineMessage = false
-    local isIgnoredMessage = false
-    local systemNotice = nil
-    
-    -- Check for "player not found" or "player is offline" messages
-    -- Make matching case-insensitive and more flexible
-    local lowerMessage = systemMessage:lower()
-    local lowerTarget = target:lower()
-    -- Also try without realm if target has realm
-    local targetNoRealm = target:match("^([^%-]+)") or target
-    local lowerTargetNoRealm = targetNoRealm:lower()
-    
-    addon:DebugMessage("Checking if message contains target...")
-    addon:DebugMessage("Lower message:", lowerMessage)
-    addon:DebugMessage("Lower target:", lowerTarget)
-    addon:DebugMessage("Lower target (no realm):", lowerTargetNoRealm)
-    
-    if lowerMessage:find(lowerTarget, 1, true) or lowerMessage:find(lowerTargetNoRealm, 1, true) then
-        addon:DebugMessage("Target found in message!")
-        if lowerMessage:find("not found") or 
-           lowerMessage:find("currently playing") or
-           lowerMessage:find("is not online") or
-           lowerMessage:find("offline") then
-            isOfflineMessage = true
-            systemNotice = "|cffff6666[System: Player is offline or not found]|r"
-            addon:DebugMessage("Detected as offline message")
-        elseif lowerMessage:find("ignoring") or 
-               lowerMessage:find("ignore") then
-            isIgnoredMessage = true
-            systemNotice = "|cffff6666[System: Player is ignoring you]|r"
-            addon:DebugMessage("Detected as ignore message")
-        end
-    else
-        addon:DebugMessage("Target NOT found in message")
-    end
-    
-    -- Add the system message to history if it's relevant
-    if isOfflineMessage or isIgnoredMessage then
-        addon:DebugMessage("Adding system message to history...")
-        addon:AddSystemMessageToHistory(playerKey, displayName, systemNotice or systemMessage)
-        
-        -- Update window if it's open
-        local window = addon.windows[playerKey]
-        addon:DebugMessage("Window exists:", window ~= nil)
-        if window then
-            addon:DebugMessage("Updating window display...")
-            addon:DisplayHistory(window, playerKey)
-        else
-            addon:DebugMessage("Window not open - message saved to history only")
-        end
-        
-        -- Clear the tracking variables
-        addon.lastWhisperTarget = nil
-        addon.lastWhisperPlayerKey = nil
-        addon.lastWhisperDisplayName = nil
-        addon.lastWhisperTime = nil
-    end
 end
 
 -- ============================================================================
@@ -283,85 +249,11 @@ function addon:SetupHooks()
     end
     addon.__hooksInstalled = true
     
-    -- Hook SendChatMessage to track whisper attempts (including failed ones)
-    hooksecurefunc("SendChatMessage", function(msg, chatType, languageID, target)
-        addon:DebugMessage("=== SendChatMessage called ===")
-        addon:DebugMessage("chatType:", chatType, "target:", target)
-        
-        if chatType == "WHISPER" and target then
-            addon:DebugMessage("=== SendChatMessage hooked - WHISPER ===")
-            addon:DebugMessage("Target:", target)
-            
-            -- Track this whisper attempt for system message correlation
-            local playerKey, resolvedTarget, displayName = addon:ResolvePlayerIdentifiers(target)
-            if playerKey then
-                addon.lastWhisperTarget = resolvedTarget
-                addon.lastWhisperPlayerKey = playerKey
-                addon.lastWhisperDisplayName = displayName or resolvedTarget
-                addon.lastWhisperTime = GetTime()
-                
-                addon:DebugMessage("=== Tracking whisper attempt ===")
-                addon:DebugMessage("Resolved target:", resolvedTarget)
-                addon:DebugMessage("PlayerKey:", playerKey)
-                addon:DebugMessage("Time:", addon.lastWhisperTime)
-            end
-        end
-    end)
-    
-    -- Also hook C_ChatInfo.SendAddonMessage and ChatFrame_SendTell
-    hooksecurefunc("ChatFrame_SendTell", function(name, chatFrame)
-        addon:DebugMessage("=== ChatFrame_SendTell hooked ===")
-        addon:DebugMessage("Name:", name)
-        
-        if name then
-            local playerKey, resolvedTarget, displayName = addon:ResolvePlayerIdentifiers(name)
-            if playerKey then
-                addon.lastWhisperTarget = resolvedTarget
-                addon.lastWhisperPlayerKey = playerKey
-                addon.lastWhisperDisplayName = displayName or resolvedTarget
-                addon.lastWhisperTime = GetTime()
-                
-                addon:DebugMessage("=== Tracking whisper attempt (ChatFrame_SendTell) ===")
-                addon:DebugMessage("Resolved target:", resolvedTarget)
-                addon:DebugMessage("PlayerKey:", playerKey)
-                addon:DebugMessage("Time:", addon.lastWhisperTime)
-            end
-        end
-    end)
-    
-    -- Hook SetItemRef globally to track all hyperlink clicks
-    hooksecurefunc("SetItemRef", function(link, text, button, chatFrame)
-        addon:DebugMessage("=== GLOBAL SetItemRef Hook ===")
-        addon:DebugMessage("Link:", link)
-        addon:DebugMessage("Text:", text)
-        addon:DebugMessage("Button:", button)
-        addon:DebugMessage("ChatFrame:", chatFrame and chatFrame:GetName() or "nil")
-        addon:DebugMessage("Link type:", link and link:match("^([^:]+):") or "unknown")
-        
-        -- Log the call stack
-        local stackInfo = debugstack(2, 3, 3)
-        addon:DebugMessage("Call stack:", stackInfo)
-    end)
-    
     -- Hook whisper command extraction
     hooksecurefunc("ChatEdit_ExtractTellTarget", function(editBox, text)
         local target = addon:ExtractWhisperTarget(text)
         if not target then return end
         addon:DebugMessage("Hooked /w via ChatEdit_ExtractTellTarget. Target:", target)
-        
-        -- Track this whisper attempt
-        local playerKey, resolvedTarget, displayName = addon:ResolvePlayerIdentifiers(target)
-        if playerKey then
-            addon.lastWhisperTarget = resolvedTarget
-            addon.lastWhisperPlayerKey = playerKey
-            addon.lastWhisperDisplayName = displayName or resolvedTarget
-            addon.lastWhisperTime = GetTime()
-            
-            addon:DebugMessage("=== Tracking whisper attempt (ChatEdit_ExtractTellTarget) ===")
-            addon:DebugMessage("Resolved target:", resolvedTarget)
-            addon:DebugMessage("PlayerKey:", playerKey)
-            addon:DebugMessage("Time:", addon.lastWhisperTime)
-        end
         
         if addon:OpenConversation(target) then
             _G.ChatEdit_OnEscapePressed(editBox)

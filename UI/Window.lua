@@ -588,6 +588,10 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.History:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -12, 12)
     win.History:SetMaxLines(addon.MAX_HISTORY_LINES)
     win.History:SetFading(false)
+    -- CRITICAL: Set insert mode to BOTTOM so new messages appear at bottom
+    win.History:SetInsertMode("BOTTOM")
+    -- Mark as WhisperManager frame so message filter doesn't suppress messages in our own windows
+    win.History._WhisperManager = true
     -- Apply font settings (with fallback)
     local messageFontPath = addon:GetSetting("fontFamily") or "Fonts\\FRIZQT__.TTF"
     local messageSize = addon:GetSetting("messageFontSize") or 14
@@ -710,14 +714,40 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Input Box Scripts
     win.Input:SetScript("OnEnterPressed", function(self)
         local message = self:GetText()
-        if message and message ~= "" then
-            if win.isBNet then
-                -- Send BNet whisper
+        if not message or message == "" then
+            return
+        end
+
+        local sent = false
+
+        if win.isBNet then
+            if win.bnSenderID then
                 BNSendWhisper(win.bnSenderID, message)
+                sent = true
             else
-                -- Send regular whisper
-                C_ChatInfo.SendChatMessage(message, "WHISPER", nil, win.playerTarget)
+                addon:Print("|cffff8800Unable to determine Battle.net target for this whisper.|r")
             end
+        else
+            local target = win.playerTarget
+
+            if not target or target == "" then
+                if win.playerKey and win.playerKey:match("^c_.+") then
+                    target = win.playerKey:sub(3)
+                elseif win.displayName and win.displayName ~= "" then
+                    target = win.displayName
+                end
+            end
+
+            if not target or target == "" then
+                addon:Print("|cffff8800Unable to determine whisper target for this window.|r")
+            else
+                win.playerTarget = target
+                SendChatMessage(message, "WHISPER", nil, target)
+                sent = true
+            end
+        end
+
+        if sent then
             -- Don't manually add to history here - let the INFORM event handle it
             self:SetText("")
             UpdateInputHeight(self)  -- Reset height after sending

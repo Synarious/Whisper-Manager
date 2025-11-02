@@ -24,6 +24,7 @@
     <Script file="Modules\Commands.lua"/>       <!-- Slash command handlers -->
     <Script file="Modules\Dialogs.lua"/>        <!-- URL copy and chat export dialogs -->
     <Script file="Modules\RecentChats.lua"/>    <!-- Recent conversations UI -->
+    <Script file="Modules\Hooks.lua"/>          <!-- Chat system hooks (WIM-style) -->
     
     <!-- UI COMPONENTS: Window and interface -->
     <Script file="UI\Window.lua"/>              <!-- Individual whisper windows -->

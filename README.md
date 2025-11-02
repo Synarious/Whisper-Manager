@@ -4,7 +4,7 @@ Is largely inspired by Wow Instant Messanger, but seeks to expand upon it with a
 **Unique Features**
 - Global chat history. 
 - Recent chats, catch people you missed.
-- History search.
+- Easily search player history.
 - Expanding input box, see your full messages before sending.
 
 **Other Features**
