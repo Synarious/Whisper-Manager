@@ -62,7 +62,7 @@ local SOUND_OPTIONS = {
 
 -- Available sound channels
 local SOUND_CHANNEL_OPTIONS = {
-    {name = "Master", value = "Master"},
+    {name = "Master (Default)", value = "Master"},
     {name = "SFX", value = "SFX"},
     {name = "Music", value = "Music"},
     {name = "Ambience", value = "Ambience"},
@@ -116,7 +116,11 @@ function addon:SaveSettings()
     -- This function is now simpler, as we directly modify addon.settings
     -- which is a reference to WhisperManager_Config.settings.
     -- The game handles saving the global table automatically.
-    self:DebugMessage("Settings saved (via table reference).")
+    if not WhisperManager_Config then
+        WhisperManager_Config = {}
+    end
+    WhisperManager_Config.settings = self.settings or WhisperManager_Config.settings or {}
+    self:DebugMessage("Settings saved to WhisperManager_Config.settings")
 end
 
 function addon:GetSetting(key)
@@ -139,7 +143,7 @@ function addon:SetSetting(key, value)
     end
     
     if not self.settings then
-        self:Print("[SetSetting] ERROR: addon.settings is nil!")
+        self:DebugMessage("[SetSetting] ERROR: addon.settings is nil!")
         return
     end
     
@@ -191,13 +195,13 @@ function addon:PlayNotificationSound()
     local soundKitID = self:GetSetting("notificationSound")
     
     if not soundKitID then
-        addon:Print("|cffff8800Sound notification disabled|r")
+        addon:DebugMessage("|cffff8800Sound notification disabled|r")
         self:DebugMessage("Sound notification disabled (nil soundKit)")
         return -- Sound disabled
     end
     
     -- Debug output
-    addon:Print("|cff00ff00Attempting to play sound kit ID: " .. tostring(soundKitID) .. "|r")
+    addon:DebugMessage("|cff00ff00Attempting to play sound kit ID: " .. tostring(soundKitID) .. "|r")
     self:DebugMessage("Attempting to play sound kit ID: " .. tostring(soundKitID))
     
     -- PlaySound API:
@@ -205,22 +209,16 @@ function addon:PlayNotificationSound()
     -- Returns true if successful
     -- Channel is optional, uses Master by default
     
-    local success = PlaySound(soundKitID)
-    
-    self:DebugMessage("PlaySound result: " .. tostring(success))
-    if success then
-        addon:Print("|cff00ff00✓ Sound played successfully!|r")
-        self:DebugMessage("Playing notification sound with kit ID: " .. tostring(soundKitID))
-    else
-        addon:Print("|cffff0000ERROR: Failed to play sound kit ID: " .. tostring(soundKitID) .. "|r")
-        addon:Print("|cffff8800Try a different sound option from the dropdown|r")
-        self:DebugMessage("|cffff0000ERROR: Failed to play sound|r")
-    end
+    local channel = self:GetSetting("soundChannel")
+    -- Play the sound; PlaySound does not reliably return a success value, so don't depend on a return.
+    PlaySound(soundKitID, channel)
+    self:DebugMessage("Triggered PlaySound for kit ID: " .. tostring(soundKitID) .. " on channel: " .. tostring(channel))
+    addon:DebugMessage("|cff00ff00Played notification sound.|r")
 end
 
 -- Preview the notification sound
 function addon:PreviewNotificationSound()
-    addon:Print("|cff00ff00Preview Sound button clicked|r")
+    addon:DebugMessage("|cff00ff00Preview Sound button clicked|r")
     self:DebugMessage("PreviewNotificationSound called")
     self:PlayNotificationSound()
 end
@@ -249,24 +247,34 @@ local function CreateColorPicker(parent, label, settingKey, x, y)
     colorSwatch:SetBackdropColor(color.r, color.g, color.b, 1)
     colorSwatch:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
     
-    colorSwatch:SetScript("OnClick", function(self)
+    colorSwatch:SetScript("OnClick", function()
         local color = addon:GetSetting(settingKey) or DEFAULT_SETTINGS[settingKey]
-        ColorPickerFrame:SetupColorPickerAndShow({
-            r = color.r,
-            g = color.g,
-            b = color.b,
-            opacity = 1,
-            hasOpacity = false,
-            swatchFunc = function()
+        -- Use the standard ColorPickerFrame API to avoid depending on non-standard helpers
+        local previousValues = { r = color.r, g = color.g, b = color.b }
+
+        ColorPickerFrame.func = function(restore)
+            if restore then
+                -- restore is a table with r,g,b
+                addon:SetSetting(settingKey, { r = restore.r, g = restore.g, b = restore.b })
+                colorSwatch:SetBackdropColor(restore.r, restore.g, restore.b, 1)
+            else
                 local r, g, b = ColorPickerFrame:GetColorRGB()
-                addon:SetSetting(settingKey, {r = r, g = g, b = b})
-                self:SetBackdropColor(r, g, b, 1)
-            end,
-            cancelFunc = function(previousValues)
-                addon:SetSetting(settingKey, {r = previousValues.r, g = previousValues.g, b = previousValues.b})
-                self:SetBackdropColor(previousValues.r, previousValues.g, previousValues.b, 1)
-            end,
-        })
+                addon:SetSetting(settingKey, { r = r, g = g, b = b })
+                colorSwatch:SetBackdropColor(r, g, b, 1)
+            end
+        end
+
+        ColorPickerFrame.cancelFunc = function(restore)
+            if restore then
+                addon:SetSetting(settingKey, { r = restore.r, g = restore.g, b = restore.b })
+                colorSwatch:SetBackdropColor(restore.r, restore.g, restore.b, 1)
+            end
+        end
+
+        ColorPickerFrame.previousValues = previousValues
+        ColorPickerFrame:SetColorRGB(color.r, color.g, color.b)
+        ColorPickerFrame.hasOpacity = false
+        ColorPickerFrame:Show()
     end)
     
     colorSwatch:SetScript("OnEnter", function(self)
@@ -436,23 +444,19 @@ function addon:CreateSettingsFrame()
     colorHeader:SetTextColor(1, 0.82, 0)
     yOffset = yOffset - 30
     
-    -- Whisper Receive Color
+    -- Whisper Receive / Send (inline)
     frame.whisperReceiveColor = CreateColorPicker(scrollChild, "Whisper Receive:", "whisperReceiveColor", 10, yOffset)
+    -- place send to the right of receive
+    frame.whisperSendColor = CreateColorPicker(scrollChild, "Whisper Send:", "whisperSendColor", 180, yOffset)
     yOffset = yOffset - 30
-    
-    -- Whisper Send Color
-    frame.whisperSendColor = CreateColorPicker(scrollChild, "Whisper Send:", "whisperSendColor", 10, yOffset)
-    yOffset = yOffset - 30
-    
-    -- BNet Receive Color
+
+    -- BNet Receive / Send (inline)
     frame.bnetReceiveColor = CreateColorPicker(scrollChild, "BNet Receive:", "bnetReceiveColor", 10, yOffset)
+    -- place send to the right of receive
+    frame.bnetSendColor = CreateColorPicker(scrollChild, "BNet Send:", "bnetSendColor", 180, yOffset)
     yOffset = yOffset - 30
-    
-    -- BNet Send Color
-    frame.bnetSendColor = CreateColorPicker(scrollChild, "BNet Send:", "bnetSendColor", 10, yOffset)
-    yOffset = yOffset - 30
-    
-    -- Timestamp Color
+
+    -- Timestamp Color (own line)
     frame.timestampColor = CreateColorPicker(scrollChild, "Timestamp:", "timestampColor", 10, yOffset)
     yOffset = yOffset - 50
     
@@ -463,16 +467,14 @@ function addon:CreateSettingsFrame()
     notificationHeader:SetTextColor(1, 0.82, 0)
     yOffset = yOffset - 30
     
-    -- Notification Sound Dropdown
-    local soundLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    -- Notification Sound Dropdown, Channel dropdown and Preview button inline
+    local soundLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     soundLabel:SetPoint("TOPLEFT", 10, yOffset)
-    soundLabel:SetText("Notification Sound:")
-    yOffset = yOffset - 25
-    
+    soundLabel:SetText("Sound:")
+
     local soundDropdown = CreateFrame("Frame", "WhisperManager_SoundDropdown", scrollChild, "UIDropDownMenuTemplate")
-    soundDropdown:SetPoint("TOPLEFT", 0, yOffset)
-    
-    UIDropDownMenu_SetWidth(soundDropdown, 300)
+    soundDropdown:SetPoint("LEFT", soundLabel, "RIGHT", 5, 0)
+    UIDropDownMenu_SetWidth(soundDropdown, 75)
     UIDropDownMenu_Initialize(soundDropdown, function(self, level)
         for i, sound in ipairs(SOUND_OPTIONS) do
             local info = UIDropDownMenu_CreateInfo()
@@ -486,20 +488,15 @@ function addon:CreateSettingsFrame()
             UIDropDownMenu_AddButton(info, level)
         end
     end)
-    
     UIDropDownMenu_SetSelectedValue(soundDropdown, addon:GetSetting("notificationSound"))
-    yOffset = yOffset - 30
-    
-    -- Sound Channel Dropdown
-    local channelLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    channelLabel:SetPoint("TOPLEFT", 10, yOffset)
-    channelLabel:SetText("Sound Channel:")
-    yOffset = yOffset - 25
-    
+
+    local channelLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    channelLabel:SetPoint("LEFT", soundDropdown, "RIGHT", 10, 0)
+    channelLabel:SetText("Channel:")
+
     local channelDropdown = CreateFrame("Frame", "WhisperManager_ChannelDropdown", scrollChild, "UIDropDownMenuTemplate")
-    channelDropdown:SetPoint("TOPLEFT", 0, yOffset)
-    
-    UIDropDownMenu_SetWidth(channelDropdown, 150)
+    channelDropdown:SetPoint("LEFT", channelLabel, "RIGHT", 8, 0)
+    UIDropDownMenu_SetWidth(channelDropdown, 90)
     UIDropDownMenu_Initialize(channelDropdown, function(self, level)
         for i, channel in ipairs(SOUND_CHANNEL_OPTIONS) do
             local info = UIDropDownMenu_CreateInfo()
@@ -513,18 +510,16 @@ function addon:CreateSettingsFrame()
             UIDropDownMenu_AddButton(info, level)
         end
     end)
-    
     UIDropDownMenu_SetSelectedValue(channelDropdown, addon:GetSetting("soundChannel"))
-    yOffset = yOffset - 30
-    
-    -- Preview Sound Button
+
     local previewBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
-    previewBtn:SetSize(100, 25)
-    previewBtn:SetPoint("TOPLEFT", 10, yOffset)
-    previewBtn:SetText("Preview Sound")
+    previewBtn:SetSize(70, 20)
+    previewBtn:SetPoint("LEFT", channelDropdown, "RIGHT", 8, 0)
+    previewBtn:SetText("Play")
     previewBtn:SetScript("OnClick", function()
         addon:PreviewNotificationSound()
     end)
+
     yOffset = yOffset - 30
     
     -- Taskbar Alert Checkbox
@@ -533,7 +528,7 @@ function addon:CreateSettingsFrame()
     taskbarCheckbox:SetSize(24, 24)
     taskbarCheckbox:SetChecked(addon:GetSetting("enableTaskbarAlert"))
     
-    local taskbarLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local taskbarLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     taskbarLabel:SetPoint("LEFT", taskbarCheckbox, "RIGHT", 5, 0)
     taskbarLabel:SetText("Enable Windows Taskbar Alert on Whisper")
     
@@ -545,7 +540,7 @@ function addon:CreateSettingsFrame()
     -- Window Spawn Settings Header
     local spawnHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     spawnHeader:SetPoint("TOPLEFT", 10, yOffset)
-    spawnHeader:SetText("Window Spawn Position")
+    spawnHeader:SetText("Window Size / Postion")
     spawnHeader:SetTextColor(1, 0.82, 0)
     yOffset = yOffset - 35
     
@@ -563,6 +558,11 @@ function addon:CreateSettingsFrame()
     
     -- Set the initial value first
     spawnXSlider:SetValue(addon:GetSetting("spawnAnchorX") or 0)
+    -- Ensure a Text FontString exists (OptionsSliderTemplate expects a named slider to create it)
+    if not spawnXSlider.Text then
+        spawnXSlider.Text = spawnXSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        spawnXSlider.Text:SetPoint("BOTTOMLEFT", spawnXSlider, "TOPLEFT", 0, 0)
+    end
     spawnXSlider.Text:SetText("X Offset: " .. (addon:GetSetting("spawnAnchorX") or 0))
     
     -- Set up the callback
@@ -588,6 +588,10 @@ function addon:CreateSettingsFrame()
     -- Set up the callback first
     -- Set the initial value first
     spawnYSlider:SetValue(addon:GetSetting("spawnAnchorY") or 200)
+    if not spawnYSlider.Text then
+        spawnYSlider.Text = spawnYSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        spawnYSlider.Text:SetPoint("BOTTOMLEFT", spawnYSlider, "TOPLEFT", 0, 0)
+    end
     spawnYSlider.Text:SetText("Y Offset: " .. (addon:GetSetting("spawnAnchorY") or 200))
     
     -- Set up the callback
@@ -613,6 +617,10 @@ function addon:CreateSettingsFrame()
     -- Set up the callback first
     -- Set the initial value first
     spacingSlider:SetValue(addon:GetSetting("windowSpacing") or 50)
+    if not spacingSlider.Text then
+        spacingSlider.Text = spacingSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        spacingSlider.Text:SetPoint("BOTTOMLEFT", spacingSlider, "TOPLEFT", 0, 0)
+    end
     spacingSlider.Text:SetText("Spacing: " .. (addon:GetSetting("windowSpacing") or 50) .. " pixels")
     
     -- Set up the callback
@@ -638,6 +646,10 @@ function addon:CreateSettingsFrame()
     -- Set up the callback first
     -- Set the initial value first
     widthSlider:SetValue(addon:GetSetting("defaultWindowWidth") or 400)
+    if not widthSlider.Text then
+        widthSlider.Text = widthSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        widthSlider.Text:SetPoint("BOTTOMLEFT", widthSlider, "TOPLEFT", 0, 0)
+    end
     widthSlider.Text:SetText("Width: " .. (addon:GetSetting("defaultWindowWidth") or 400) .. " pixels")
     
     -- Set up the callback
@@ -662,6 +674,10 @@ function addon:CreateSettingsFrame()
     
     -- Set the initial value first
     heightSlider:SetValue(addon:GetSetting("defaultWindowHeight") or 300)
+    if not heightSlider.Text then
+        heightSlider.Text = heightSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        heightSlider.Text:SetPoint("BOTTOMLEFT", heightSlider, "TOPLEFT", 0, 0)
+    end
     heightSlider.Text:SetText("Height: " .. (addon:GetSetting("defaultWindowHeight") or 300) .. " pixels")
     
     -- Set up the callback
@@ -677,9 +693,9 @@ function addon:CreateSettingsFrame()
     spawnInfo:SetPoint("TOPLEFT", 10, yOffset)
     spawnInfo:SetPoint("TOPRIGHT", -10, yOffset)
     spawnInfo:SetJustifyH("LEFT")
-    spawnInfo:SetText("New windows spawn at the anchor position and cascade downward with spacing between them. Positions are not saved.")
+    spawnInfo:SetText("New windows spawn at the configured anchor position and cascade downward with spacing between them. Anchor offsets are saved in settings.")
     spawnInfo:SetTextColor(0.7, 0.7, 0.7)
-    yOffset = yOffset - 50
+    yOffset = yOffset - 12
     
     -- Update scroll child height
     scrollChild:SetHeight(-yOffset + 20)
@@ -724,7 +740,7 @@ function addon:CreateSettingsFrame()
         frame.timestampColor:SetBackdropColor(timestamp.r, timestamp.g, timestamp.b, 1)
         
         addon:ApplyFontSettings()
-        addon:Print("Settings reset to defaults.")
+        addon:DebugMessage("Settings reset to defaults.")
     end)
     
     addon.settingsFrame = frame
