@@ -1,8 +1,8 @@
 -- ============================================================================
--- PlayerUtils.lua - Player identification and name resolution
+-- PlayerUtils.lua  Player identification and name resolution
 -- ============================================================================
 -- This module handles player name parsing and identification logic.
--- Data management functions (history, recent chats, class cache) are in Data.lua
+-- Data management functions (history, recent chats, class cache) in Data.lua
 -- ============================================================================
 
 local addon = WhisperManager;
