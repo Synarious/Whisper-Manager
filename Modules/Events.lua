@@ -310,6 +310,34 @@ function addon:SetupHooks()
         end
     end)
 
+    -- Hook the default Whisper menu action so it opens WhisperManager windows
+    hooksecurefunc("ChatFrame_SendTell", function(target)
+        if not target or target == "" then return end
+        -- Open conversation. If successful, close any opened chat editbox to avoid duplicate UI
+        local ok = false
+        pcall(function() ok = addon:OpenConversation(target) end)
+        if ok then
+            local editBox = _G.ChatEdit_ChooseBoxForSend()
+            if editBox and editBox:IsShown() then
+                _G.ChatEdit_OnEscapePressed(editBox)
+            end
+        end
+    end)
+
+    -- Hook BNet whisper default action similarly
+    hooksecurefunc("ChatFrame_SendBNetTell", function(target)
+        if not target or target == "" then return end
+        local ok = false
+        -- ChatFrame_SendBNetTell may pass a BattleTag or name; try to open by BattleTag when possible
+        pcall(function() ok = addon:OpenBNetConversation(target) end)
+        if ok then
+            local editBox = _G.ChatEdit_ChooseBoxForSend()
+            if editBox and editBox:IsShown() then
+                _G.ChatEdit_OnEscapePressed(editBox)
+            end
+        end
+    end)
+
     -- Setup context menu integration
     addon:SetupContextMenu()
 end

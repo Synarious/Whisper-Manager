@@ -44,7 +44,13 @@ function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnS
         end
 
         if not isBNet and playerName and playerName ~= "" then
-            rootDescription:CreateButton(WHISPER, function() ChatFrame_SendTell(playerName) end)
+            -- Replace default whisper action: open WhisperManager window instead
+            rootDescription:CreateButton(WHISPER, function() addon:OpenConversation(playerName) end)
+            -- Open conversation in WhisperManager (spawn window.lua)
+            rootDescription:CreateButton("Open in WhisperManager", function()
+                -- Use addon API to open (handles existing windows, combat queueing, etc.)
+                addon:OpenConversation(playerName)
+            end)
             rootDescription:CreateButton(INVITE, function() C_PartyInfo.InviteUnit(playerName) end)
             local raidTargetButton = rootDescription:CreateButton(RAID_TARGET_ICON)
             raidTargetButton:CreateButton(RAID_TARGET_NONE, function() SetRaidTarget(playerName, 0) end)
@@ -58,8 +64,13 @@ function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnS
             end)
         elseif isBNet and bnSenderID then
             if ChatFrame_SendBNetTell then
-                rootDescription:CreateButton(WHISPER, function() ChatFrame_SendBNetTell(displayName or playerName) end)
+                -- Replace default BNet whisper action with WhisperManager BNet window
+                rootDescription:CreateButton(WHISPER, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
             end
+            -- Open BNet conversation in WhisperManager
+            rootDescription:CreateButton("Open in WhisperManager", function()
+                addon:OpenBNetConversation(bnSenderID, displayName)
+            end)
             if BNInviteFriend then
                 rootDescription:CreateButton(INVITE, function() BNInviteFriend(bnSenderID) end)
             end
