@@ -1,7 +1,7 @@
 ## Interface: 112500
-## Title: WhisperManager
+## Title: Whisper Manager
 ## Notes: Whisper addon with window managment, editbox improvements and cross-character history without dependencies or complexity! 
-## Author: Synarion (Cephrax)
+## Author: Synarious | syfusion.com/github | https://github.com/Synarious/Whisper-Manager
 ## Version: 11.2.5
 ## Dependencies: Blizzard_ChatFrame
 ## SavedVariables: WhisperManager_HistoryDB, WhisperManager_WindowDB, WhisperManager_Config, WhisperManager_RecentChats
