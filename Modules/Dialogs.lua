@@ -98,7 +98,7 @@ function addon:ShowURLCopyDialog(url)
     local urlToShow = url
     
     StaticPopupDialogs["WHISPERMANAGER_SHOW_URL"] = {
-        text = "URL: (CTRL+A -> CTRL+C to Copy)",
+        text = "URL: ( CTRL+C to Copy )",
         button1 = OKAY,
         hasEditBox = 1,
         hasWideEditBox = 1,

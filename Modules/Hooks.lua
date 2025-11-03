@@ -1,8 +1,6 @@
 -- ============================================================================
 -- Hooks.lua - Chat system hooks for proper WoW integration
 -- ============================================================================
--- Based on WIM's approach: Hook into WoW's chat system so our EditBoxes
--- behave like the default chat frame, enabling proper error handling
 
 local addon = WhisperManager
 

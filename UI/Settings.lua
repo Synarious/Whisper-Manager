@@ -42,8 +42,8 @@ local DEFAULT_SETTINGS = {
 
 -- Available fonts
 local FONT_OPTIONS = {
-    {name = "Friz Quadrata (Default)", path = "Fonts\\FRIZQT__.TTF"},
-    {name = "Arial", path = "Fonts\\ARIALN.TTF"},
+    {name = "Arial (Default)", path = "Fonts\\ARIALN.TTF"},
+    {name = "Friz Quadrata", path = "Fonts\\FRIZQT__.TTF"},
     {name = "Skurri", path = "Fonts\\skurri.ttf"},
     {name = "Morpheus", path = "Fonts\\MORPHEUS.TTF"},
 }

@@ -98,29 +98,10 @@ function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnS
         end
     end
 
-    -- Fallback to EasyMenu if modern menu didn't show
+    -- If modern menu failed to show, don't attempt the legacy EasyMenu fallback.
+    -- EasyMenu is deprecated/removed to simplify the addon and avoid UI clutter.
     if not shown then
-        addon:DebugMessage("Modern menu not shown; attempting EasyMenu fallback")
-        if type(EasyMenu) == "function" then
-            local menuList = {}
-            if not isBNet and playerName and playerName ~= "" then
-                table.insert(menuList, { text = WHISPER, func = function() ChatFrame_SendTell(playerName) end })
-                table.insert(menuList, { text = INVITE, func = function() C_PartyInfo.InviteUnit(playerName) end })
-                table.insert(menuList, { text = ADD_FRIEND, func = function() C_FriendList.AddFriend(playerName) end })
-            elseif isBNet and bnSenderID then
-                if ChatFrame_SendBNetTell then
-                    table.insert(menuList, { text = WHISPER, func = function() ChatFrame_SendBNetTell(displayName or playerName) end })
-                end
-            end
-            table.insert(menuList, { text = CANCEL, func = function() end })
-            if not _G.WhisperManager_EasyMenuFrame then
-                _G.WhisperManager_EasyMenuFrame = CreateFrame("Frame", "WhisperManager_EasyMenuFrame", UIParent, "UIDropDownMenuTemplate")
-            end
-            EasyMenu(menuList, _G.WhisperManager_EasyMenuFrame, "cursor", 0, 0, "MENU")
-            addon:DebugMessage("EasyMenu displayed (fallback)")
-        else
-            addon:DebugMessage("EasyMenu not available; cannot show fallback menu")
-        end
+        addon:DebugMessage("Modern menu did not show, classic is not supported currently.")
     end
 
     addon:DebugMessage("=== OpenPlayerContextMenu END ===")
