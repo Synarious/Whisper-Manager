@@ -113,7 +113,6 @@ function addon:RegisterEvents()
             if guid and guid ~= "" then
                 local _, class = GetPlayerInfoByGUID(guid)
                 if class then
-                    addon:SetPlayerClass(author, class)
                     classToken = class
                 end
             end
@@ -144,16 +143,17 @@ function addon:RegisterEvents()
             if guid and guid ~= "" then
                 local _, class = GetPlayerInfoByGUID(guid)
                 if class then
-                    addon:SetPlayerClass(target, class)
                     classToken = class
                 end
             end
 
-            -- Use actual player character name instead of "Me"
-            local playerName = UnitName("player")
+            -- Use actual player character name with realm instead of "Me"
+            local playerName, playerRealm = UnitName("player")
+            local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
+            local fullPlayerName = playerName .. "-" .. realm
             local _, playerClass = UnitClass("player")
             
-            addon:AddMessageToHistory(playerKey, displayName or resolvedTarget, playerName, message, playerClass)
+            addon:AddMessageToHistory(playerKey, displayName or resolvedTarget, fullPlayerName, message, playerClass)
             addon:UpdateRecentChat(playerKey, displayName or resolvedTarget, false)
             
             addon:OpenConversation(resolvedTarget)
@@ -205,10 +205,12 @@ function addon:RegisterEvents()
             local playerKey = "bnet_" .. accountInfo.battleTag
             local displayName = accountInfo.accountName or accountInfo.battleTag
             
-            -- Use actual player character name instead of "Me"
-            local playerName = UnitName("player")
+            -- Use actual player character name with realm instead of "Me"
+            local playerName, playerRealm = UnitName("player")
+            local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
+            local fullPlayerName = playerName .. "-" .. realm
             local _, playerClass = UnitClass("player")
-            addon:AddMessageToHistory(playerKey, displayName, playerName, message, playerClass)
+            addon:AddMessageToHistory(playerKey, displayName, fullPlayerName, message, playerClass)
             addon:UpdateRecentChat(playerKey, displayName, true)
             addon:OpenBNetConversation(bnSenderID, displayName)
             local window = addon.windows[playerKey]
@@ -224,6 +226,14 @@ function addon:RegisterEvents()
             
             -- Create floating button after hooks are set up
             addon:CreateFloatingButton()
+            
+            -- Run retention cleanup on login
+            addon:RunHistoryRetentionCleanup()
+            
+            -- Schedule daily cleanup (runs every 24 hours)
+            C_Timer.NewTicker(86400, function()
+                addon:RunHistoryRetentionCleanup()
+            end)
         end
     end)
     

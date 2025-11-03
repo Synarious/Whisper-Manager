@@ -32,6 +32,41 @@ addon.RECENT_CHAT_EXPIRY = 72 * 60 * 60;  -- 72 hours in seconds
 addon.FOCUSED_ALPHA = 1.0;
 addon.UNFOCUSED_ALPHA = 0.65;
 
+-- Class ID to Class Token mapping (for compact storage)
+-- Numeric IDs are stored in database, converted to tokens for color lookup
+addon.CLASS_ID_TO_TOKEN = {
+    [1] = "WARRIOR",
+    [2] = "PALADIN",
+    [3] = "HUNTER",
+    [4] = "ROGUE",
+    [5] = "PRIEST",
+    [6] = "DEATHKNIGHT",
+    [7] = "SHAMAN",
+    [8] = "MAGE",
+    [9] = "WARLOCK",
+    [10] = "MONK",
+    [11] = "DRUID",
+    [12] = "DEMONHUNTER",
+    [13] = "EVOKER",
+}
+
+-- Reverse mapping for quick lookup
+addon.CLASS_TOKEN_TO_ID = {
+    ["WARRIOR"] = 1,
+    ["PALADIN"] = 2,
+    ["HUNTER"] = 3,
+    ["ROGUE"] = 4,
+    ["PRIEST"] = 5,
+    ["DEATHKNIGHT"] = 6,
+    ["SHAMAN"] = 7,
+    ["MAGE"] = 8,
+    ["WARLOCK"] = 9,
+    ["MONK"] = 10,
+    ["DRUID"] = 11,
+    ["DEMONHUNTER"] = 12,
+    ["EVOKER"] = 13,
+}
+
 -- ============================================================================
 -- Debug System
 -- ============================================================================

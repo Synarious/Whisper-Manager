@@ -7,6 +7,16 @@
 local addon = WhisperManager;
 
 -- ============================================================================
+-- Print/Output Functions
+-- ============================================================================
+
+--- Print a message to chat with addon prefix
+-- @param message string Message to print
+function addon:Print(message)
+    DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[WhisperManager]|r " .. tostring(message))
+end
+
+-- ============================================================================
 -- String Utilities
 -- ============================================================================
 

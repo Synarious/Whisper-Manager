@@ -38,6 +38,9 @@ local DEFAULT_SETTINGS = {
     -- Default window size
     defaultWindowWidth = 350,
     defaultWindowHeight = 250,
+    
+    -- History retention settings
+    historyRetentionMode = "none", -- none, mode1, mode2, mode3, mode4, mode5
 }
 
 -- Available fonts
@@ -67,6 +70,16 @@ local SOUND_CHANNEL_OPTIONS = {
     {name = "Music", value = "Music"},
     {name = "Ambience", value = "Ambience"},
     {name = "Dialog", value = "Dialog"},
+}
+
+-- History retention modes
+local RETENTION_OPTIONS = {
+    {name = "Keep All (No Limit)", value = "none", keepCount = nil, keepMonths = nil, deleteMonths = nil},
+    {name = "Keep 10 recent (6 mo), delete after 3 mo", value = "mode1", keepCount = 10, keepMonths = 6, deleteMonths = 3},
+    {name = "Keep 25 recent (12 mo), delete after 2 mo", value = "mode2", keepCount = 25, keepMonths = 12, deleteMonths = 2},
+    {name = "Keep 5 recent (forever), delete after 2 mo", value = "mode3", keepCount = 5, keepMonths = nil, deleteMonths = 2},
+    {name = "Keep 10 recent (forever), delete after 2 mo", value = "mode4", keepCount = 10, keepMonths = nil, deleteMonths = 2},
+    {name = "Keep 25 recent (forever), delete after 1 mo", value = "mode5", keepCount = 25, keepMonths = nil, deleteMonths = 1},
 }
 
 -- ============================================================================
@@ -537,6 +550,49 @@ function addon:CreateSettingsFrame()
     end)
     yOffset = yOffset - 50
     
+    -- History Retention Header
+    local retentionHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    retentionHeader:SetPoint("TOPLEFT", 10, yOffset)
+    retentionHeader:SetText("History Retention")
+    retentionHeader:SetTextColor(1, 0.82, 0)
+    yOffset = yOffset - 30
+    
+    -- Retention Mode Dropdown
+    local retentionLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    retentionLabel:SetPoint("TOPLEFT", 10, yOffset)
+    retentionLabel:SetText("Automatic Cleanup:")
+    yOffset = yOffset - 25
+    
+    local retentionDropdown = CreateFrame("Frame", "WhisperManager_RetentionDropdown", scrollChild, "UIDropDownMenuTemplate")
+    retentionDropdown:SetPoint("TOPLEFT", 0, yOffset)
+    UIDropDownMenu_SetWidth(retentionDropdown, 350)
+    UIDropDownMenu_Initialize(retentionDropdown, function(self, level)
+        for i, mode in ipairs(RETENTION_OPTIONS) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = mode.name
+            info.value = mode.value
+            info.func = function(self)
+                addon:SetSetting("historyRetentionMode", self.value)
+                UIDropDownMenu_SetSelectedValue(retentionDropdown, self.value)
+                -- Run cleanup immediately when mode changes
+                addon:RunHistoryRetentionCleanup()
+            end
+            info.checked = (addon:GetSetting("historyRetentionMode") == mode.value)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    UIDropDownMenu_SetSelectedValue(retentionDropdown, addon:GetSetting("historyRetentionMode"))
+    yOffset = yOffset - 30
+    
+    -- Info text about retention
+    local retentionInfo = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    retentionInfo:SetPoint("TOPLEFT", 10, yOffset)
+    retentionInfo:SetPoint("TOPRIGHT", -10, yOffset)
+    retentionInfo:SetJustifyH("LEFT")
+    retentionInfo:SetText("Automatic cleanup keeps your saved history lean. The N most recent messages with each person are protected for the specified time. Older messages are deleted after the shorter time limit. Cleanup runs on login and once per day.")
+    retentionInfo:SetTextColor(0.7, 0.7, 0.7)
+    yOffset = yOffset - 60
+    
     -- Window Spawn Settings Header
     local spawnHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     spawnHeader:SetPoint("TOPLEFT", 10, yOffset)
@@ -717,6 +773,7 @@ function addon:CreateSettingsFrame()
         UIDropDownMenu_SetSelectedValue(soundDropdown, DEFAULT_SETTINGS.notificationSound)
         UIDropDownMenu_SetSelectedValue(channelDropdown, DEFAULT_SETTINGS.soundChannel)
         taskbarCheckbox:SetChecked(DEFAULT_SETTINGS.enableTaskbarAlert)
+        UIDropDownMenu_SetSelectedValue(retentionDropdown, DEFAULT_SETTINGS.historyRetentionMode)
         spawnXSlider:SetValue(DEFAULT_SETTINGS.spawnAnchorX)
         spawnYSlider:SetValue(DEFAULT_SETTINGS.spawnAnchorY)
         spacingSlider:SetValue(DEFAULT_SETTINGS.windowSpacing)

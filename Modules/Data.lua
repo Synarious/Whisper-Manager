@@ -1,10 +1,9 @@
 -- ============================================================================
--- Data.lua - Database management for history, recent chats, and class cache
+-- Data.lua - Database management for history and recent chats
 -- ============================================================================
 -- This module handles all persistent data storage including:
--- - Message history (WhisperManager_HistoryDB)
+-- - Message history (WhisperManager_HistoryDB) with per-message class IDs
 -- - Recent conversations (WhisperManager_RecentChats)
--- - Player class cache (WhisperManager_Config.classCache)
 -- ============================================================================
 
 local addon = WhisperManager;
@@ -35,18 +34,10 @@ function addon:AddMessageToHistory(playerKey, displayName, author, message, clas
     local fullPlayerName = playerName .. "-" .. realm
     local authorName = (author == "Me") and fullPlayerName or author
     
-    -- Try to get class if not provided
-    if not classToken then
-        -- Check cache first
-        if WhisperManager_Config and WhisperManager_Config.classCache then
-            classToken = WhisperManager_Config.classCache[authorName] or WhisperManager_Config.classCache[author]
-        end
-    end
-    
-    -- Build entry with class if available
+    -- Build entry with class ID if available (convert token to numeric ID for compact storage)
     local entry = { m = message, a = authorName, t = time() }
-    if classToken then
-        entry.c = classToken  -- Store class token (e.g., "WARRIOR", "MAGE", etc.)
+    if classToken and addon.CLASS_TOKEN_TO_ID[classToken] then
+        entry.c = addon.CLASS_TOKEN_TO_ID[classToken]  -- Store numeric class ID (1-13)
     end
     
     table.insert(history, entry)
@@ -115,7 +106,11 @@ function addon:DisplayHistory(window, playerKey)
         local timestamp = entry.t or entry.timestamp
         local author = entry.a or entry.author
         local message = entry.m or entry.message
-        local classToken = entry.c  -- Get stored class token
+        -- Convert numeric class ID to class token
+        local classToken = nil
+        if entry.c then
+            classToken = addon.CLASS_ID_TO_TOKEN[entry.c]
+        end
         
         addon:DebugMessage("Processing message", i, "- timestamp:", timestamp, "author:", author, "message length:", message and #message or 0)
         
@@ -170,24 +165,19 @@ function addon:DisplayHistory(window, playerKey)
                         local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
                         messageColor = "|cff" .. colorHex
                         
-                        -- Regular whispers: try to use stored class color, fallback to lookup then gold
+                        -- Regular whispers: use stored class color if available, default to gold
                         -- Strip realm name from author (Name-Realm -> Name)
                         local authorDisplayName = author:match("^([^%-]+)") or author
                         
                         -- Build clickable hyperlink with class colors
                         local classColorHex
                         
-                        -- Use stored class token if available (performance optimization)
+                        -- Use stored class token (converted from numeric ID)
                         if classToken then
                             local classColor = RAID_CLASS_COLORS[classToken]
                             if classColor then
                                 classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
                             end
-                        end
-                        
-                        -- Fallback to lookup only if no stored class
-                        if not classColorHex then
-                            classColorHex = self:GetClassColorForPlayer(author)
                         end
                         
                         local nameColorHex = classColorHex or "ffd100"  -- Class color or gold
@@ -263,108 +253,10 @@ function addon:MarkChatAsRead(playerKey)
 end
 
 -- ============================================================================
--- SECTION 3: Class Cache Management
+-- SECTION 3: Class Color Management (REMOVED - No longer needed)
 -- ============================================================================
-
---- Get class color for a player (returns hex color string or nil)
--- @param playerName string Player name (with or without realm)
--- @return string|nil Hex color string (e.g., "ffc41f3b") or nil if not found
-function addon:GetClassColorForPlayer(playerName)
-    if not playerName or playerName == "" then return nil end
-    
-    -- Initialize class cache in saved variables
-    if not WhisperManager_Config then
-        WhisperManager_Config = {}
-    end
-    if not WhisperManager_Config.classCache then
-        WhisperManager_Config.classCache = {}
-    end
-    
-    -- Check cache first
-    if WhisperManager_Config.classCache[playerName] then
-        local classColor = RAID_CLASS_COLORS[WhisperManager_Config.classCache[playerName]]
-        if classColor then
-            return string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
-        end
-    end
-    
-    -- Strip realm if present to get just the character name
-    local name = playerName:match("^([^%-]+)") or playerName
-    
-    -- Try to get class info from UnitClass (works for party/raid members)
-    local _, class = UnitClass(name)
-    if not class then
-        -- Try with hyphenated version for same-server players
-        _, class = UnitClass(playerName)
-    end
-    
-    -- Try checking if they're in a group
-    if not class then
-        -- Check raid members
-        if IsInRaid() then
-            for i = 1, GetNumGroupMembers() do
-                local unitId = "raid" .. i
-                local unitName = GetUnitName(unitId, true)  -- true = include realm
-                if unitName and (unitName == playerName or unitName == name) then
-                    _, class = UnitClass(unitId)
-                    break
-                end
-            end
-        elseif IsInGroup() then
-            -- Check party members
-            for i = 1, GetNumSubgroupMembers() do
-                local unitId = "party" .. i
-                local unitName = GetUnitName(unitId, true)
-                if unitName and (unitName == playerName or unitName == name) then
-                    _, class = UnitClass(unitId)
-                    break
-                end
-            end
-        end
-    end
-    
-    -- Try checking guild members
-    if not class and IsInGuild() then
-        local numTotalMembers = GetNumGuildMembers()
-        for i = 1, numTotalMembers do
-            local guildName, _, _, _, _, _, _, _, _, _, classFileName = GetGuildRosterInfo(i)
-            if guildName then
-                local guildNameShort = guildName:match("^([^%-]+)") or guildName
-                if guildName == playerName or guildNameShort == name then
-                    class = classFileName
-                    break
-                end
-            end
-        end
-    end
-    
-    if class then
-        -- Cache the result
-        addon:SetPlayerClass(playerName, class)
-        
-        local classColor = RAID_CLASS_COLORS[class]
-        if classColor then
-            return string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
-        end
-    end
-    
-    return nil  -- No class info available
-end
-
---- Set player class info in cache (called when we get GUID info from events)
--- @param playerName string Player name
--- @param class string Class token (e.g., "WARRIOR")
-function addon:SetPlayerClass(playerName, class)
-    if playerName and class then
-        if not WhisperManager_Config then
-            WhisperManager_Config = {}
-        end
-        if not WhisperManager_Config.classCache then
-            WhisperManager_Config.classCache = {}
-        end
-        WhisperManager_Config.classCache[playerName] = class
-    end
-end
+-- Class colors are now handled via per-message class IDs stored directly in
+-- the history database (entry.c). No separate cache is needed.
 
 -- ============================================================================
 -- SECTION 4: Utility Functions
@@ -393,3 +285,237 @@ end
 
 -- Export GetTimeAgo for use in other modules
 addon.GetTimeAgo = GetTimeAgo;
+
+-- History Retention Cleanup
+function addon:RunHistoryRetentionCleanup()
+    local config = WhisperManager_Config or {}
+    local retentionMode = config.historyRetentionMode or "none"
+    
+    if retentionMode == "none" then
+        if addon.DebugMode then
+            DEFAULT_CHAT_FRAME:AddMessage("[WM] Retention cleanup: Mode is 'none', skipping")
+        end
+        return
+    end
+    
+    -- Find the retention options from Settings.lua
+    local retentionOptions = self.RETENTION_OPTIONS
+    if not retentionOptions then
+        if addon.DebugMode then
+            DEFAULT_CHAT_FRAME:AddMessage("[WM] Retention cleanup: RETENTION_OPTIONS not found")
+        end
+        return
+    end
+    
+    -- Find the selected mode configuration
+    local modeConfig = nil
+    for _, option in ipairs(retentionOptions) do
+        if option.value == retentionMode then
+            modeConfig = option
+            break
+        end
+    end
+    
+    if not modeConfig then
+        if addon.DebugMode then
+            DEFAULT_CHAT_FRAME:AddMessage("[WM] Retention cleanup: Mode config not found for: " .. retentionMode)
+        end
+        return
+    end
+    
+    local keepCount = modeConfig.keepCount
+    local keepMonths = modeConfig.keepMonths
+    local deleteMonths = modeConfig.deleteMonths
+    
+    if addon.DebugMode then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("[WM] Retention cleanup: Mode=%s, Keep=%d, KeepMonths=%s, DeleteMonths=%d", 
+            retentionMode, keepCount, tostring(keepMonths), deleteMonths))
+    end
+    
+    local historyDB = WhisperManager_HistoryDB or {}
+    local currentTime = time()
+    local secondsPerMonth = 30 * 24 * 60 * 60  -- Approximate month as 30 days
+    
+    local totalPlayersProcessed = 0
+    local totalMessagesDeleted = 0
+    
+    -- Iterate through each player's history
+    for playerKey, history in pairs(historyDB) do
+        if type(history) == "table" and #history > 0 then
+            -- Sort messages by timestamp (newest first)
+            table.sort(history, function(a, b)
+                return (a.timestamp or 0) > (b.timestamp or 0)
+            end)
+            
+            local messagesToKeep = {}
+            local protectedCount = 0
+            
+            -- Process messages
+            for i, message in ipairs(history) do
+                local messageAge = currentTime - (message.timestamp or 0)
+                local ageInMonths = messageAge / secondsPerMonth
+                
+                local shouldKeep = false
+                
+                -- Protected messages: within keepCount AND within keepMonths (if specified)
+                if i <= keepCount then
+                    if keepMonths == nil or ageInMonths <= keepMonths then
+                        shouldKeep = true
+                        protectedCount = protectedCount + 1
+                    end
+                end
+                
+                -- Non-protected messages: keep if younger than deleteMonths
+                if not shouldKeep and ageInMonths < deleteMonths then
+                    shouldKeep = true
+                end
+                
+                if shouldKeep then
+                    table.insert(messagesToKeep, message)
+                end
+            end
+            
+            local deletedCount = #history - #messagesToKeep
+            if deletedCount > 0 then
+                historyDB[playerKey] = messagesToKeep
+                totalMessagesDeleted = totalMessagesDeleted + deletedCount
+                
+                if addon.DebugMode then
+                    DEFAULT_CHAT_FRAME:AddMessage(string.format("[WM] Cleaned %s: %d messages deleted, %d kept (%d protected)", 
+                        playerKey, deletedCount, #messagesToKeep, protectedCount))
+                end
+            end
+            
+            totalPlayersProcessed = totalPlayersProcessed + 1
+        end
+    end
+    
+    -- Clean up empty entries
+    local emptyRemoved = addon:CleanupEmptyHistoryEntries()
+    
+    -- Always show cleanup results to user if messages were deleted
+    if totalMessagesDeleted > 0 then
+        local message = string.format("|cFF00FF00[WhisperManager]|r History cleanup complete: Removed %d old message%s from %d conversation%s to keep your saved history lean.", 
+            totalMessagesDeleted,
+            totalMessagesDeleted ~= 1 and "s" or "",
+            totalPlayersProcessed,
+            totalPlayersProcessed ~= 1 and "s" or "")
+        if emptyRemoved > 0 then
+            message = message .. string.format(" Also removed %d empty conversation%s.", 
+                emptyRemoved, emptyRemoved ~= 1 and "s" or "")
+        end
+        print(message)
+    elseif emptyRemoved > 0 then
+        print(string.format("|cFF00FF00[WhisperManager]|r Removed %d empty conversation%s from history.", 
+            emptyRemoved, emptyRemoved ~= 1 and "s" or ""))
+    elseif addon.DebugMode then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format("[WM] Retention cleanup complete: No messages needed deletion (%d players checked)", 
+            totalPlayersProcessed))
+    end
+end
+
+-- Debug Retention Cleanup (for testing with short time intervals)
+function addon:RunDebugRetentionCleanup()
+    local historyDB = WhisperManager_HistoryDB or {}
+    local currentTime = time()
+    
+    local keepCount = 3  -- Keep 3 most recent messages
+    local keepSeconds = 120  -- Protected for 2 minutes
+    local deleteSeconds = 300  -- Delete messages older than 5 minutes
+    
+    print("|cFF00FF00[WhisperManager]|r Debug Retention Test: Keep " .. keepCount .. " recent (protect <2min), delete >5min old")
+    
+    local totalPlayersProcessed = 0
+    local totalMessagesDeleted = 0
+    
+    -- Iterate through each player's history
+    for playerKey, history in pairs(historyDB) do
+        if type(history) == "table" and #history > 0 then
+            -- Sort messages by timestamp (newest first)
+            table.sort(history, function(a, b)
+                return (a.timestamp or 0) > (b.timestamp or 0)
+            end)
+            
+            local messagesToKeep = {}
+            local protectedCount = 0
+            
+            -- Process messages
+            for i, message in ipairs(history) do
+                local messageAge = currentTime - (message.timestamp or 0)
+                
+                local shouldKeep = false
+                
+                -- Protected messages: within keepCount AND within keepSeconds
+                if i <= keepCount then
+                    if messageAge <= keepSeconds then
+                        shouldKeep = true
+                        protectedCount = protectedCount + 1
+                    end
+                end
+                
+                -- Non-protected messages: keep if younger than deleteSeconds
+                if not shouldKeep and messageAge < deleteSeconds then
+                    shouldKeep = true
+                end
+                
+                if shouldKeep then
+                    table.insert(messagesToKeep, message)
+                end
+            end
+            
+            local deletedCount = #history - #messagesToKeep
+            if deletedCount > 0 then
+                historyDB[playerKey] = messagesToKeep
+                totalMessagesDeleted = totalMessagesDeleted + deletedCount
+                
+                print(string.format("[WM] %s: Deleted %d, Kept %d (%d protected)", 
+                    playerKey, deletedCount, #messagesToKeep, protectedCount))
+            end
+            
+            totalPlayersProcessed = totalPlayersProcessed + 1
+        end
+    end
+    
+    -- Clean up empty entries
+    local emptyRemoved = addon:CleanupEmptyHistoryEntries()
+    
+    local message = string.format("|cFF00FF00[WhisperManager]|r Debug cleanup complete: %d players, %d messages deleted", 
+        totalPlayersProcessed, totalMessagesDeleted)
+    if emptyRemoved > 0 then
+        message = message .. string.format(", %d empty removed", emptyRemoved)
+    end
+    print(message)
+end
+
+-- Clean up empty history entries
+function addon:CleanupEmptyHistoryEntries()
+    local historyDB = WhisperManager_HistoryDB or {}
+    local removedCount = 0
+    
+    -- Find and remove empty entries
+    local keysToRemove = {}
+    for playerKey, history in pairs(historyDB) do
+        -- Skip the schema version key
+        if playerKey ~= "__schema" then
+            -- Check if history is empty or not a table
+            if type(history) ~= "table" or #history == 0 then
+                table.insert(keysToRemove, playerKey)
+            end
+        end
+    end
+    
+    -- Remove the empty entries
+    for _, key in ipairs(keysToRemove) do
+        historyDB[key] = nil
+        removedCount = removedCount + 1
+    end
+    
+    if removedCount > 0 then
+        if addon.DebugMode then
+            print(string.format("[WM] Removed %d empty history entr%s", 
+                removedCount, removedCount ~= 1 and "ies" or "y"))
+        end
+    end
+    
+    return removedCount
+end

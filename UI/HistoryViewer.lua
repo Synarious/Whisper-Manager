@@ -333,7 +333,11 @@ function addon:ShowHistoryDetail(playerKey, displayName)
         local timestamp = entry.t or entry.timestamp
         local author = entry.a or entry.author
         local message = entry.m or entry.message
-        local classToken = entry.c  -- Get stored class token
+        -- Convert numeric class ID to class token
+        local classToken = nil
+        if entry.c then
+            classToken = addon.CLASS_ID_TO_TOKEN[entry.c]
+        end
         
         if timestamp and author and message then
             -- Timestamp with customizable color
@@ -382,22 +386,17 @@ function addon:ShowHistoryDetail(playerKey, displayName)
                     local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
                     messageColor = "|cff" .. colorHex
                     
-                    -- Regular whispers: use stored class color if available, fallback to lookup then gold
+                    -- Regular whispers: use stored class color if available, default to gold
                     -- Strip realm name from author (Name-Realm -> Name)
                     local authorDisplayName = author:match("^([^%-]+)") or author
                     local classColorHex
                     
-                    -- Use stored class token if available (performance optimization)
+                    -- Use stored class token (converted from numeric ID)
                     if classToken then
                         local classColor = RAID_CLASS_COLORS[classToken]
                         if classColor then
                             classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
                         end
-                    end
-                    
-                    -- Fallback to lookup only if no stored class
-                    if not classColorHex then
-                        classColorHex = self:GetClassColorForPlayer(author)
                     end
                     
                     local nameColorHex = classColorHex or "ffd100"  -- Class color or gold
