@@ -6,7 +6,7 @@
 -- ============================================================================
 
 -- Configuration
-local DEFAULT_DEBUG_MODE = false
+local DEFAULT_DEBUG_MODE = true
 
 -- Create the main addon table (global namespace)
 WhisperManager = {};
@@ -116,7 +116,7 @@ function addon:Initialize()
         self:DebugMessage("  After fix, same table? " .. tostring(self.settings == WhisperManager_Config.settings))
     end
 
-    -- Migrate old history format if needed
+    -- Migrate old history format if needed AND fix double-prefix bug
     if not WhisperManager_HistoryDB.__schema or WhisperManager_HistoryDB.__schema < 2 then
         local migrated = {}
         for key, history in pairs(WhisperManager_HistoryDB) do
@@ -140,6 +140,86 @@ function addon:Initialize()
         end
         migrated.__schema = 2
         WhisperManager_HistoryDB = migrated
+    end
+    
+    -- Fix double-prefix bug: merge c_c_ keys into c_ keys
+    self:DebugMessage("Checking for double-prefix keys...")
+    local keysToFix = {}
+    for key, history in pairs(WhisperManager_HistoryDB) do
+        if key:match("^c_c_") then
+            table.insert(keysToFix, key)
+        end
+    end
+    
+    if #keysToFix > 0 then
+        self:DebugMessage("Found", #keysToFix, "double-prefix keys to fix")
+        for _, badKey in ipairs(keysToFix) do
+            -- Extract the correct key: c_c_Name-Realm -> c_Name-Realm
+            local correctKey = badKey:gsub("^c_c_", "c_")
+            self:DebugMessage("Merging", badKey, "into", correctKey)
+            
+            local badHistory = WhisperManager_HistoryDB[badKey]
+            if not WhisperManager_HistoryDB[correctKey] then
+                -- No existing correct key, just rename
+                WhisperManager_HistoryDB[correctKey] = badHistory
+            elseif type(badHistory) == "table" and type(WhisperManager_HistoryDB[correctKey]) == "table" then
+                -- Merge histories, keeping newer messages
+                for _, entry in ipairs(badHistory) do
+                    table.insert(WhisperManager_HistoryDB[correctKey], entry)
+                end
+                -- Sort by timestamp
+                table.sort(WhisperManager_HistoryDB[correctKey], function(a, b)
+                    return (a.t or a.timestamp or 0) < (b.t or b.timestamp or 0)
+                end)
+            end
+            -- Delete the bad key
+            WhisperManager_HistoryDB[badKey] = nil
+        end
+        self:DebugMessage("Double-prefix keys fixed!")
+    end
+    
+    -- Fix RecentChats entries that have wrong realm (cleanup orphaned entries)
+    self:DebugMessage("Cleaning up RecentChats entries with mismatched realms...")
+    if WhisperManager_RecentChats then
+        local currentRealm = GetRealmName():gsub("%s+", "")
+        local recentToFix = {}
+        
+        -- Find entries that exist in RecentChats but not in HistoryDB
+        for recentKey, recentData in pairs(WhisperManager_RecentChats) do
+            if recentKey:match("^c_") and not WhisperManager_HistoryDB[recentKey] then
+                -- Extract just the name part (without realm)
+                local nameOnly = recentKey:match("^c_([^-]+)")
+                if nameOnly then
+                    -- Look for a matching entry in HistoryDB with a different realm
+                    for historyKey, _ in pairs(WhisperManager_HistoryDB) do
+                        if historyKey ~= "__schema" and historyKey:match("^c_" .. nameOnly .. "%-") then
+                            -- Found a match with different realm!
+                            table.insert(recentToFix, {old = recentKey, new = historyKey, data = recentData})
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        
+        if #recentToFix > 0 then
+            self:DebugMessage("Found", #recentToFix, "RecentChats entries with wrong realm")
+            for _, fix in ipairs(recentToFix) do
+                self:DebugMessage("Moving", fix.old, "->", fix.new)
+                -- Keep the newer lastMessageTime
+                if WhisperManager_RecentChats[fix.new] then
+                    WhisperManager_RecentChats[fix.new].lastMessageTime = math.max(
+                        WhisperManager_RecentChats[fix.new].lastMessageTime or 0,
+                        fix.data.lastMessageTime or 0
+                    )
+                else
+                    WhisperManager_RecentChats[fix.new] = fix.data
+                end
+                -- Delete the old incorrect entry
+                WhisperManager_RecentChats[fix.old] = nil
+            end
+            self:DebugMessage("RecentChats cleanup complete!")
+        end
     end
 
     -- Load display names from history

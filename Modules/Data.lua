@@ -59,13 +59,44 @@ end
 -- @param window table The whisper window frame
 -- @param playerKey string Canonical player key
 function addon:DisplayHistory(window, playerKey)
-    if not WhisperManager_HistoryDB then return end
+    -- Force a print so we ALWAYS see when this is called
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff=== DisplayHistory CALLED ===|r")
+    DEFAULT_CHAT_FRAME:AddMessage("|cffff00ffplayerKey: " .. tostring(playerKey) .. "|r")
+    
+    addon:DebugMessage("=== DisplayHistory START ===")
+    addon:DebugMessage("playerKey:", playerKey)
+    addon:DebugMessage("WhisperManager_HistoryDB exists:", WhisperManager_HistoryDB ~= nil)
+    
+    if not WhisperManager_HistoryDB then 
+        addon:DebugMessage("ERROR: WhisperManager_HistoryDB is nil!")
+        return 
+    end
+    
+    if not window or not window.History then 
+        addon:DebugMessage("ERROR: window or window.History is nil!")
+        addon:DebugMessage("window exists:", window ~= nil)
+        if window then
+            addon:DebugMessage("window.History exists:", window.History ~= nil)
+        end
+        return 
+    end
     
     local historyFrame = window.History
     historyFrame:Clear()
     
     local history = WhisperManager_HistoryDB[playerKey]
-    if not history then return end
+    if not history then 
+        addon:DebugMessage("ERROR: No history found for playerKey:", playerKey)
+        addon:DebugMessage("Available keys in HistoryDB:")
+        for key, _ in pairs(WhisperManager_HistoryDB) do
+            if key ~= "__schema" then
+                addon:DebugMessage("  - " .. tostring(key))
+            end
+        end
+        return 
+    end
+    
+    addon:DebugMessage("Found history with", #history, "messages for playerKey:", playerKey)
 
     -- Extract display name from key instead of using __display
     local displayName = self:GetDisplayNameFromKey(playerKey)
@@ -85,6 +116,8 @@ function addon:DisplayHistory(window, playerKey)
         local author = entry.a or entry.author
         local message = entry.m or entry.message
         local classToken = entry.c  -- Get stored class token
+        
+        addon:DebugMessage("Processing message", i, "- timestamp:", timestamp, "author:", author, "message length:", message and #message or 0)
         
         if timestamp and author and message then
             -- Regular message handling
@@ -174,10 +207,14 @@ function addon:DisplayHistory(window, playerKey)
                 -- WIM/Prat3 method: Simple concatenation preserves all escape sequences
                 local formattedMessage = timeString .. " " .. coloredAuthor .. " " .. messageColor .. formattedText .. "|r"
                 
+                addon:DebugMessage("Adding message to historyFrame:", formattedMessage:sub(1, 80) .. "...")
                 historyFrame:AddMessage(formattedMessage)
+        else
+            addon:DebugMessage("Skipping message", i, "- missing data. timestamp:", timestamp ~= nil, "author:", author ~= nil, "message:", message ~= nil)
         end
     end
     
+    addon:DebugMessage("=== DisplayHistory END - Total messages processed:", #history, "===")
     historyFrame:ScrollToBottom()
 end
 

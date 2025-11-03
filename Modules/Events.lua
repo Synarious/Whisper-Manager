@@ -412,10 +412,6 @@ function addon:SetupContextMenu()
             if playerKey then
                 addon:DebugMessage("Adding button to the menu...")
                 rootDescription:CreateDivider()
-                rootDescription:CreateButton("Open in WhisperManager", function()
-                    addon:DebugMessage("Menu button clicked for:", playerName)
-                    addon:OpenConversation(playerName)
-                end)
                 addon:DebugMessage("Button added successfully.")
             else
                 addon:DebugMessage("|cffffff00INFO: Could not normalize player key.|r")

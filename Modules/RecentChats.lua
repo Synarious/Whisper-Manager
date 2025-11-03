@@ -229,9 +229,9 @@ function addon:RefreshRecentChats()
                     end
                 end
             else
-                -- Extract player name from key
-                local playerName = chat.displayName
-                success = addon:OpenConversation(playerName)
+                -- Use the playerKey directly (it has the correct realm)
+                -- OpenConversation/ResolvePlayerIdentifiers will handle the c_ prefix correctly
+                success = addon:OpenConversation(chat.playerKey)
             end
             -- Only close the menu if the window was successfully opened/shown
             -- If in combat, the operation is queued and success=false, so keep menu open

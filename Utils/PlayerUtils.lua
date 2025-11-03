@@ -20,6 +20,17 @@ function addon:ResolvePlayerIdentifiers(playerName)
     local trimmed = self:TrimWhitespace(playerName)
     if not trimmed or trimmed == "" then return nil end
 
+    -- CRITICAL FIX: If input already has c_ or bnet_ prefix, return it as-is
+    -- This prevents double-prefixing (c_c_Name) when called with existing keys
+    if trimmed:match("^c_") or trimmed:match("^bnet_") then
+        addon:DebugMessage("ResolvePlayerIdentifiers: Input already has prefix, returning as-is:", trimmed)
+        -- Extract display name from the key
+        local display = self:GetDisplayNameFromKey(trimmed)
+        -- For target, strip prefix and return the name-realm part
+        local target = trimmed:match("^c_(.+)") or trimmed:match("^bnet_(.+)") or trimmed
+        return trimmed, target, display
+    end
+
     local target = Ambiguate(trimmed, "none") or trimmed
     if not target or target == "" then return nil end
 
