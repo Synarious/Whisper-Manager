@@ -1,4 +1,4 @@
-## Interface: 112500
+## Interface: 110205
 ## Title: Whisper Manager
 ## Notes: Whisper addon with window managment, editbox improvements and cross-character history without dependencies or complexity! 
 ## Author: Synarious | syfusion.com/github | https://github.com/Synarious/Whisper-Manager
