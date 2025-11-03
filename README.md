@@ -9,7 +9,6 @@ Is largely inspired by Wow Instant Messanger, but seeks to expand upon it with a
 - Advanced data retention (recent track & long-term track)
 
 **Other Features**
-- Flexible data retention configs. (WIP)
 - Change UI / Font Sizing
 
 
