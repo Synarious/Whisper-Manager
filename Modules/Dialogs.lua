@@ -12,7 +12,7 @@ local addon = WhisperManager;
 -- SECTION 1: URL Detection and Click Handling
 -- ============================================================================
 
--- URL detection patterns (from WIM/Prat)
+-- URL detection patterns 
 local URL_PATTERNS = {
     -- X://Y url
     "^(%a[%w+.-]+://%S+)",

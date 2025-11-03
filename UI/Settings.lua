@@ -27,7 +27,7 @@ local DEFAULT_SETTINGS = {
     soundChannel = "Master", -- Sound channel (Master, SFX, Music, Ambience, Dialog)
     enableTaskbarAlert = true, -- Enable Windows taskbar alert on whisper
     
-    -- Chat suppression (WIM-style)
+    -- Chat suppression 
     suppressDefaultChat = true, -- Suppress whispers from default chat when handled by WhisperManager
     
     -- Window spawn settings

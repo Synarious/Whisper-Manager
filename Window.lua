@@ -271,7 +271,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end)
     
     -- Focus window on mouse down, but don't consume clicks meant for History frame
-    -- WIM method: Check if mouse is over history frame first
+    -- WCheck if mouse is over history frame first
     win:SetScript("OnMouseDown", function(self, button)
         -- Don't handle clicks when mouse is over the history frame
         -- Let the history frame handle its own mouse events (higher strata/level)
@@ -415,7 +415,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.History:SetMouseMotionEnabled(true)
     win.History:SetMouseClickEnabled(true)
     
-    -- CRITICAL WIM METHOD: Keep same strata as parent (DIALOG) but much higher frame level
+    -- Keep same strata as parent (DIALOG) but much higher frame level
     -- Don't change strata or text will render above the window background
     win.History:SetFrameLevel(win:GetFrameLevel() + 50)
     
@@ -678,7 +678,7 @@ function addon:LoadWindowHistory(win)
             local formattedText = self:FormatEmotesAndSpeech(message)
             
             -- Format message - concatenate parts WITHOUT string.format to preserve hyperlinks
-            -- WIM/Prat3 method: Simple concatenation preserves all escape sequences
+            -- Simple concatenation preserves all escape sequences
             local formattedMessage = timeString .. " " .. coloredAuthor .. " " .. messageColor .. formattedText .. "|r"
             win.History:AddMessage(formattedMessage)
         end

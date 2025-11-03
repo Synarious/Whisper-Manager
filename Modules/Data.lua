@@ -144,7 +144,7 @@ function addon:DisplayHistory(window, playerKey)
                     else
                         classColorHex = "ffd100"
                     end
-                    -- Use WIM-style formatting: brackets outside, hyperlink only around the name
+                    -- Use formatting: brackets outside, hyperlink only around the name
                     local nameLink = string.format("|Hplayer:%s|h|cff%s%s|r|h", fullPlayerName, classColorHex, playerName)
                     coloredAuthor = string.format("%s[%s]|r: ", messageColor, nameLink)
                 else
@@ -194,7 +194,7 @@ function addon:DisplayHistory(window, playerKey)
                 formattedText = self:ConvertURLsToLinks(formattedText)
                 
                 -- Format message - concatenate parts WITHOUT string.format to preserve hyperlinks
-                -- WIM/Prat3 method: Simple concatenation preserves all escape sequences
+                -- Simple concatenation preserves all escape sequences
                 local formattedMessage = timeString .. " " .. coloredAuthor .. " " .. messageColor .. formattedText .. "|r"
                 
                 addon:DebugMessage("Adding message to historyFrame:", formattedMessage:sub(1, 80) .. "...")

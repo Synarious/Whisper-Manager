@@ -5,7 +5,7 @@
 local addon = WhisperManager;
 
 -- ============================================================================
--- Combat Lockdown Queue (WIM Method)
+-- Combat Lockdown Queue
 -- ============================================================================
 
 local combatQueue = {};
@@ -41,7 +41,7 @@ end)
 function addon:FocusWindow(window)
     if not window then return end
     
-    -- Queue operation if in combat (WIM method)
+    -- Queue operation if in combat
     if InCombatLockdown() then
         self:DebugMessage("In combat - queueing FocusWindow operation")
         table.insert(combatQueue, function() addon:FocusWindow(window) end)
@@ -456,7 +456,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win:SetPropagateKeyboardInput(true)
     
     -- Focus window on mouse down, but don't consume clicks meant for History frame
-    -- WIM method: Check if mouse is over history frame first
+    -- Check if mouse is over history frame first
     win:SetScript("OnMouseDown", function(self, button)
         -- Don't handle clicks when mouse is over the history frame
         -- Let the history frame handle its own mouse events (higher strata/level)
@@ -603,7 +603,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.History:SetMouseMotionEnabled(true)
     win.History:SetMouseClickEnabled(true)
     
-    -- CRITICAL WIM METHOD: Keep same strata as parent (DIALOG) but much higher frame level
+    -- CRITICAL Keep same strata as parent (DIALOG) but much higher frame level
     -- Don't change strata or text will render above the window background
     win.History:SetFrameLevel(win:GetFrameLevel() + 50)
     
@@ -908,7 +908,7 @@ function addon:LoadWindowHistory(win)
             local formattedText = self:FormatEmotesAndSpeech(message)
             
             -- Format message - concatenate parts WITHOUT string.format to preserve hyperlinks
-            -- WIM/Prat3 method: Simple concatenation preserves all escape sequences
+            -- Simple concatenation preserves all escape sequences
             local formattedMessage = timeString .. " " .. coloredAuthor .. " " .. messageColor .. formattedText .. "|r"
             win.History:AddMessage(formattedMessage)
         end

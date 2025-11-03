@@ -410,7 +410,7 @@ function addon:ShowHistoryDetail(playerKey, displayName)
             local formattedText = self:FormatEmotesAndSpeech(message)
             
             -- Format message - concatenate parts WITHOUT string.format to preserve hyperlinks
-            -- WIM/Prat3 method: Simple concatenation preserves all escape sequences
+            -- Simple concatenation preserves all escape sequences
             local formattedMessage = timeString .. " " .. coloredAuthor .. " " .. messageColor .. formattedText .. "|r"
             detailScroll:AddMessage(formattedMessage)
         end
