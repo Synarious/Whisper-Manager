@@ -1,9 +1,10 @@
 # description of this workflow, can be anything you want
 name: Package and release
 
-# we need to let GitHub know _when_ we want to release.
-# this is typically only when we create a new tag.
-# make sure your tags are annotated!
+# we need to let GitHub know _when_ we want to release, typically only when we create a new tag.
+# this will target only tags, and not all pushes to the master branch.
+# this part can be heavily customized to your liking, like targeting only tags that match a certain word,
+# other branches or even pullrequests.
 on:
   push:
     tags:
@@ -18,25 +19,25 @@ jobs:
     # we can run our steps on pretty much anything, but the "ubuntu-latest" image is a safe bet
     runs-on: ubuntu-latest
 
-    # we need to give the workflow permissions to write contents, so it can create releases
-    permissions:
-      contents: write  # <-- This is the magic line
-
-    # specify the environment variables used by the packager, matching the secrets for the project on GitHub
+    # specify the environment variables used by the packager, matching the secrets from the project on GitHub
     env:
       CF_API_KEY: ${{ secrets.CF_API_KEY }}
-      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}  # this secret is pre-provided for the workflow and does not
-                                                 # need to be added yourself, we just reference it here.
+      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}  # "GITHUB_TOKEN" is a secret always provided to the workflow
+                                                 # for your own token, the name cannot start with "GITHUB_"
 
     # "steps" holds a list of all the steps needed to package and release our AddOn
     steps:
 
       # we first have to clone the AddOn project, this is a required step
       - name: Clone project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0  # gets entire git history, needed for automatic changelogs
-
-      # once cloned, we just run the GitHub Action
+      # once cloned, we just run the GitHub Action for the packager project
       - name: Package and release
-        uses: BigWigsMods/packager@v2
+        run: curl -s https://raw.githubusercontent.com/BigWigsMods/packager/master/release.sh | bash -s -- -n "{package-name}-{project-version}"
+        shell: bash
+        
+      # once cloned, we just run the GitHub Action for the packager project
+      #- name: Package and release
+      #  uses: BigWigsMods/packager@v2
