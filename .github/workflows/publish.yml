@@ -18,9 +18,6 @@ jobs:
     # we can run our steps on pretty much anything, but the "ubuntu-latest" image is a safe bet
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write 
-
     # specify the environment variables used by the packager, matching the secrets for the project on GitHub
     env:
       CF_API_KEY: ${{ secrets.CF_API_KEY }}
@@ -39,3 +36,10 @@ jobs:
       # once cloned, we just run the GitHub Action
       - name: Package and release
         uses: BigWigsMods/packager@v2
+
+      # another example where we supply additional arguments, this example is specifically to release
+      # for the Wrath of the Lich King Classic version of the game and doesn't upload to WoWInterface
+      - name: Package and release for Wrath of the Lich King Classic
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -g wrath -w 0
