@@ -3,6 +3,7 @@
 ## Notes: Whisper addon with window managment, editbox improvements and cross-character history.
 ## Author: Synarious | syfusion.com/github | https://github.com/Synarious/Whisper-Manager
 ## Version: @project-version@
+## X-Curse-Project-ID: 1377667
 ## Dependencies: Blizzard_ChatFrame
 ## SavedVariables: WhisperManager_HistoryDB, WhisperManager_WindowDB, WhisperManager_Config, WhisperManager_RecentChats
 
