@@ -51,8 +51,8 @@ end
 -- @param playerKey string Canonical player key
 function addon:DisplayHistory(window, playerKey)
     -- Force a print so we ALWAYS see when this is called
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff00ff=== DisplayHistory CALLED ===|r")
-    DEFAULT_CHAT_FRAME:AddMessage("|cffff00ffplayerKey: " .. tostring(playerKey) .. "|r")
+    addon:DebugMessage("|cffff00ff=== DisplayHistory CALLED ===|r")
+    addon:DebugMessage("|cffff00ffplayerKey: " .. tostring(playerKey) .. "|r")
     
     addon:DebugMessage("=== DisplayHistory START ===")
     addon:DebugMessage("playerKey:", playerKey)

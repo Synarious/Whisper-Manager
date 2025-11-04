@@ -312,11 +312,19 @@ function addon:ShowCopyChatDialog(playerKey, displayName)
     local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
     local fullPlayerName = playerName .. "-" .. realm
     
+    -- Check if this is a BNet conversation
+    local isBNet = playerKey:match("^bnet_") ~= nil
+    
+    addon:DebugMessage("ShowCopyChatDialog: Processing " .. #history .. " history entries for playerKey: " .. playerKey)
+    
     for i, entry in ipairs(history) do
         local timestamp = entry.t or entry.timestamp
         local author = entry.a or entry.author
         local message = entry.m or entry.message
         local isSystemMessage = entry.s
+        
+        addon:DebugMessage(string.format("Entry %d: timestamp=%s, author=%s, message=%s", 
+            i, tostring(timestamp), tostring(author), tostring(message and message:sub(1, 20) or "nil")))
         
         if timestamp and author and message then
             -- Format timestamp
@@ -329,7 +337,22 @@ function addon:ShowCopyChatDialog(playerKey, displayName)
             else
                 -- Regular message - strip color codes and hyperlinks
                 local plainMessage = StripColorCodes(message)
-                local authorName = author:match("^([^%-]+)") or author
+                -- Determine author name
+                local authorName
+                if isBNet then
+                    -- For BNet: check if author contains "-" (player's Name-Realm format)
+                    -- vs encoded format like "|Kp5|k" for friend's messages
+                    if author:match("%-") then
+                        -- It's the player's message (Name-Realm format)
+                        authorName = author:match("^([^%-]+)") or author
+                    else
+                        -- It's from the BNet friend (encoded format) - use the displayName passed to the function
+                        authorName = displayName or playerKey:match("bnet_(.+)") or "BNet Friend"
+                    end
+                else
+                    -- For regular whispers, extract character name before the realm hyphen
+                    authorName = author:match("^([^%-]+)") or author
+                end
                 lines[#lines + 1] = timeStr .. " " .. authorName .. ": " .. plainMessage
             end
         end
