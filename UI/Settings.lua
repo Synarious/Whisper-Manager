@@ -74,12 +74,11 @@ local SOUND_CHANNEL_OPTIONS = {
 
 -- History retention modes
 local RETENTION_OPTIONS = {
-    {name = "Keep All (No Limit)", value = "none", keepCount = nil, keepMonths = nil, deleteMonths = nil},
-    {name = "Keep 10 recent (6 mo), delete after 3 mo", value = "mode1", keepCount = 10, keepMonths = 6, deleteMonths = 3},
-    {name = "Keep 25 recent (12 mo), delete after 2 mo", value = "mode2", keepCount = 25, keepMonths = 12, deleteMonths = 2},
-    {name = "Keep 5 recent (forever), delete after 2 mo", value = "mode3", keepCount = 5, keepMonths = nil, deleteMonths = 2},
-    {name = "Keep 10 recent (forever), delete after 2 mo", value = "mode4", keepCount = 10, keepMonths = nil, deleteMonths = 2},
-    {name = "Keep 25 recent (forever), delete after 1 mo", value = "mode5", keepCount = 25, keepMonths = nil, deleteMonths = 1},
+    {name = "(Safest) Keep 10 recent (3 mo), delete after 3 mo", value = "mode1", keepCount = 10, keepMonths = 3, deleteMonths = 3},
+    {name = "(Safe) Keep 25 recent (6 mo), delete after 2 mo", value = "mode1", keepCount = 25, keepMonths = 6, deleteMonths = 2},
+    {name = "(Okay) Keep 25 recent (12 mo), delete after 2 mo", value = "mode2", keepCount = 25, keepMonths = 12, deleteMonths = 2},
+    {name = "(Unsafe) Keep 10 recent (24 mo), delete after 2 mo", value = "mode4", keepCount = 10, keepMonths = 24, deleteMonths = 2},
+    {name = "(Unsafe!!) Keep 25 recent (forever), delete after 1 mo", value = "mode5", keepCount = 25, keepMonths = nil, deleteMonths = 1},
 }
 
 -- ============================================================================
