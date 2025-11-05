@@ -1,31 +1,13 @@
--- ============================================================================
--- Window.lua - Individual whisper window creation and management
--- ============================================================================
+-- ARCHIVAL MARKER: Root Window.lua (moved)
+--
+-- This file was moved to debug_addons/Window.lua.bak to avoid having two
+-- Window.lua implementations in the repository. The active window code is
+-- located at UI/Window.lua and is loaded by WhisperManager.xml. If you need
+-- to restore the archived file, copy it back from debug_addons/Window.lua.bak.
 
-local addon = WhisperManager;
+local addon = WhisperManager -- placeholder to avoid nil references if loaded
 
--- ============================================================================
--- Window Focus Management
--- ============================================================================
-
-function addon:FocusWindow(window)
-    if not window then return end
-    
-    -- Unfocus all other windows
-    for _, win in pairs(self.windows) do
-        if win ~= window and win:IsShown() then
-            win:SetAlpha(self.UNFOCUSED_ALPHA)
-        end
-    end
-    
-    -- Focus this window
-    window:SetAlpha(self.FOCUSED_ALPHA)
-    
-    -- Bring to front with new frame level
-    self.nextFrameLevel = self.nextFrameLevel + 10
-    window:SetFrameLevel(self.nextFrameLevel)
-    window:Raise()
-end
+return
 
 -- ============================================================================
 -- Helper Functions

@@ -19,7 +19,7 @@ local DEFAULT_SETTINGS = {
     whisperSendColor = {r = 216/255, g = 50/255, b = 255/255},
     bnetReceiveColor = {r = 0.0, g = 0.66, b = 1.0}, -- Blue (default BNet receive)
     -- Default BNet send color: #0072FF -> (0,114,255)
-    bnetSendColor = {r = 0/255, g = 114/255, b = 255/255}, -- Blue (default BNet send)
+    bnetSendColor = {r = 0/255, g = 126/255, b = 255/255}, -- #007EFF (BNet send)
     timestampColor = {r = 0.5, g = 0.5, b = 0.5}, -- Gray (timestamp color)
     
     -- Notification settings
@@ -306,34 +306,28 @@ local function CreateColorPicker(parent, label, settingKey, x, y)
     colorSwatch:SetBackdropColor(color.r, color.g, color.b, 1)
     colorSwatch:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
     
-    colorSwatch:SetScript("OnClick", function()
+    colorSwatch:SetScript("OnClick", function(self)
         local color = addon:GetSetting(settingKey) or DEFAULT_SETTINGS[settingKey]
-        -- Use the standard ColorPickerFrame API to avoid depending on non-standard helpers
-        local previousValues = { r = color.r, g = color.g, b = color.b }
+        local current = { r = color.r, g = color.g, b = color.b }
 
-        ColorPickerFrame.func = function(restore)
-            if restore then
-                -- restore is a table with r,g,b
-                addon:SetSetting(settingKey, { r = restore.r, g = restore.g, b = restore.b })
-                colorSwatch:SetBackdropColor(restore.r, restore.g, restore.b, 1)
-            else
+        ColorPickerFrame:SetupColorPickerAndShow({
+            r = current.r,
+            g = current.g,
+            b = current.b,
+            opacity = 1,
+            hasOpacity = false,
+            swatchFunc = function()
                 local r, g, b = ColorPickerFrame:GetColorRGB()
                 addon:SetSetting(settingKey, { r = r, g = g, b = b })
-                colorSwatch:SetBackdropColor(r, g, b, 1)
-            end
-        end
-
-        ColorPickerFrame.cancelFunc = function(restore)
-            if restore then
-                addon:SetSetting(settingKey, { r = restore.r, g = restore.g, b = restore.b })
-                colorSwatch:SetBackdropColor(restore.r, restore.g, restore.b, 1)
-            end
-        end
-
-        ColorPickerFrame.previousValues = previousValues
-        ColorPickerFrame:SetColorRGB(color.r, color.g, color.b)
-        ColorPickerFrame.hasOpacity = false
-        ColorPickerFrame:Show()
+                self:SetBackdropColor(r, g, b, 1)
+            end,
+            cancelFunc = function(previousValues)
+                if previousValues then
+                    addon:SetSetting(settingKey, { r = previousValues.r, g = previousValues.g, b = previousValues.b })
+                    self:SetBackdropColor(previousValues.r, previousValues.g, previousValues.b, 1)
+                end
+            end,
+        })
     end)
     
     colorSwatch:SetScript("OnEnter", function(self)

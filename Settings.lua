@@ -8,7 +8,20 @@ local addon = WhisperManager;
 -- Default Settings
 -- ============================================================================
 
-local DEFAULT_SETTINGS = {
+ -- ARCHIVAL MARKER: Settings.lua (moved)
+ --
+ -- This file was previously a standalone settings implementation. It has been
+ -- moved to debug_addons/Settings.lua.bak to avoid duplicate/unused code.
+ -- The active settings UI is located at UI/Settings.lua and is the file
+ -- referenced by WhisperManager.xml. If you need to restore the original
+ -- implementation, copy the file from debug_addons/Settings.lua.bak back here.
+ 
+ -- No runtime code lives in this placeholder.
+ 
+ local addon = WhisperManager; -- placeholder to avoid syntax errors when loaded
+ 
+ return
+ }
     messageFontSize = 14,
     inputFontSize = 14,
     fontFamily = "Fonts\\ARIALN.TTF", -- Default to Arial per user request
