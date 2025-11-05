@@ -1,10 +1,3 @@
--- ============================================================================
--- Core.lua - Minimal addon core (initialization and global state only)
--- ============================================================================
--- This file creates the addon namespace and initializes saved variables.
--- All other functionality is split into specialized modules.
--- ============================================================================
-
 -- Configuration
 local DEFAULT_DEBUG_MODE = false
 

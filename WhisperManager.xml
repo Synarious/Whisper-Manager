@@ -35,4 +35,5 @@
     
     <!-- EVENTS: Event handlers and initialization trigger -->
     <Script file="Modules\Events.lua"/>         <!-- Whisper events + calls Initialize() -->
+<!-- End of WhisperManager XML -->
 </Ui>
