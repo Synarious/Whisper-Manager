@@ -797,6 +797,9 @@ end
 -- ============================================================================
 
 function addon:SaveWindowPosition(window)
+    -- SCHEMA PROTECTION: Block if validation failed
+    if not addon:IsSafeToOperate() then return end
+    
     if not window then return end
     if not WhisperManager_Config then WhisperManager_Config = {} end
     if not WhisperManager_Config.windowPositions then

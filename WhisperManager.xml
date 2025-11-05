@@ -20,6 +20,7 @@
     <Script file="Utils\ContextMenu.lua"/>      <!-- Right-click context menus -->
     
     <!-- MODULES: Feature modules -->
+    <Script file="Modules\SchemaValidator.lua"/> <!-- Schema validation (MUST load first) -->
     <Script file="Modules\Data.lua"/>           <!-- History, recent chats, class cache -->
     <Script file="Modules\Commands.lua"/>       <!-- Slash command handlers -->
     <Script file="Modules\Dialogs.lua"/>        <!-- URL copy and chat export dialogs -->

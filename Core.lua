@@ -6,7 +6,7 @@
 -- ============================================================================
 
 -- Configuration
-local DEFAULT_DEBUG_MODE = true
+local DEFAULT_DEBUG_MODE = false
 
 -- Create the main addon table (global namespace)
 WhisperManager = {};
@@ -124,7 +124,24 @@ function addon:Initialize()
     if type(WhisperManager_Config) ~= "table" then
         self:DebugMessage("Creating new WhisperManager_Config (first time setup)")
         WhisperManager_Config = {}
-    else
+    end
+    
+    -- CRITICAL: Validate schema version BEFORE any data operations
+    self:DebugMessage("Running schema validation...")
+    if not self:ValidateSchema() then
+        self:Print("|cffff0000WhisperManager has been disabled due to version mismatch!|r")
+        self:Print("|cffff8800Your saved data is safe and has not been modified.|r")
+        return -- ABORT initialization
+    end
+    
+    -- Set schema version for new installations
+    if WhisperManager_HistoryDB and not WhisperManager_HistoryDB.__schema then
+        WhisperManager_HistoryDB.__schema = self.EXPECTED_SCHEMA_VERSION
+    end
+    
+    self:DebugMessage("Schema validation passed - continuing initialization")
+    
+    if WhisperManager_Config.settings then
         self:DebugMessage("WhisperManager_Config exists, loading saved settings...")
         if WhisperManager_Config.settings then
             self:DebugMessage("Found existing settings table:")

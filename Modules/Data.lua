@@ -19,6 +19,9 @@ local addon = WhisperManager;
 -- @param message string Message content
 -- @param classToken string Optional class token (e.g., "WARRIOR", "MAGE")
 function addon:AddMessageToHistory(playerKey, displayName, author, message, classToken)
+    -- SCHEMA PROTECTION: Block if validation failed
+    if not addon:IsSafeToOperate() then return end
+    
     if not playerKey then return end
     if not WhisperManager_HistoryDB then WhisperManager_HistoryDB = {} end
     WhisperManager_HistoryDB.__schema = 5  -- Updated schema version (per-message class storage)
@@ -217,6 +220,9 @@ end
 -- @param displayName string Display name (unused, kept for compatibility)
 -- @param isBNet boolean Whether this is a BNet conversation
 function addon:UpdateRecentChat(playerKey, displayName, isBNet)
+    -- SCHEMA PROTECTION: Block if validation failed
+    if not addon:IsSafeToOperate() then return end
+    
     if not playerKey then return end
     
     if not WhisperManager_RecentChats then
