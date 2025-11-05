@@ -17,13 +17,13 @@ function addon:HandleSlashCommand(message)
     local input = self:TrimWhitespace(message or "") or ""
     if input == "" or input:lower() == "help" then
         self:Print("Usage:")
-        self:Print("/whispermanager <player> - Open a WhisperManager window.")
-        self:Print("/whispermanager debug [on|off|toggle] - Control diagnostic chat output.")
-        self:Print("/whispermanager resetwindows - Reset saved window positions.")
-        self:Print("/whispermanager reset_all_data - Clear all saved data (history, windows, config).")
-        self:Print("/whispermanager debug_retention/whispermanager debug_retention - Test retention cleanup (keep 3 recent, delete older than 5 min).")
-        self:Print("/whispermanager cleanup_empty - Remove empty conversation entries from history.")
-        self:Print("Aliases: /wm, /whispermanager")
+        self:Print("/wmgr <player> - Open a WhisperManager window.")
+        self:Print("/wmgr debug [on|off|toggle] - Control diagnostic chat output.")
+        self:Print("/wmgr resetwindows - Reset saved window positions.")
+        self:Print("/wmgr reset_all_data - [Dangerous]  Clear all saved data (history, windows, config).")
+        self:Print("/wmgr debug_retention_delete - [Dangerous] Data retention cleanup (keep 3 recent, delete older than 5 min).")
+        self:Print("/wmgr cleanup_empty - [Dangerous] Remove empty conversation entries from history.")
+        self:Print("Aliases: /wmgr, /whispermanager")
         return
     end
 
@@ -48,7 +48,7 @@ function addon:HandleSlashCommand(message)
         WhisperManager_RecentChats = {}
         self:Print("|cffff0000All WhisperManager data has been cleared!|r")
         self:Print("Please /reload to apply changes.")
-    elseif command == "debug_retention" then
+    elseif command == "debug_retention_delete" then
         self:RunDebugRetentionCleanup()
     elseif command == "cleanup_empty" then
         local removed = self:CleanupEmptyHistoryEntries()
@@ -72,9 +72,8 @@ end
 
 --- Register slash commands (called during initialization)
 function addon:RegisterSlashCommands()
-    SLASH_WHISPERMANAGER1 = "/whisper"
+    SLASH_WHISPERMANAGER1 = "/wmgr"
     SLASH_WHISPERMANAGER2 = "/whispermanager"
-    SLASH_WHISPERMANAGER3 = "/wm"
     SlashCmdList["WHISPERMANAGER"] = function(msg)
         addon:HandleSlashCommand(msg)
     end
