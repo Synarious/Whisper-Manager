@@ -528,13 +528,31 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         tile = true, tileSize = 16, edgeSize = 16,
         insets = { left = 3, right = 3, top = 3, bottom = 3 }
     })
-    win:SetBackdropColor(0, 0, 0, 0.9)
+    
+    -- Apply appearance settings
+    local bgColor = addon:GetSetting("windowBackgroundColor") or {r = 0, g = 0, b = 0}
+    local bgAlpha = addon:GetSetting("windowBackgroundAlpha") or 0.9
+    win:SetBackdropColor(bgColor.r, bgColor.g, bgColor.b, bgAlpha)
     win:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     win:Hide()
     
     -- Assign unique frame level for proper stacking
     addon.nextFrameLevel = addon.nextFrameLevel + 10
     win:SetFrameLevel(addon.nextFrameLevel)
+    
+    -- Title bar background
+    win.titleBar = CreateFrame("Frame", nil, win, "BackdropTemplate")
+    win.titleBar:SetPoint("TOPLEFT", 3, -3)
+    win.titleBar:SetPoint("TOPRIGHT", -3, -3)
+    win.titleBar:SetHeight(30)
+    win.titleBar:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        tile = false
+    })
+    local titleColor = addon:GetSetting("titleBarColor") or {r = 0, g = 0, b = 0}
+    local titleAlpha = addon:GetSetting("titleBarAlpha") or 0.8
+    win.titleBar:SetBackdropColor(titleColor.r, titleColor.g, titleColor.b, titleAlpha)
+    win.titleBar:SetFrameLevel(win:GetFrameLevel())
     
     -- Title
     win.title = win:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -641,7 +659,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.InputContainer = CreateFrame("Frame", containerName, UIParent, "BackdropTemplate")
     win.InputContainer:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, 1)  -- 1px offset to connect seamlessly
     win.InputContainer:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, 1)
-    win.InputContainer:SetFrameStrata("DIALOG")
+    win.InputContainer:SetFrameStrata("MEDIUM")
+    win.InputContainer:SetFrameLevel(win:GetFrameLevel() + 5)
     win.InputContainer:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -649,7 +668,9 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         edgeSize = 12,
         insets = { left = 3, right = 3, top = 3, bottom = 3 }
     })
-    win.InputContainer:SetBackdropColor(0, 0, 0, 0.9)
+    local inputColor = addon:GetSetting("inputBoxColor") or {r = 0, g = 0, b = 0}
+    local inputAlpha = addon:GetSetting("inputBoxAlpha") or 0.9
+    win.InputContainer:SetBackdropColor(inputColor.r, inputColor.g, inputColor.b, inputAlpha)
     win.InputContainer:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
     
     -- Make input container move with window

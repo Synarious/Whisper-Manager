@@ -7,6 +7,7 @@
 -- ============================================================================
 
 local addon = WhisperManager;
+local SCHEMA_VERSION = 1
 
 -- ============================================================================
 -- SECTION 1: Message History Management
@@ -24,7 +25,7 @@ function addon:AddMessageToHistory(playerKey, displayName, author, message, clas
     
     if not playerKey then return end
     if not WhisperManager_HistoryDB then WhisperManager_HistoryDB = {} end
-    WhisperManager_HistoryDB.__schema = 5  -- Updated schema version (per-message class storage)
+    WhisperManager_HistoryDB.__schema = SCHEMA_VERSION  -- Updated schema version (per-message class storage)
     if not WhisperManager_HistoryDB[playerKey] then
         WhisperManager_HistoryDB[playerKey] = {}
     end

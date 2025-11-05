@@ -30,7 +30,9 @@ function addon:CreateRecentChatsFrame()
         tile = true, tileSize = 16, edgeSize = 16,
         insets = { left = 3, right = 3, top = 3, bottom = 3 }
     })
-    frame:SetBackdropColor(0, 0, 0, 0.9)
+    local recentColor = addon:GetSetting("recentChatBackgroundColor") or {r = 0, g = 0, b = 0}
+    local recentAlpha = addon:GetSetting("recentChatBackgroundAlpha") or 0.9
+    frame:SetBackdropColor(recentColor.r, recentColor.g, recentColor.b, recentAlpha)
     frame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     frame:Hide()
     

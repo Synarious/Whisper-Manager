@@ -22,6 +22,16 @@ local DEFAULT_SETTINGS = {
     bnetSendColor = {r = 0/255, g = 114/255, b = 255/255}, -- Blue (default BNet send)
     timestampColor = {r = 0.5, g = 0.5, b = 0.5}, -- Gray (timestamp color)
     
+    -- Window appearance settings
+    windowBackgroundColor = {r = 0.0, g = 0.0, b = 0.0}, -- Black background
+    windowBackgroundAlpha = 0.9, -- 90% opacity
+    titleBarColor = {r = 0.0, g = 0.0, b = 0.0}, -- Black title bar
+    titleBarAlpha = 0.8, -- 80% opacity
+    inputBoxColor = {r = 0.0, g = 0.0, b = 0.0}, -- Black input box
+    inputBoxAlpha = 0.5, -- 50% opacity
+    recentChatBackgroundColor = {r = 0.0, g = 0.0, b = 0.0}, -- Black recent chat bg
+    recentChatBackgroundAlpha = 0.9, -- 90% opacity
+    
     -- Notification settings
     notificationSound = SOUNDKIT.TELL_MESSAGE, -- Default notification sound (using sound kit ID)
     soundChannel = "Master", -- Sound channel (Master, SFX, Music, Ambience, Dialog)
@@ -137,6 +147,43 @@ function addon:ApplyFontSettings()
     end
 end
 
+function addon:ApplyAppearanceSettings()
+    -- Get appearance settings
+    local bgColor = self:GetSetting("windowBackgroundColor") or DEFAULT_SETTINGS.windowBackgroundColor
+    local bgAlpha = self:GetSetting("windowBackgroundAlpha") or DEFAULT_SETTINGS.windowBackgroundAlpha
+    local titleColor = self:GetSetting("titleBarColor") or DEFAULT_SETTINGS.titleBarColor
+    local titleAlpha = self:GetSetting("titleBarAlpha") or DEFAULT_SETTINGS.titleBarAlpha
+    local inputColor = self:GetSetting("inputBoxColor") or DEFAULT_SETTINGS.inputBoxColor
+    local inputAlpha = self:GetSetting("inputBoxAlpha") or DEFAULT_SETTINGS.inputBoxAlpha
+    local recentBgColor = self:GetSetting("recentChatBackgroundColor") or DEFAULT_SETTINGS.recentChatBackgroundColor
+    local recentBgAlpha = self:GetSetting("recentChatBackgroundAlpha") or DEFAULT_SETTINGS.recentChatBackgroundAlpha
+    
+    -- Update all open whisper windows
+    for _, window in pairs(self.windows) do
+        if window then
+            -- Update window background
+            if window.SetBackdropColor then
+                window:SetBackdropColor(bgColor.r, bgColor.g, bgColor.b, bgAlpha)
+            end
+            
+            -- Update title bar
+            if window.titleBar and window.titleBar.SetBackdropColor then
+                window.titleBar:SetBackdropColor(titleColor.r, titleColor.g, titleColor.b, titleAlpha)
+            end
+            
+            -- Update input box background
+            if window.InputContainer and window.InputContainer.SetBackdropColor then
+                window.InputContainer:SetBackdropColor(inputColor.r, inputColor.g, inputColor.b, inputAlpha)
+            end
+        end
+    end
+    
+    -- Update recent chats window
+    if self.recentChatsFrame then
+        self.recentChatsFrame:SetBackdropColor(recentBgColor.r, recentBgColor.g, recentBgColor.b, recentBgAlpha)
+    end
+end
+
 -- ============================================================================
 -- Sound Notification Functions
 -- ============================================================================
@@ -234,6 +281,98 @@ local function CreateColorPicker(parent, label, settingKey, x, y)
     end)
     
     return colorSwatch
+end
+
+-- Helper function to create a color picker with alpha slider
+local function CreateColorAlphaPicker(parent, label, colorKey, alphaKey, x, y, applyCallback)
+    local labelText = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    labelText:SetPoint("TOPLEFT", x, y)
+    labelText:SetText(label)
+    
+    -- Color swatch
+    local colorSwatch = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    colorSwatch:SetSize(30, 20)
+    colorSwatch:SetPoint("LEFT", labelText, "RIGHT", 10, 0)
+    colorSwatch:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = false, tileSize = 0, edgeSize = 12,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 }
+    })
+    
+    local color = addon:GetSetting(colorKey) or DEFAULT_SETTINGS[colorKey]
+    local alpha = addon:GetSetting(alphaKey) or DEFAULT_SETTINGS[alphaKey]
+    colorSwatch:SetBackdropColor(color.r, color.g, color.b, 1)
+    colorSwatch:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    
+    colorSwatch:SetScript("OnClick", function(self)
+        local color = addon:GetSetting(colorKey) or DEFAULT_SETTINGS[colorKey]
+        ColorPickerFrame:SetupColorPickerAndShow({
+            r = color.r,
+            g = color.g,
+            b = color.b,
+            opacity = 1,
+            hasOpacity = false,
+            swatchFunc = function()
+                local r, g, b = ColorPickerFrame:GetColorRGB()
+                addon:SetSetting(colorKey, {r = r, g = g, b = b})
+                self:SetBackdropColor(r, g, b, 1)
+                if applyCallback then applyCallback() end
+            end,
+            cancelFunc = function(previousValues)
+                addon:SetSetting(colorKey, {r = previousValues.r, g = previousValues.g, b = previousValues.b})
+                self:SetBackdropColor(previousValues.r, previousValues.g, previousValues.b, 1)
+                if applyCallback then applyCallback() end
+            end,
+        })
+    end)
+    
+    colorSwatch:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Click to change color", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    
+    colorSwatch:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+    
+    -- Alpha slider label
+    local alphaLabel = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    alphaLabel:SetPoint("LEFT", colorSwatch, "RIGHT", 15, 0)
+    alphaLabel:SetText("Opacity:")
+    
+    -- Alpha value display
+    local alphaValue = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    alphaValue:SetPoint("LEFT", alphaLabel, "RIGHT", 5, 0)
+    alphaValue:SetText(string.format("%.0f%%", alpha * 100))
+    
+    -- Alpha slider
+    local alphaSlider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+    alphaSlider:SetPoint("LEFT", alphaValue, "RIGHT", 10, 0)
+    alphaSlider:SetMinMaxValues(0, 1)
+    alphaSlider:SetValue(alpha)
+    alphaSlider:SetValueStep(0.05)
+    alphaSlider:SetObeyStepOnDrag(true)
+    alphaSlider:SetWidth(120)
+    alphaSlider:SetScript("OnValueChanged", function(self, value)
+        alphaValue:SetText(string.format("%.0f%%", value * 100))
+        addon:SetSetting(alphaKey, value)
+        if applyCallback then applyCallback() end
+    end)
+    
+    -- Hide default slider text
+    local sliderName = alphaSlider:GetName()
+    if sliderName then
+        local low = _G[sliderName.."Low"]
+        local high = _G[sliderName.."High"]
+        local text = _G[sliderName.."Text"]
+        if low then low:SetText("") end
+        if high then high:SetText("") end
+        if text then text:SetText("") end
+    end
+    
+    return colorSwatch, alphaSlider
 end
 
 function addon:CreateSettingsFrame()
@@ -402,6 +541,33 @@ function addon:CreateSettingsFrame()
     frame.timestampColor = CreateColorPicker(scrollChild, "Timestamp:", "timestampColor", 10, yOffset)
     yOffset = yOffset - 50
     
+    -- Appearance Settings Header
+    local appearanceHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    appearanceHeader:SetPoint("TOPLEFT", 10, yOffset)
+    appearanceHeader:SetText("Window Appearance")
+    appearanceHeader:SetTextColor(1, 0.82, 0)
+    yOffset = yOffset - 35
+    
+    -- Window Background
+    frame.windowBg = CreateColorAlphaPicker(scrollChild, "Window Background:", "windowBackgroundColor", 
+        "windowBackgroundAlpha", 10, yOffset, function() addon:ApplyAppearanceSettings() end)
+    yOffset = yOffset - 35
+    
+    -- Title Bar
+    frame.titleBar = CreateColorAlphaPicker(scrollChild, "Title Bar:", "titleBarColor", 
+        "titleBarAlpha", 10, yOffset, function() addon:ApplyAppearanceSettings() end)
+    yOffset = yOffset - 35
+    
+    -- Input Box
+    frame.inputBox = CreateColorAlphaPicker(scrollChild, "Input Box:", "inputBoxColor", 
+        "inputBoxAlpha", 10, yOffset, function() addon:ApplyAppearanceSettings() end)
+    yOffset = yOffset - 35
+    
+    -- Recent Chat Window
+    frame.recentChat = CreateColorAlphaPicker(scrollChild, "Recent Chat Window:", "recentChatBackgroundColor", 
+        "recentChatBackgroundAlpha", 10, yOffset, function() addon:ApplyAppearanceSettings() end)
+    yOffset = yOffset - 50
+    
     -- Notification Settings Header
     local notificationHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     notificationHeader:SetPoint("TOPLEFT", 10, yOffset)
@@ -525,7 +691,21 @@ function addon:CreateSettingsFrame()
         local timestamp = DEFAULT_SETTINGS.timestampColor
         frame.timestampColor:SetBackdropColor(timestamp.r, timestamp.g, timestamp.b, 1)
         
+        -- Update appearance color swatches (just the color part, sliders update automatically)
+        local windowBg = DEFAULT_SETTINGS.windowBackgroundColor
+        frame.windowBg:SetBackdropColor(windowBg.r, windowBg.g, windowBg.b, 1)
+        
+        local titleBar = DEFAULT_SETTINGS.titleBarColor
+        frame.titleBar:SetBackdropColor(titleBar.r, titleBar.g, titleBar.b, 1)
+        
+        local inputBox = DEFAULT_SETTINGS.inputBoxColor
+        frame.inputBox:SetBackdropColor(inputBox.r, inputBox.g, inputBox.b, 1)
+        
+        local recentChat = DEFAULT_SETTINGS.recentChatBackgroundColor
+        frame.recentChat:SetBackdropColor(recentChat.r, recentChat.g, recentChat.b, 1)
+        
         addon:ApplyFontSettings()
+        addon:ApplyAppearanceSettings()
         addon:Print("Settings reset to defaults.")
     end)
     
