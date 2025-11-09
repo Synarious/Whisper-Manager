@@ -35,14 +35,55 @@ function addon:CreateHistoryFrame()
     frame:SetBackdropColor(0, 0, 0, 0.9)
     frame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     frame:Hide()
+    frame:SetToplevel(true)
     
-    -- ESC key handling - don't use UISpecialFrames to avoid conflicts
+    -- Keyboard handling - capture navigation keys and ESC
+    -- Allow most keys to propagate to the game (so movement keys still work)
+    frame:SetPropagateKeyboardInput(true)
     frame:SetScript("OnKeyDown", function(self, key)
+        -- Let common movement keys pass through so player can move with WASD
+        if key == "W" or key == "A" or key == "S" or key == "D" then
+            return
+        end
+        -- Close with ESC
         if key == "ESCAPE" then
             self:Hide()
+            return
+        end
+
+    -- Navigation: move the list scrollbar (if present)
+        local listScroll = self.listScrollFrame
+        if listScroll and listScroll.ScrollBar then
+            local sb = listScroll.ScrollBar
+            local minV, maxV = sb:GetMinMaxValues()
+            local cur = sb:GetValue()
+            if key == "UP" or key == "LEFT" then
+                sb:SetValue(math.max(minV, cur - 40))
+                return
+            elseif key == "DOWN" or key == "RIGHT" then
+                sb:SetValue(math.min(maxV, cur + 40))
+                return
+            elseif key == "PAGEDOWN" then
+                sb:SetValue(math.min(maxV, cur + 200))
+                return
+            elseif key == "PAGEUP" then
+                sb:SetValue(math.max(minV, cur - 200))
+                return
+            end
+        end
+
+        -- Detail scroll keyboard handling
+        local detail = self.detailScrollFrame
+        if detail then
+            if key == "PAGEDOWN" then
+                detail:ScrollDown()
+                return
+            elseif key == "PAGEUP" then
+                detail:ScrollUp()
+                return
+            end
         end
     end)
-    frame:SetPropagateKeyboardInput(true)
     
     -- Title
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -53,6 +94,18 @@ function addon:CreateHistoryFrame()
     frame.closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     frame.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     frame.closeBtn:SetSize(24, 24)
+    frame.closeBtn:SetScript("OnClick", function(self)
+        local f = self:GetParent()
+        if f then f:Hide() end
+    end)
+    frame.closeBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Close", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    frame.closeBtn:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
     
     -- Resize button
     frame.resizeBtn = CreateFrame("Button", nil, frame)
@@ -164,6 +217,18 @@ function addon:CreateHistoryFrame()
         end
     end)
     
+    -- When shown, ensure this frame receives keyboard input and is focused
+    frame:SetScript("OnShow", function(self)
+        -- Bring to front
+        self:Raise()
+        -- Clear any EditBox focus so the frame receives OnKeyDown events
+        if self.searchBox and type(self.searchBox.ClearFocus) == "function" then
+            pcall(function() self.searchBox:ClearFocus() end)
+        end
+        -- Clear global keyboard focus (nil) to ensure our frame's OnKeyDown receives keys
+        pcall(function() SetKeyboardFocus(nil) end)
+    end)
+
     addon.historyFrame = frame
     return frame
 end
