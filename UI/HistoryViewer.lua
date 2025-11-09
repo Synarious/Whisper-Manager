@@ -339,6 +339,11 @@ function addon:ShowHistoryDetail(playerKey, displayName)
             classToken = addon.CLASS_ID_TO_TOKEN[entry.c]
         end
         
+        -- Resolve BNet IDs (|KpXX|k) to display names for BNet conversations
+        if isBNet and author then
+            author = addon:ResolveBNetID(author, playerKey)
+        end
+        
         if timestamp and author and message then
             -- Timestamp with customizable color
             local tsColor = self.settings.timestampColor or {r = 0.5, g = 0.5, b = 0.5}

@@ -586,6 +586,40 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Set high frame level to prevent being hidden behind other windows
     win.closeBtn:SetFrameLevel(win:GetFrameLevel() + 100)
     
+    -- Export button (next to close button)
+    win.exportBtn = CreateFrame("Button", nil, win)
+    win.exportBtn:SetPoint("RIGHT", win.closeBtn, "LEFT", -2, 0)
+    win.exportBtn:SetSize(24, 24)
+    win.exportBtn:SetFrameLevel(win:GetFrameLevel() + 100)
+    
+    -- Create export button texture
+    local exportTexture = win.exportBtn:CreateTexture(nil, "ARTWORK")
+    exportTexture:SetAllPoints()
+    exportTexture:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+    win.exportBtn:SetNormalTexture(exportTexture)
+    
+    local exportHighlight = win.exportBtn:CreateTexture(nil, "HIGHLIGHT")
+    exportHighlight:SetAllPoints()
+    exportHighlight:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
+    exportHighlight:SetBlendMode("ADD")
+    
+    win.exportBtn:SetScript("OnClick", function()
+        if win.playerKey then
+            addon:ShowChatExportDialog(win.playerKey, win.playerDisplay)
+        end
+    end)
+    
+    win.exportBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Export Chat", 1, 1, 1, 1, true)
+        GameTooltip:AddLine("Export this conversation to copyable text", nil, nil, nil, true)
+        GameTooltip:Show()
+    end)
+    
+    win.exportBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    
     -- Resize button
     win.resizeBtn = CreateFrame("Button", nil, win)
     win.resizeBtn:SetSize(16, 16)

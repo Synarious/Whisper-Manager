@@ -47,6 +47,13 @@ function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnS
             -- Replace default whisper action: open WhisperManager window instead
             rootDescription:CreateButton(WHISPER, function() addon:OpenConversation(playerName) end)
             rootDescription:CreateButton(INVITE, function() C_PartyInfo.InviteUnit(playerName) end)
+            
+            -- Add export chat option
+            rootDescription:CreateButton("Export Chat", function() 
+                local playerKey = addon:NormalizePlayerKey(playerName)
+                addon:ShowChatExportDialog(playerKey, displayName or playerName)
+            end)
+            
             local raidTargetButton = rootDescription:CreateButton(RAID_TARGET_ICON)
             raidTargetButton:CreateButton(RAID_TARGET_NONE, function() SetRaidTarget(playerName, 0) end)
             for i = 1, 8 do
@@ -62,6 +69,19 @@ function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnS
                 -- Replace default BNet whisper action with WhisperManager BNet window
                 rootDescription:CreateButton(WHISPER, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
             end
+            
+            -- Add export chat option for BNet
+            rootDescription:CreateButton("Export Chat", function() 
+                -- Get the correct playerKey using battleTag
+                local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
+                if accountInfo and accountInfo.battleTag then
+                    local playerKey = "bnet_" .. accountInfo.battleTag
+                    addon:ShowChatExportDialog(playerKey, displayName)
+                else
+                    addon:Print("|cffff0000Could not export chat: BattleTag not found.|r")
+                end
+            end)
+            
             if BNInviteFriend then
                 rootDescription:CreateButton(INVITE, function() BNInviteFriend(bnSenderID) end)
             end

@@ -107,3 +107,52 @@ function addon:ExtractWhisperTarget(text)
 
     return target and target:gsub("[,.;:]+$", "") or nil
 end
+
+--- Resolve BNet ID (|KpXX|k format) to display name or BattleTag
+-- This function implements the WIM method to convert raw BNet IDs to readable names
+-- @param authorString string Author name that may contain BNet ID
+-- @param playerKey string Optional player key to extract BattleTag if needed
+-- @return string Resolved display name or original string if not a BNet ID
+function addon:ResolveBNetID(authorString, playerKey)
+    if not authorString or authorString == "" then
+        return "Unknown"
+    end
+    
+    -- Check if this is a BNet ID (|KpXX|k format)
+    if authorString:match("^|Kp%d+|k$") then
+        addon:DebugMessage("ResolveBNetID: Detected BNet ID:", authorString)
+        
+        -- Try to extract BattleTag from playerKey if provided
+        if playerKey and playerKey:match("^bnet_") then
+            local battleTag = playerKey:match("^bnet_(.+)")
+            if battleTag then
+                -- Extract display name (part before #)
+                local displayName = battleTag:match("^([^#]+)") or battleTag
+                addon:DebugMessage("ResolveBNetID: Resolved to BattleTag display name:", displayName)
+                return displayName
+            end
+        end
+        
+        -- Try to find the BNet friend by iterating through friends list
+        local numBNetTotal, numBNetOnline = BNGetNumFriends()
+        for i = 1, numBNetTotal do
+            local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
+            if accountInfo and accountInfo.battleTag then
+                -- Check if any game account matches
+                if accountInfo.gameAccountInfo and accountInfo.gameAccountInfo.playerGuid then
+                    -- This is a potential match, use accountName or battleTag
+                    local displayName = accountInfo.accountName or accountInfo.battleTag:match("^([^#]+)") or accountInfo.battleTag
+                    addon:DebugMessage("ResolveBNetID: Found potential match:", displayName)
+                    return displayName
+                end
+            end
+        end
+        
+        -- Fallback: return "BNet Friend" if we can't resolve
+        addon:DebugMessage("ResolveBNetID: Could not resolve, using fallback")
+        return "BNet Friend"
+    end
+    
+    -- Not a BNet ID, return as-is
+    return authorString
+end

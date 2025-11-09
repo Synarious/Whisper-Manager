@@ -116,6 +116,11 @@ function addon:DisplayHistory(window, playerKey)
             classToken = addon.CLASS_ID_TO_TOKEN[entry.c]
         end
         
+        -- Resolve BNet IDs (|KpXX|k) to display names for BNet conversations
+        if window.isBNet and author then
+            author = addon:ResolveBNetID(author, playerKey)
+        end
+        
         addon:DebugMessage("Processing message", i, "- timestamp:", timestamp, "author:", author, "message length:", message and #message or 0)
         
         if timestamp and author and message then
