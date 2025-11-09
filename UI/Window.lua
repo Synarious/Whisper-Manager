@@ -912,6 +912,13 @@ function addon:LoadWindowHistory(win)
                     messageColor = "|cff" .. colorHex
                 end
                 
+                -- Try to get RP name from TRP3 integration (if loaded)
+                addon:DebugMessage("[Window] Checking for TRP3 integration:", addon.TRP3_GetMyRPName ~= nil);
+                local rpName = addon.TRP3_GetMyRPName and addon.TRP3_GetMyRPName()
+                addon:DebugMessage("[Window] TRP3 returned my RP name:", rpName);
+                local displayPlayerName = rpName or playerName
+                addon:DebugMessage("[Window] Using display name:", displayPlayerName);
+                
                 -- Use player's class color for name only, brackets use message color
                 local _, playerClass = UnitClass("player")
                 local classColor = playerClass and RAID_CLASS_COLORS[playerClass]
@@ -922,7 +929,7 @@ function addon:LoadWindowHistory(win)
                     classColorHex = "ffd100"
                 end
                 -- Format: brackets in message color, name in class color
-                coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", fullPlayerName, messageColor, classColorHex, playerName, messageColor)
+                coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", fullPlayerName, messageColor, classColorHex, displayPlayerName, messageColor)
             else
                 -- Color based on whisper type (receive)
                 if isBNet then
@@ -939,9 +946,14 @@ function addon:LoadWindowHistory(win)
                     local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
                     messageColor = "|cff" .. colorHex
                     
-                    -- Regular whispers: use stored class color if available, default to gold
-                    -- Strip realm name from author (Name-Realm -> Name)
-                    local authorDisplayName = author:match("^([^%-]+)") or author
+                    -- Try to get RP name from TRP3 integration (if loaded)
+                    addon:DebugMessage("[Window] Checking for TRP3 integration:", addon.TRP3_GetRPName ~= nil);
+                    addon:DebugMessage("[Window] Author name:", author);
+                    local rpName = addon.TRP3_GetRPName and addon.TRP3_GetRPName(author)
+                    addon:DebugMessage("[Window] TRP3 returned RP name:", rpName);
+                    local authorDisplayName = rpName or (author:match("^([^%-]+)") or author)
+                    addon:DebugMessage("[Window] Using author display name:", authorDisplayName);
+                    
                     local classColorHex
                     
                     -- Use stored class token (converted from numeric ID)
@@ -1016,6 +1028,13 @@ function addon:AddMessageToWindow(playerKey, author, message, timestamp)
             messageColor = "|cff" .. colorHex
         end
         
+        -- Try to get RP name from TRP3 integration (if loaded)
+        addon:DebugMessage("[AddMessage] Checking for TRP3 integration:", addon.TRP3_GetMyRPName ~= nil);
+        local rpName = addon.TRP3_GetMyRPName and addon.TRP3_GetMyRPName()
+        addon:DebugMessage("[AddMessage] TRP3 returned my RP name:", rpName);
+        local displayPlayerName = rpName or playerName
+        addon:DebugMessage("[AddMessage] Using display name:", displayPlayerName);
+        
         -- Use player's class color for name only, brackets use message color
         local _, playerClass = UnitClass("player")
         local classColor = playerClass and RAID_CLASS_COLORS[playerClass]
@@ -1026,7 +1045,7 @@ function addon:AddMessageToWindow(playerKey, author, message, timestamp)
             classColorHex = "ffd100"
         end
         -- Format: brackets in message color, name in class color
-        coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", fullPlayerName, messageColor, classColorHex, playerName, messageColor)
+        coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", fullPlayerName, messageColor, classColorHex, displayPlayerName, messageColor)
     else
         -- Color based on whisper type (receive)
         if isBNet then
@@ -1042,9 +1061,14 @@ function addon:AddMessageToWindow(playerKey, author, message, timestamp)
             local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
             messageColor = "|cff" .. colorHex
             
-            -- Regular whispers: use stored class color if available, default to gold
-            -- Strip realm name from author (Name-Realm -> Name)
-            local authorDisplayName = author:match("^([^%-]+)") or author
+            -- Try to get RP name from TRP3 integration (if loaded)
+            addon:DebugMessage("[AddMessage] Checking for TRP3 integration:", addon.TRP3_GetRPName ~= nil);
+            addon:DebugMessage("[AddMessage] Author name:", author);
+            local rpName = addon.TRP3_GetRPName and addon.TRP3_GetRPName(author)
+            addon:DebugMessage("[AddMessage] TRP3 returned RP name:", rpName);
+            local authorDisplayName = rpName or (author:match("^([^%-]+)") or author)
+            addon:DebugMessage("[AddMessage] Using author display name:", authorDisplayName);
+            
             local classColorHex
             
             -- Use stored class token (converted from numeric ID)

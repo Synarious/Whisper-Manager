@@ -153,8 +153,16 @@ function addon:DisplayHistory(window, playerKey)
                     else
                         classColorHex = "ffd100"
                     end
+                    
+                    -- Try to get RP name from TRP3 integration (if loaded)
+                    addon:DebugMessage("[Data:DisplayHistory] Checking for TRP3 integration:", addon.TRP3_GetMyRPName ~= nil);
+                    local rpName = addon.TRP3_GetMyRPName and addon.TRP3_GetMyRPName()
+                    addon:DebugMessage("[Data:DisplayHistory] TRP3 returned my RP name:", rpName);
+                    local displayPlayerName = rpName or playerName
+                    addon:DebugMessage("[Data:DisplayHistory] Using display name:", displayPlayerName);
+                    
                     -- Use formatting: brackets outside, hyperlink only around the name
-                    local nameLink = string.format("|Hplayer:%s|h|cff%s%s|r|h", fullPlayerName, classColorHex, playerName)
+                    local nameLink = string.format("|Hplayer:%s|h|cff%s%s|r|h", fullPlayerName, classColorHex, displayPlayerName)
                     coloredAuthor = string.format("%s[%s]|r: ", messageColor, nameLink)
                 else
                     -- Color based on whisper type (receive)
@@ -174,9 +182,13 @@ function addon:DisplayHistory(window, playerKey)
                         local colorHex = string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
                         messageColor = "|cff" .. colorHex
                         
-                        -- Regular whispers: use stored class color if available, default to gold
-                        -- Strip realm name from author (Name-Realm -> Name)
-                        local authorDisplayName = author:match("^([^%-]+)") or author
+                        -- Try to get RP name from TRP3 integration (if loaded)
+                        addon:DebugMessage("[Data:DisplayHistory] Checking for TRP3 integration:", addon.TRP3_GetRPName ~= nil);
+                        addon:DebugMessage("[Data:DisplayHistory] Author name:", author);
+                        local rpName = addon.TRP3_GetRPName and addon.TRP3_GetRPName(author)
+                        addon:DebugMessage("[Data:DisplayHistory] TRP3 returned RP name:", rpName);
+                        local authorDisplayName = rpName or (author:match("^([^%-]+)") or author)
+                        addon:DebugMessage("[Data:DisplayHistory] Using author display name:", authorDisplayName);
                         
                         -- Build clickable hyperlink with class colors
                         local classColorHex

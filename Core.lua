@@ -213,6 +213,20 @@ end
 -- Embedded: Commands.lua (merged)
 -- ============================================================================
 
+--- Register slash commands
+function addon:RegisterSlashCommands()
+    self:DebugMessage("Registering slash commands...")
+    
+    SLASH_WHISPERMANAGER1 = "/wmgr"
+    SLASH_WHISPERMANAGER2 = "/whispermanager"
+    
+    SlashCmdList["WHISPERMANAGER"] = function(msg)
+        addon:HandleSlashCommand(msg)
+    end
+    
+    self:DebugMessage("Slash commands registered: /wmgr and /whispermanager")
+end
+
 --- Handle slash command input
 -- @param message string Command text entered by user
 function addon:HandleSlashCommand(message)
