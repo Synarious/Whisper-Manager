@@ -1,15 +1,7 @@
--- ARCHIVAL MARKER: Root Window.lua (moved)
---
--- This file was moved to debug_addons/Window.lua.bak to avoid having two
--- Window.lua implementations in the repository. The active window code is
--- located at UI/Window.lua and is loaded by WhisperManager.xml. If you need
--- to restore the archived file, copy it back from debug_addons/Window.lua.bak.
+-- Modules/chat.lua - active window implementation renamed to chat.lua
 
-local addon = WhisperManager -- placeholder to avoid nil references if loaded
+local addon = WhisperManager
 
-return
-
--- ============================================================================
 -- Helper Functions
 -- ============================================================================
 

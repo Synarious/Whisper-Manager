@@ -14,21 +14,18 @@
     <!-- CORE: Minimal core - namespace and state only -->
     <Script file="Core.lua"/>
     
-    <!-- UTILITIES: Helper functions -->
-    <Script file="Utils\Utils.lua"/>            <!-- String utils, formatting, notifications -->
-    <Script file="Utils\PlayerUtils.lua"/>      <!-- Player name parsing -->
-    <Script file="Utils\ContextMenu.lua"/>      <!-- Right-click context menus -->
+    <!-- UTILITIES: Helper functions (moved into Modules) -->
+    <Script file="Modules\Utils.lua"/>            <!-- String utils, formatting, notifications -->
+    <Script file="Modules\PlayerUtils.lua"/>      <!-- Player name parsing -->
     
     <!-- MODULES: Feature modules -->
     <Script file="Modules\SchemaValidator.lua"/> <!-- Schema validation (MUST load first) -->
     <Script file="Modules\Data.lua"/>           <!-- History, recent chats, class cache -->
-    <Script file="Modules\Commands.lua"/>       <!-- Slash command handlers -->
-    <Script file="Modules\Dialogs.lua"/>        <!-- URL copy and chat export dialogs -->
+    <Script file="Modules\Dialogs.lua"/>        <!-- URL copy, chat export dialogs, and context menu -->
     <Script file="Modules\RecentChats.lua"/>    <!-- Recent conversations UI -->
-    <Script file="Modules\Hooks.lua"/>          <!-- Chat system hooks -->
     
-    <!-- UI COMPONENTS: Window and interface -->
-    <Script file="UI\Window.lua"/>              <!-- Individual whisper windows -->
+    <!-- UI COMPONENTS: Window and interface (moved to Modules) -->
+    <Script file="Modules\Chat.lua"/>         <!-- Individual whisper windows (renamed) -->
     <Script file="UI\HistoryViewer.lua"/>       <!-- History browser -->
     <Script file="UI\FloatingButton.lua"/>      <!-- Floating action button -->
     <Script file="UI\Settings.lua"/>            <!-- Settings panel -->

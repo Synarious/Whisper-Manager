@@ -208,3 +208,160 @@ function addon:Initialize()
 end
 
 -- Note: Initialize() is called from Events.lua after all modules are loaded
+
+-- ============================================================================
+-- Embedded: Commands.lua (merged)
+-- ============================================================================
+
+--- Handle slash command input
+-- @param message string Command text entered by user
+function addon:HandleSlashCommand(message)
+    print("[WM DEBUG] HandleSlashCommand called with: " .. tostring(message))
+    local input = self:TrimWhitespace(message or "") or ""
+    if input == "" or input:lower() == "help" then
+        self:Print("Usage:")
+        self:Print("/wmgr <player> - Open a WhisperManager window.")
+        self:Print("/wmgr debug [on|off|toggle] - Control diagnostic chat output.")
+        self:Print("/wmgr resetwindows - Reset saved window positions.")
+        self:Print("/wmgr reset_all_data - [Dangerous]  Clear all saved data (history, windows, config).")
+        self:Print("/wmgr debug_retention_delete - [Dangerous] Data retention cleanup (keep 3 recent, delete older than 5 min).")
+        self:Print("/wmgr cleanup_empty - [Dangerous] Remove empty conversation entries from history.")
+        self:Print("Aliases: /wmgr, /whispermanager")
+        return
+    end
+
+    local command, rest = input:match("^(%S+)%s*(.-)$")
+    command = command and command:lower() or ""
+    
+    if command == "debug" then
+        local directive = rest and rest:lower() or ""
+        if directive == "on" or directive == "1" or directive == "true" then
+            self:SetDebugEnabled(true)
+        elseif directive == "off" or directive == "0" or directive == "false" then
+            self:SetDebugEnabled(false)
+        else
+            self:SetDebugEnabled(not self.debugEnabled)
+        end
+    elseif command == "resetwindows" then
+        self:ResetWindowPositions()
+    elseif command == "reset_all_data" then
+        WhisperManager_HistoryDB = {}
+        WhisperManager_WindowDB = {}
+        WhisperManager_Config = {}
+        WhisperManager_RecentChats = {}
+        self:Print("|cffff0000All WhisperManager data has been cleared!|r")
+        self:Print("Please /reload to apply changes.")
+    elseif command == "debug_retention_delete" then
+        self:RunDebugRetentionCleanup()
+    elseif command == "cleanup_empty" then
+        local removed = self:CleanupEmptyHistoryEntries()
+        if removed > 0 then
+            self:Print(string.format("Removed %d empty conversation%s from history.", removed, removed ~= 1 and "s" or ""))
+        else
+            self:Print("No empty conversations found.")
+        end
+    else
+        -- Try to open conversation with the input as player name
+        if not self:OpenConversation(input) then
+            self:Print(string.format("Unable to open a whisper window for '%s'.", input))
+        end
+    end
+end
+
+-- ============================================================================
+-- Embedded: Hooks.lua (merged)
+-- ============================================================================
+
+-- Track which EditBox currently has focus
+addon.EditBoxInFocus = nil
+
+local Hooked_ChatFrameEditBoxes = {}
+
+local function hookChatFrameEditBox(editBox)
+    if editBox and not Hooked_ChatFrameEditBoxes[editBox:GetName()] then
+        hooksecurefunc(editBox, "Insert", function(self, theText)
+            if addon.EditBoxInFocus then
+                addon.EditBoxInFocus:Insert(theText)
+            end
+        end)
+
+        editBox.wmIsVisible = editBox.IsVisible
+        editBox.IsVisible = function(self)
+            if addon.EditBoxInFocus then
+                return true
+            else
+                return self:wmIsVisible()
+            end
+        end
+
+        editBox.wmIsShown = editBox.IsShown
+        editBox.IsShown = function(self)
+            if addon.EditBoxInFocus then
+                return true
+            else
+                return self:wmIsShown()
+            end
+        end
+
+        hooksecurefunc(editBox, "SetText", function(self, theText)
+            local firstChar = ""
+            if string.len(theText) > 0 then
+                firstChar = string.sub(theText, 1, 1)
+            end
+            if addon.EditBoxInFocus and firstChar ~= "/" then
+                addon.EditBoxInFocus:SetText(theText)
+            end
+        end)
+
+        editBox.wmHighlightText = editBox.HighlightText
+        editBox.HighlightText = function(self, theStart, theEnd)
+            if addon.EditBoxInFocus then
+                addon.EditBoxInFocus:HighlightText(theStart, theEnd)
+            else
+                self:wmHighlightText(theStart, theEnd)
+            end
+        end
+
+        Hooked_ChatFrameEditBoxes[editBox:GetName()] = true
+        addon:DebugMessage("Hooked ChatFrame EditBox:", editBox:GetName())
+    end
+end
+
+hooksecurefunc("ChatEdit_ActivateChat", function(editBox)
+    hookChatFrameEditBox(editBox)
+end)
+
+local ChatEdit_GetActiveWindow_orig = ChatEdit_GetActiveWindow
+function ChatEdit_GetActiveWindow()
+    return addon.EditBoxInFocus or ChatEdit_GetActiveWindow_orig()
+end
+
+function addon:SetEditBoxFocus(editBox)
+    self.EditBoxInFocus = editBox
+    if editBox then
+        self:DebugMessage("EditBox focus set:", editBox:GetName())
+    else
+        self:DebugMessage("EditBox focus cleared")
+    end
+end
+
+function addon:GetEditBoxFocus()
+    return self.EditBoxInFocus
+end
+
+function addon:SetupChatHooks()
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox then
+        hookChatFrameEditBox(DEFAULT_CHAT_FRAME.editBox)
+    end
+    for i = 1, NUM_CHAT_WINDOWS do
+        local chatFrame = _G["ChatFrame" .. i]
+        if chatFrame and chatFrame.editBox then
+            hookChatFrameEditBox(chatFrame.editBox)
+        end
+    end
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Chat hooks installed")
+end
+
+C_Timer.After(0, function()
+    addon:SetupChatHooks()
+end)

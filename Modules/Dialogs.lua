@@ -50,6 +50,85 @@ local function FormatURLAsLink(url)
     return "|cff00ffff|Hwm_url:" .. url .. "|h[" .. url .. "]|h|r"
 end
 
+-- ============================================================================
+-- Embedded: ContextMenu.lua (merged)
+-- ============================================================================
+
+--- Open a context menu for a player
+-- @param owner table Optional frame to anchor menu to
+-- @param playerName string Full player name (with realm)
+-- @param displayName string Display name to show in menu
+-- @param isBNet boolean Whether this is a BNet player
+-- @param bnSenderID number BNet sender ID (if BNet player)
+function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnSenderID)
+    if type(owner) == "string" or owner == nil then
+        owner, playerName, displayName, isBNet, bnSenderID = nil, owner, playerName, displayName, isBNet
+    end
+
+    if not playerName and not isBNet then return end
+
+    local function menuGenerator(ownerFrame, rootDescription)
+        local label = displayName or addon.StripRealmFromName(playerName) or playerName
+        if label and label ~= "" then
+            rootDescription:CreateTitle(label)
+        end
+
+        if not isBNet and playerName and playerName ~= "" then
+            rootDescription:CreateButton(WHISPER, function() addon:OpenConversation(playerName) end)
+            rootDescription:CreateButton(INVITE, function() C_PartyInfo.InviteUnit(playerName) end)
+            rootDescription:CreateButton("Export Chat", function() 
+                local playerKey = addon:NormalizePlayerKey(playerName)
+                addon:ShowChatExportDialog(playerKey, displayName or playerName)
+            end)
+            local raidTargetButton = rootDescription:CreateButton(RAID_TARGET_ICON)
+            raidTargetButton:CreateButton(RAID_TARGET_NONE, function() SetRaidTarget(playerName, 0) end)
+            for i = 1, 8 do
+                raidTargetButton:CreateButton(_G["RAID_TARGET_" .. i], function() SetRaidTarget(playerName, i) end)
+            end
+            rootDescription:CreateButton(ADD_FRIEND, function() C_FriendList.AddFriend(playerName) end)
+            rootDescription:CreateButton(PLAYER_REPORT, function()
+                local guid = C_PlayerInfo.GUIDFromPlayerName(playerName)
+                if guid then C_ReportSystem.OpenReportPlayerDialog(guid, playerName) end
+            end)
+        elseif isBNet and bnSenderID then
+            if ChatFrame_SendBNetTell then
+                rootDescription:CreateButton(WHISPER, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
+            end
+            rootDescription:CreateButton("Export Chat", function() 
+                local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
+                if accountInfo and accountInfo.battleTag then
+                    local playerKey = "bnet_" .. accountInfo.battleTag
+                    addon:ShowChatExportDialog(playerKey, displayName)
+                else
+                    addon:Print("|cffff0000Could not export chat: BattleTag not found.|r")
+                end
+            end)
+            if BNInviteFriend then
+                rootDescription:CreateButton(INVITE, function() BNInviteFriend(bnSenderID) end)
+            end
+        end
+
+        rootDescription:CreateButton(CANCEL, function() end)
+    end
+
+    local createOwner = owner or UIParent
+    local menu = nil
+    pcall(function() menu = MenuUtil.CreateContextMenu(createOwner, menuGenerator) end)
+    if menu and type(menu.Show) == "function" then
+        pcall(function() menu:Show() end)
+        return
+    end
+    local ok2, mouseFrame = pcall(function() return GetMouseFocus() end)
+    if ok2 and mouseFrame then
+        local altMenu = nil
+        pcall(function() altMenu = MenuUtil.CreateContextMenu(mouseFrame, menuGenerator) end)
+        if altMenu and type(altMenu.Show) == "function" then
+            pcall(function() altMenu:Show() end)
+            return
+        end
+    end
+end
+
 --- Convert URLs in text to clickable links
 -- @param text string Text to process
 -- @return string Text with URLs converted to hyperlinks
