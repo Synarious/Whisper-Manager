@@ -162,6 +162,9 @@ function addon:FocusWindow(window)
     -- Focus this window - bring to front with higher frame level
     window:SetAlpha(self.FOCUSED_ALPHA)
     
+    -- Track the most recently focused window
+    self.lastFocusedWindow = window
+
     -- Increment base level for this window and all its children
     -- This brings the entire window hierarchy to the front
     self.nextFrameLevel = self.nextFrameLevel + 200
@@ -324,10 +327,6 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Create new window
     local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
     local win = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
-    
-    -- Create new window
-    local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
-    local win = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
     win:SetSize(400, 300)
     win:SetPoint("CENTER")
     win:SetFrameStrata("DIALOG")
@@ -376,9 +375,20 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         if self.InputContainer then
             self.InputContainer:Hide()
         end
-        
+
+        -- Clear any override bindings (ESC)
+        if ClearOverrideBindings then
+            ClearOverrideBindings(self)
+        end
+
+        -- Disable keyboard capture
+        if self:IsKeyboardEnabled and self:IsKeyboardEnabled() then
+            self:EnableKeyboard(false)
+            self:SetPropagateKeyboardInput(true)
+        end
+
         addon:SaveWindowPosition(self)
-        
+
         -- Refocus another visible window if one exists (skip if in combat)
         if not InCombatLockdown() then
             for _, w in pairs(addon.windows) do
@@ -406,6 +416,14 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         -- Focus this window when shown
         addon:FocusWindow(self)
         
+        -- Bind ESC to this window's close button so ESC closes the window even when input isn't focused
+        if self.closeBtn and SetOverrideBindingClick then
+            local btnName = self.closeBtn:GetName()
+            if btnName then
+                SetOverrideBindingClick(self, true, "ESCAPE", btnName)
+            end
+        end
+        
         -- Mark messages as read when window is shown/focused
         if self.playerKey then
             addon:MarkChatAsRead(self.playerKey)
@@ -416,6 +434,13 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win:SetScript("OnEnter", function(self)
         if self.playerKey then
             addon:MarkChatAsRead(self.playerKey)
+        end
+    end)
+
+    -- Clear override bindings when hidden to avoid leaving ESC captured
+    win:SetScript("OnHide", function(self)
+        if ClearOverrideBindings then
+            ClearOverrideBindings(self)
         end
     end)
     
@@ -441,7 +466,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.titleBar:SetHeight(30)
     win.titleBar:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        tile = false
+        tile = false,
     })
     win.titleBar:SetBackdropColor(0, 0, 0, 0.8)
     win.titleBar:SetFrameLevel(baseLevel + 1)
@@ -473,12 +498,15 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         GameTooltip:Hide()
     end)
     
-    -- Close button
-    win.closeBtn = CreateFrame("Button", nil, win, "UIPanelCloseButton")
+    -- Close button (create with a unique global name so we can bind ESC to it)
+    if not win.closeBtn then
+        local closeName = frameName .. "CloseBtn"
+        win.closeBtn = CreateFrame("Button", closeName, win, "UIPanelCloseButton")
+    end
     win.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     win.closeBtn:SetSize(24, 24)
     win.closeBtn:SetFrameLevel(baseLevel + 100)
-    
+
     -- Override the default OnClick (hiding existing frames is safe even in combat)
     win.closeBtn:SetScript("OnClick", function(self)
         win:Hide()
@@ -548,7 +576,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Input Container Frame (separate frame below main window)
     local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
     local containerName = frameName .. "InputContainer"
-    win.InputContainer = CreateFrame("Frame", containerName, UIParent, "BackdropTemplate")
+    -- Parent the input container to the window so it moves and layers with the window
+    win.InputContainer = CreateFrame("Frame", containerName, win, "BackdropTemplate")
     win.InputContainer:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, 1)  -- 1px offset to connect seamlessly
     win.InputContainer:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, 1)
     win.InputContainer:SetFrameStrata("DIALOG")
@@ -649,9 +678,13 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end)
     win.Input:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
-        -- Hide the window frame (safe even in combat for existing frames)
-        if win and win.Hide then
-            win:Hide()
+        -- Close the most recent window (prefer) or fallback to hiding this window
+        if addon and addon.CloseMostRecentWindow then
+            if not addon:CloseMostRecentWindow() then
+                if win and win.Hide then win:Hide() end
+            end
+        else
+            if win and win.Hide then win:Hide() end
         end
     end)
     

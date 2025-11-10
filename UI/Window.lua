@@ -93,6 +93,9 @@ function addon:FocusWindow(window)
     -- Focus this window - bring to front with higher frame level
     window:SetAlpha(self.FOCUSED_ALPHA)
     
+    -- Track the most recently focused window
+    self.lastFocusedWindow = window
+
     -- Increment base level for this window and all its children
     -- This brings the entire window hierarchy to the front
     self.nextFrameLevel = self.nextFrameLevel + 200
@@ -453,10 +456,16 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         self:StopMovingOrSizing()
     end)
     
-    -- ESC key handling to close all whisper windows at once
+    -- ESC key handling: close the most recently focused window, fallback to closing all
     win:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
-            addon:CloseAllWindows()
+            if addon and addon.CloseMostRecentWindow then
+                if not addon:CloseMostRecentWindow() and addon and addon.CloseAllWindows then
+                    addon:CloseAllWindows()
+                end
+            elseif addon and addon.CloseAllWindows then
+                addon:CloseAllWindows()
+            end
         end
     end)
     win:SetPropagateKeyboardInput(true)
