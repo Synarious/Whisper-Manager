@@ -38,6 +38,41 @@ end)
 -- Window Focus Management
 -- ============================================================================
 
+-- Helper function to update all child frame levels relative to parent
+-- Keeps all windows on same strata but uses frame levels for proper layering
+local function UpdateWindowFrameLevels(win, baseLevel)
+    win:SetFrameLevel(baseLevel)
+    
+    -- Update all child frames to proper relative levels
+    -- This ensures borders, text, and buttons all layer correctly with their parent
+    if win.titleBar then
+        win.titleBar:SetFrameLevel(baseLevel + 1)
+    end
+    if win.History then
+        -- History (text) needs to be well above background but below buttons
+        win.History:SetFrameLevel(baseLevel + 50)
+    end
+    if win.InputContainer then
+        win.InputContainer:SetFrameLevel(baseLevel + 10)
+    end
+    if win.Input then
+        win.Input:SetFrameLevel(baseLevel + 11)
+    end
+    if win.closeBtn then
+        -- Buttons need highest level to always be clickable
+        win.closeBtn:SetFrameLevel(baseLevel + 100)
+    end
+    if win.copyBtn then
+        win.copyBtn:SetFrameLevel(baseLevel + 99)
+    end
+    if win.exportBtn then
+        win.exportBtn:SetFrameLevel(baseLevel + 99)
+    end
+    if win.resizeBtn then
+        win.resizeBtn:SetFrameLevel(baseLevel + 98)
+    end
+end
+
 function addon:FocusWindow(window)
     if not window then return end
     
@@ -48,51 +83,20 @@ function addon:FocusWindow(window)
         return
     end
     
-    -- Unfocus all other windows - move them to MEDIUM strata
+    -- Dim all other windows but don't change their frame levels
     for _, win in pairs(self.windows) do
         if win ~= window and win:IsShown() then
             win:SetAlpha(self.UNFOCUSED_ALPHA)
-            win:SetFrameStrata("MEDIUM")
-            -- Update all child frame stratas to match
-            if win.InputContainer then
-                win.InputContainer:SetFrameStrata("MEDIUM")
-            end
-            if win.closeBtn then
-                win.closeBtn:SetFrameStrata("MEDIUM")
-            end
-            if win.copyBtn then
-                win.copyBtn:SetFrameStrata("MEDIUM")
-            end
-            if win.resizeBtn then
-                win.resizeBtn:SetFrameStrata("MEDIUM")
-            end
         end
     end
     
-    -- Focus this window - bring to DIALOG strata
+    -- Focus this window - bring to front with higher frame level
     window:SetAlpha(self.FOCUSED_ALPHA)
-    window:SetFrameStrata("DIALOG")
     
-    -- Update all child frame stratas to match
-    if window.InputContainer then
-        window.InputContainer:SetFrameStrata("DIALOG")
-    end
-    if window.copyBtn then
-        window.copyBtn:SetFrameStrata("DIALOG")
-    end
-    if window.resizeBtn then
-        window.resizeBtn:SetFrameStrata("DIALOG")
-    end
-    
-    -- Bring to front with new frame level (also protected during combat)
-    self.nextFrameLevel = self.nextFrameLevel + 10
-    window:SetFrameLevel(self.nextFrameLevel)
-    
-    -- Set close button to highest level to prevent overlap
-    if window.closeBtn then
-        window.closeBtn:SetFrameStrata("DIALOG")
-        window.closeBtn:SetFrameLevel(self.nextFrameLevel + 100)
-    end
+    -- Increment base level for this window and all its children
+    -- This brings the entire window hierarchy to the front
+    self.nextFrameLevel = self.nextFrameLevel + 200
+    UpdateWindowFrameLevels(window, self.nextFrameLevel)
     
     window:Raise()
 end
@@ -254,6 +258,7 @@ function addon:OpenConversation(playerName)
     if win.title then
         win.title:SetText("Whisper: " .. (displayName or playerTarget))
     end
+    self:LoadWindowPosition(win)
     win:Show()
     
     -- Focus window (will queue strata changes if in combat)
@@ -309,6 +314,7 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     if win.title then
         win.title:SetText("BNet Whisper: " .. displayName)
     end
+    self:LoadWindowPosition(win)
     win:Show()
     self:FocusWindow(win)
     -- Don't auto-focus input - let user click to focus
@@ -480,11 +486,13 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         -- Set flag to prevent hooks from triggering during window close
         addon.__closingWindow = true
         
-        -- Refocus another visible window if one exists
-        for _, w in pairs(addon.windows) do
-            if w:IsShown() and w ~= self then
-                addon:FocusWindow(w)
-                break
+        -- Refocus another visible window if one exists (skip if in combat)
+        if not InCombatLockdown() then
+            for _, w in pairs(addon.windows) do
+                if w:IsShown() and w ~= self then
+                    addon:FocusWindow(w)
+                    break
+                end
             end
         end
         
@@ -536,9 +544,10 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     win:Hide()
     
-    -- Assign unique frame level for proper stacking
-    addon.nextFrameLevel = addon.nextFrameLevel + 10
-    win:SetFrameLevel(addon.nextFrameLevel)
+    -- Assign unique frame level for proper stacking (increment by 200 per window)
+    addon.nextFrameLevel = addon.nextFrameLevel + 200
+    local baseLevel = addon.nextFrameLevel
+    win:SetFrameLevel(baseLevel)
     
     -- Title bar background
     win.titleBar = CreateFrame("Frame", nil, win, "BackdropTemplate")
@@ -552,7 +561,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     local titleColor = addon:GetSetting("titleBarColor") or {r = 0, g = 0, b = 0}
     local titleAlpha = addon:GetSetting("titleBarAlpha") or 0.8
     win.titleBar:SetBackdropColor(titleColor.r, titleColor.g, titleColor.b, titleAlpha)
-    win.titleBar:SetFrameLevel(win:GetFrameLevel())
+    win.titleBar:SetFrameLevel(baseLevel + 1)
     
     -- Title
     win.title = win:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -566,8 +575,13 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.copyBtn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
     win.copyBtn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
     win.copyBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    win.copyBtn:SetFrameLevel(baseLevel + 99)
     win.copyBtn:SetScript("OnClick", function(self)
-        addon:ShowCopyChatDialog(win.playerKey, win.displayName)
+        addon:DebugMessage("[Window] Copy Chat History button clicked")
+        addon:DebugMessage("[Window] playerKey:", win.playerKey)
+        addon:DebugMessage("[Window] displayName:", win.displayName)
+        -- Use ShowChatExportDialog since ShowCopyChatDialog doesn't exist
+        addon:ShowChatExportDialog(win.playerKey, win.displayName, win)
     end)
     win.copyBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -584,32 +598,46 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     win.closeBtn:SetSize(24, 24)
     -- Set high frame level to prevent being hidden behind other windows
-    win.closeBtn:SetFrameLevel(win:GetFrameLevel() + 100)
+    win.closeBtn:SetFrameLevel(baseLevel + 100)
     
-    -- Export button (next to close button)
+    -- Override the default OnClick to handle combat lockdown
+    win.closeBtn:SetScript("OnClick", function(self)
+        if InCombatLockdown() then
+            addon:Print("|cffff8800Cannot close window during combat. Please try again after combat ends.|r")
+            return
+        end
+        win:Hide()
+    end)
+    
+    -- Export button (next to copy button on left side)
     win.exportBtn = CreateFrame("Button", nil, win)
-    win.exportBtn:SetPoint("RIGHT", win.closeBtn, "LEFT", -2, 0)
-    win.exportBtn:SetSize(24, 24)
-    win.exportBtn:SetFrameLevel(win:GetFrameLevel() + 100)
+    win.exportBtn:SetPoint("LEFT", win.copyBtn, "RIGHT", 2, 0)
+    win.exportBtn:SetSize(20, 20)
+    win.exportBtn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-OfficerNote-Up")
+    win.exportBtn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-OfficerNote-Down")
+    win.exportBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    win.exportBtn:SetFrameLevel(baseLevel + 99)
     
-    -- Create export button texture
-    local exportTexture = win.exportBtn:CreateTexture(nil, "ARTWORK")
-    exportTexture:SetAllPoints()
-    exportTexture:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
-    win.exportBtn:SetNormalTexture(exportTexture)
+    addon:DebugMessage("[Window] Created export button for window")
+    addon:DebugMessage("[Window] Export button exists:", win.exportBtn ~= nil)
+    addon:DebugMessage("[Window] Export button enabled:", win.exportBtn:IsEnabled())
+    addon:DebugMessage("[Window] Export button shown:", win.exportBtn:IsShown())
     
-    local exportHighlight = win.exportBtn:CreateTexture(nil, "HIGHLIGHT")
-    exportHighlight:SetAllPoints()
-    exportHighlight:SetTexture("Interface\\Buttons\\UI-Common-MouseHilight")
-    exportHighlight:SetBlendMode("ADD")
+    -- Create export button texture (removed - using built-in textures above)
     
     win.exportBtn:SetScript("OnClick", function()
+        addon:DebugMessage("[Window] Export button clicked")
+        addon:DebugMessage("[Window] playerKey:", win.playerKey)
+        addon:DebugMessage("[Window] playerDisplay:", win.playerDisplay)
         if win.playerKey then
-            addon:ShowChatExportDialog(win.playerKey, win.playerDisplay)
+            addon:ShowChatExportDialog(win.playerKey, win.playerDisplay, win)
+        else
+            addon:DebugMessage("[Window] No playerKey found!")
         end
     end)
     
     win.exportBtn:SetScript("OnEnter", function(self)
+        addon:DebugMessage("[Window] Export button OnEnter triggered")
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Export Chat", 1, 1, 1, 1, true)
         GameTooltip:AddLine("Export this conversation to copyable text", nil, nil, nil, true)
@@ -626,6 +654,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.resizeBtn:SetPoint("BOTTOMRIGHT")
     win.resizeBtn:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     win.resizeBtn:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    win.resizeBtn:SetFrameLevel(baseLevel + 98)
     win.resizeBtn:SetScript("OnMouseDown", function()
         win:StartSizing("BOTTOMRIGHT")
         addon:FocusWindow(win)
@@ -655,9 +684,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.History:SetMouseMotionEnabled(true)
     win.History:SetMouseClickEnabled(true)
     
-    -- CRITICAL Keep same strata as parent (DIALOG) but much higher frame level
-    -- Don't change strata or text will render above the window background
-    win.History:SetFrameLevel(win:GetFrameLevel() + 50)
+    -- Set History frame level well above background but below buttons
+    win.History:SetFrameLevel(baseLevel + 50)
     
     -- Enable mouse wheel scrolling for history
     win.History:EnableMouseWheel(true)
@@ -693,8 +721,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.InputContainer = CreateFrame("Frame", containerName, UIParent, "BackdropTemplate")
     win.InputContainer:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, 1)  -- 1px offset to connect seamlessly
     win.InputContainer:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, 1)
-    win.InputContainer:SetFrameStrata("MEDIUM")
-    win.InputContainer:SetFrameLevel(win:GetFrameLevel() + 5)
+    win.InputContainer:SetFrameStrata("DIALOG")
+    win.InputContainer:SetFrameLevel(baseLevel + 10)
     win.InputContainer:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -716,6 +744,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Input EditBox (inside the container)
     local inputName = frameName .. "Input"
     win.Input = CreateFrame("EditBox", inputName, win.InputContainer)
+    win.Input:SetFrameLevel(baseLevel + 11)
     -- We'll compute vertical offset based on dynamic padding so the editbox background scales with font
     -- Anchor will be set after font/padding is computed below; temporarily anchor to container
     win.Input:SetPoint("TOPLEFT", win.InputContainer, "TOPLEFT", 8, 0)
@@ -824,9 +853,11 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end)
     win.Input:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
-        -- Hide the window frame
-        if win and win.Hide then
+        -- Hide the window frame (only if not in combat)
+        if win and win.Hide and not InCombatLockdown() then
             win:Hide()
+        elseif InCombatLockdown() then
+            addon:Print("|cffff8800Cannot close window during combat. Please try again after combat ends.|r")
         end
     end)
     
@@ -1110,14 +1141,31 @@ end
 -- ============================================================================
 
 function addon:CloseWindow(playerKey)
+    if InCombatLockdown() then
+        self:Print("|cffff8800Cannot close window during combat. Please try again after combat ends.|r")
+        return false
+    end
+    
     local win = self.windows[playerKey]
     if win then
         win:Hide()
+        return true
     end
+    return false
 end
 
 function addon:CloseAllWindows()
-    for _, win in pairs(self.windows) do
-        win:Hide()
+    if InCombatLockdown() then
+        self:Print("|cffff8800Cannot close windows during combat. Please try again after combat ends.|r")
+        return false
     end
+    
+    local closed = 0
+    for _, win in pairs(self.windows) do
+        if win:IsShown() then
+            win:Hide()
+            closed = closed + 1
+        end
+    end
+    return closed > 0
 end

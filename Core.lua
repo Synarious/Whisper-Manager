@@ -238,7 +238,7 @@ function addon:HandleSlashCommand(message)
         self:Print("/wmgr debug [on|off|toggle] - Control diagnostic chat output.")
         self:Print("/wmgr resetwindows - Reset saved window positions.")
         self:Print("/wmgr reset_all_data - [Dangerous]  Clear all saved data (history, windows, config).")
-        self:Print("/wmgr debug_retention_delete - [Dangerous] Data retention cleanup (keep 3 recent, delete older than 5 min).")
+        self:Print("/wmgr delete_data_retention_test - [Dangerous] Data retention cleanup (keep 3 recent, delete older than 5 min).")
         self:Print("/wmgr cleanup_empty - [Dangerous] Remove empty conversation entries from history.")
         self:Print("Aliases: /wmgr, /whispermanager")
         return
@@ -265,7 +265,7 @@ function addon:HandleSlashCommand(message)
         WhisperManager_RecentChats = {}
         self:Print("|cffff0000All WhisperManager data has been cleared!|r")
         self:Print("Please /reload to apply changes.")
-    elseif command == "debug_retention_delete" then
+    elseif command == "delete_data_retention_test" then
         self:RunDebugRetentionCleanup()
     elseif command == "cleanup_empty" then
         local removed = self:CleanupEmptyHistoryEntries()

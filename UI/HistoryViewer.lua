@@ -178,6 +178,32 @@ function addon:CreateHistoryFrame()
     frame.detailTitle:SetPoint("TOP", 0, -10)
     frame.detailTitle:SetText("Select a conversation")
     
+    -- Export button for detail view
+    frame.exportBtn = CreateFrame("Button", nil, frame.detailFrame)
+    frame.exportBtn:SetSize(85, 30)
+    frame.exportBtn:SetPoint("TOPRIGHT", 25, -6)
+    frame.exportBtn:SetNormalFontObject("GameFontNormal")
+    frame.exportBtn:SetHighlightFontObject("GameFontHighlight")
+    frame.exportBtn:SetText("Export")
+    frame.exportBtn:SetNormalTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+    frame.exportBtn:SetPushedTexture("Interface\\Buttons\\UI-Panel-Button-Down")
+    frame.exportBtn:SetHighlightTexture("Interface\\Buttons\\UI-Panel-Button-Highlight", "ADD")
+    frame.exportBtn:Hide() -- Hidden until a conversation is selected
+    frame.exportBtn:SetScript("OnClick", function(self)
+        if self.playerKey then
+            addon:ShowChatExportDialog(self.playerKey, self.displayName)
+        end
+    end)
+    frame.exportBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Export Chat", 1, 1, 1)
+        GameTooltip:AddLine("Export this conversation to copyable text", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    frame.exportBtn:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+    
     -- Detail scroll frame with proper scrolling support
     frame.detailScrollFrame = CreateFrame("ScrollingMessageFrame", nil, frame.detailFrame)
     frame.detailScrollFrame:SetPoint("TOPLEFT", 10, -35)
@@ -376,9 +402,17 @@ function addon:ShowHistoryDetail(playerKey, displayName)
     
     local detailTitle = self.historyFrame.detailTitle
     local detailScroll = self.historyFrame.detailScrollFrame
+    local exportBtn = self.historyFrame.exportBtn
     
     detailTitle:SetText(displayName)
     detailScroll:Clear()
+    
+    -- Show export button and store player info
+    if exportBtn then
+        exportBtn.playerKey = playerKey
+        exportBtn.displayName = displayName
+        exportBtn:Show()
+    end
     
     if not WhisperManager_HistoryDB or not WhisperManager_HistoryDB[playerKey] then
         detailScroll:AddMessage("No message history found.")

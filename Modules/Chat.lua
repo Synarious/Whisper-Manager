@@ -2,8 +2,69 @@
 
 local addon = WhisperManager
 
+-- ============================================================================
+-- Combat Lockdown Queue
+-- ============================================================================
+
+local combatQueue = {}
+
+-- Create combat event handler
+local combatFrame = CreateFrame("Frame")
+combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED") -- Entering combat
+combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")  -- Leaving combat
+combatFrame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        -- Process queued operations after combat ends
+        local queueCount = #combatQueue
+        if queueCount > 0 then
+            addon:DebugMessage("Combat ended - processing " .. queueCount .. " queued operations")
+            addon:Print("|cff00ff00Combat ended - opening queued whisper windows...|r")
+            for _, queuedFunc in ipairs(combatQueue) do
+                local success, err = pcall(queuedFunc)
+                if not success then
+                    addon:DebugMessage("Error processing combat queue:", err)
+                end
+            end
+            wipe(combatQueue)
+        end
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        addon:DebugMessage("Entered combat - queueing frame operations")
+    end
+end)
+
 -- Helper Functions
 -- ============================================================================
+
+-- Helper function to update all child frame levels relative to the parent window
+local function UpdateWindowFrameLevels(win, baseLevel)
+    win:SetFrameLevel(baseLevel)
+    
+    -- Update all child frames to proper relative levels
+    -- This ensures borders, text, and buttons all layer correctly with their parent
+    if win.titleBar then
+        win.titleBar:SetFrameLevel(baseLevel + 1)
+    end
+    if win.History then
+        -- History (text) needs to be well above background but below buttons
+        win.History:SetFrameLevel(baseLevel + 50)
+    end
+    if win.InputContainer then
+        win.InputContainer:SetFrameLevel(baseLevel + 10)
+    end
+    if win.Input then
+        win.Input:SetFrameLevel(baseLevel + 11)
+    end
+    if win.closeBtn then
+        -- Buttons need highest level to always be clickable
+        win.closeBtn:SetFrameLevel(baseLevel + 100)
+    end
+    if win.copyBtn then
+        win.copyBtn:SetFrameLevel(baseLevel + 99)
+    end
+    if win.resizeBtn then
+        win.resizeBtn:SetFrameLevel(baseLevel + 98)
+    end
+end
 
 -- Helper function to update input container height dynamically
 local function UpdateInputHeight(inputBox)
@@ -78,6 +139,38 @@ local function UpdateInputHeight(inputBox)
 end
 
 -- ============================================================================
+-- Window Focus Management
+-- ============================================================================
+
+function addon:FocusWindow(window)
+    if not window then return end
+    
+    -- Queue operation if in combat
+    if InCombatLockdown() then
+        self:DebugMessage("In combat - queueing FocusWindow operation")
+        table.insert(combatQueue, function() addon:FocusWindow(window) end)
+        return
+    end
+    
+    -- Dim all other windows but don't change their frame levels
+    for _, win in pairs(self.windows) do
+        if win ~= window and win:IsShown() then
+            win:SetAlpha(self.UNFOCUSED_ALPHA)
+        end
+    end
+    
+    -- Focus this window - bring to front with higher frame level
+    window:SetAlpha(self.FOCUSED_ALPHA)
+    
+    -- Increment base level for this window and all its children
+    -- This brings the entire window hierarchy to the front
+    self.nextFrameLevel = self.nextFrameLevel + 200
+    UpdateWindowFrameLevels(window, self.nextFrameLevel)
+    
+    window:Raise()
+end
+
+-- ============================================================================
 -- Conversation Opening
 -- ============================================================================
 
@@ -98,6 +191,15 @@ function addon:OpenConversation(playerName)
     displayName = self:GetDisplayNameFromKey(playerKey)
 
     local win = self.windows[playerKey]
+    
+    -- If window doesn't exist and we're in combat, queue the creation
+    if not win and InCombatLockdown() then
+        self:DebugMessage("In combat - queueing window creation (messages will display after combat)")
+        self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
+        table.insert(combatQueue, function() addon:OpenConversation(playerName) end)
+        return false
+    end
+    
     if not win then
         self:DebugMessage("No existing window. Calling CreateWindow.")
         win = self:CreateWindow(playerKey, playerTarget, displayName, false)
@@ -107,21 +209,23 @@ function addon:OpenConversation(playerName)
         end
         self.windows[playerKey] = win
     else
+        -- Window exists - update it (works even in combat)
         win.playerTarget = playerTarget
         win.displayName = displayName
         win.playerKey = playerKey
     end
 
+    -- Update display (works in combat for existing windows)
     self:DisplayHistory(win, playerKey)
     if win.title then
         win.title:SetText("Whisper: " .. (displayName or playerTarget))
     end
     self:LoadWindowPosition(win)
     win:Show()
+    
+    -- Focus window (will queue strata changes if in combat)
     self:FocusWindow(win)
-    if win.Input then
-        win.Input:SetFocus()
-    end
+    -- Don't auto-focus input - let user click to focus
     
     -- Mark as read and update recent chats
     self:UpdateRecentChat(playerKey, displayName, false)
@@ -144,6 +248,15 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     displayName = accountInfo.accountName or displayName or accountInfo.battleTag
     
     local win = self.windows[playerKey]
+    
+    -- If window doesn't exist and we're in combat, queue the creation
+    if not win and InCombatLockdown() then
+        self:DebugMessage("In combat - queueing BNet window creation (messages will display after combat)")
+        self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
+        table.insert(combatQueue, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
+        return false
+    end
+    
     if not win then
         self:DebugMessage("No existing BNet window. Calling CreateWindow.")
         win = self:CreateWindow(playerKey, bnSenderID, displayName, true)
@@ -166,9 +279,7 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     self:LoadWindowPosition(win)
     win:Show()
     self:FocusWindow(win)
-    if win.Input then
-        win.Input:SetFocus()
-    end
+    -- Don't auto-focus input - let user click to focus
     
     -- Mark as read and update recent chats
     self:UpdateRecentChat(playerKey, displayName, true)
@@ -266,22 +377,17 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
             self.InputContainer:Hide()
         end
         
-        -- Set flag to prevent hooks from triggering during window close
-        addon.__closingWindow = true
         addon:SaveWindowPosition(self)
         
-        -- Refocus another visible window if one exists
-        for _, w in pairs(addon.windows) do
-            if w:IsShown() and w ~= self then
-                addon:FocusWindow(w)
-                break
+        -- Refocus another visible window if one exists (skip if in combat)
+        if not InCombatLockdown() then
+            for _, w in pairs(addon.windows) do
+                if w:IsShown() and w ~= self then
+                    addon:FocusWindow(w)
+                    break
+                end
             end
         end
-        
-        -- Clear flag after a short delay
-        C_Timer.After(0.1, function()
-            addon.__closingWindow = false
-        end)
     end)
     
     win:SetScript("OnShow", function(self)
@@ -324,12 +430,25 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win:Hide()
     
     -- Assign unique frame level for proper stacking
-    addon.nextFrameLevel = addon.nextFrameLevel + 10
-    win:SetFrameLevel(addon.nextFrameLevel)
+    addon.nextFrameLevel = addon.nextFrameLevel + 200
+    local baseLevel = addon.nextFrameLevel
+    UpdateWindowFrameLevels(win, baseLevel)
     
-    -- Title
-    win.title = win:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    win.title:SetPoint("TOP", 0, -10)
+    -- Title bar background
+    win.titleBar = CreateFrame("Frame", nil, win, "BackdropTemplate")
+    win.titleBar:SetPoint("TOPLEFT", 3, -3)
+    win.titleBar:SetPoint("TOPRIGHT", -3, -3)
+    win.titleBar:SetHeight(30)
+    win.titleBar:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        tile = false
+    })
+    win.titleBar:SetBackdropColor(0, 0, 0, 0.8)
+    win.titleBar:SetFrameLevel(baseLevel + 1)
+    
+    -- Title (create on titleBar frame so it renders above the background)
+    win.title = win.titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    win.title:SetPoint("TOP", win.titleBar, "TOP", 0, -7)
     win.title:SetText(displayName)
     
     -- Copy Chat button (left side of title bar)
@@ -340,7 +459,9 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.copyBtn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
     win.copyBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
     win.copyBtn:SetScript("OnClick", function(self)
-        addon:ShowCopyChatDialog(win.playerKey, win.displayName)
+        addon:DebugMessage("[Chat] Copy Chat History button clicked")
+        -- Use ShowChatExportDialog since ShowCopyChatDialog doesn't exist
+        addon:ShowChatExportDialog(win.playerKey, win.displayName)
     end)
     win.copyBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -356,6 +477,12 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.closeBtn = CreateFrame("Button", nil, win, "UIPanelCloseButton")
     win.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     win.closeBtn:SetSize(24, 24)
+    win.closeBtn:SetFrameLevel(baseLevel + 100)
+    
+    -- Override the default OnClick (hiding existing frames is safe even in combat)
+    win.closeBtn:SetScript("OnClick", function(self)
+        win:Hide()
+    end)
     
     -- Resize button
     win.resizeBtn = CreateFrame("Button", nil, win)
@@ -389,9 +516,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.History:SetMouseMotionEnabled(true)
     win.History:SetMouseClickEnabled(true)
     
-    -- Keep same strata as parent (DIALOG) but much higher frame level
-    -- Don't change strata or text will render above the window background
-    win.History:SetFrameLevel(win:GetFrameLevel() + 50)
+    -- Frame level will be set by UpdateWindowFrameLevels
     
     -- Enable mouse wheel scrolling for history
     win.History:EnableMouseWheel(true)
@@ -524,7 +649,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end)
     win.Input:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
-        -- Hide the window frame
+        -- Hide the window frame (safe even in combat for existing frames)
         if win and win.Hide then
             win:Hide()
         end
@@ -545,6 +670,9 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     self.windows[playerKey] = win
     addon:LoadWindowPosition(win)
     addon:LoadWindowHistory(win)
+    
+    -- Final frame level update to ensure all UI elements are properly layered
+    UpdateWindowFrameLevels(win, baseLevel)
     
     return win
 end
@@ -818,14 +946,23 @@ end
 -- ============================================================================
 
 function addon:CloseWindow(playerKey)
+    -- Hiding existing frames is safe even in combat
     local win = self.windows[playerKey]
     if win then
         win:Hide()
+        return true
     end
+    return false
 end
 
 function addon:CloseAllWindows()
+    -- Hiding existing frames is safe even in combat
+    local closed = 0
     for _, win in pairs(self.windows) do
-        win:Hide()
+        if win:IsShown() then
+            win:Hide()
+            closed = closed + 1
+        end
     end
+    return closed > 0
 end

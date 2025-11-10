@@ -277,193 +277,279 @@ end
 -- SECTION 2: Chat Export Dialog
 -- ============================================================================
 
---- Format chat history as plain text for export
--- @param playerKey string Canonical player key
--- @param displayName string Display name for the conversation
--- @return string Formatted chat text
-local function FormatChatForExport(playerKey, displayName)
-    if not WhisperManager_HistoryDB or not WhisperManager_HistoryDB[playerKey] then
+--- Format chat history for export (plain text)
+-- @param playerKey string Canonical player key (c_Name-Realm or bnet_Tag)
+-- @return string Formatted chat history as plain text
+local function FormatChatHistoryForExport(playerKey)
+    if not WhisperManager_HistoryDB or not playerKey then
         return "No chat history found."
     end
     
     local history = WhisperManager_HistoryDB[playerKey]
-    local lines = {}
+    if not history or #history == 0 then
+        return "No messages found for this conversation."
+    end
     
-    -- Check if this is a BNet conversation
-    local isBNet = playerKey and playerKey:match("^bnet_") ~= nil
+    local MAX_LINES = 2500
+    local totalMessages = #history
+    local startIndex = 1
+    local wasTruncated = false
+    if totalMessages > MAX_LINES then
+        startIndex = totalMessages - MAX_LINES + 1
+        wasTruncated = true
+    end
+
+    local lines = {}
+    local displayName = addon:GetDisplayNameFromKey(playerKey)
     
     -- Add header
     table.insert(lines, "========================================")
-    table.insert(lines, "Chat Export: " .. (displayName or playerKey))
-    table.insert(lines, "Exported: " .. date("%Y-%m-%d %H:%M:%S", time()))
+    table.insert(lines, "Chat History Export")
+    table.insert(lines, "Conversation with: " .. displayName)
+    table.insert(lines, "Player Key: " .. playerKey)
+    table.insert(lines, "Exported: " .. date("%Y-%m-%d %H:%M:%S"))
+    if wasTruncated then
+        table.insert(lines, string.format("Showing last %d messages (of %d total)", MAX_LINES, totalMessages))
+    else
+        table.insert(lines, "Total Messages: " .. totalMessages)
+    end
     table.insert(lines, "========================================")
     table.insert(lines, "")
     
-    -- Get player info
+    -- Get current player name for comparison
     local playerName, playerRealm = UnitName("player")
     local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
     local fullPlayerName = playerName .. "-" .. realm
     
-    -- Process each message
-    for i, entry in ipairs(history) do
-        local timestamp = entry.t or entry.timestamp
-        local author = entry.a or entry.author
-        local message = entry.m or entry.message
-        
-        if timestamp and author and message then
-            -- Resolve BNet IDs for BNet conversations
-            if isBNet and author then
-                author = addon:ResolveBNetID(author, playerKey)
-            end
+    -- Format each message (only last MAX_LINES messages)
+    for i = startIndex, totalMessages do
+        local entry = history[i]
+        if not entry then
+            -- safety
+        else
+            local timestamp = entry.t or entry.timestamp
+            local author = entry.a or entry.author
+            local message = entry.m or entry.message
             
-            -- Format timestamp
-            local timeString = date("%H:%M:%S", timestamp)
-            
-            -- Determine author display name
-            local authorDisplay
-            if author == "Me" or author == playerName or author == fullPlayerName then
-                authorDisplay = playerName .. " (You)"
-            else
-                -- For BNet, use the displayName; for regular whispers, strip realm
-                if isBNet then
-                    authorDisplay = displayName or author
+            if timestamp and author and message then
+                -- Format timestamp
+                local timeString = date("%Y-%m-%d %H:%M:%S", timestamp)
+                
+                -- Determine if this is a sent or received message
+                local authorDisplay
+                if author == "Me" or author == playerName or author == fullPlayerName then
+                    authorDisplay = "You"
                 else
-                    authorDisplay = author:match("^([^%-]+)") or author
+                    -- Resolve BNet IDs if needed
+                    if playerKey:match("^bnet_") and author:match("^|Kp%d+|k$") then
+                        authorDisplay = addon:ResolveBNetID(author, playerKey)
+                    else
+                        -- Strip realm from character names for readability
+                        authorDisplay = author:match("^([^%-]+)") or author
+                    end
                 end
+                
+                -- Strip color codes and hyperlinks from message
+                local plainMessage = message
+                -- Remove color codes
+                plainMessage = plainMessage:gsub("|c%x%x%x%x%x%x%x%x", "")
+                plainMessage = plainMessage:gsub("|r", "")
+                -- Remove hyperlinks but keep the text
+                plainMessage = plainMessage:gsub("|H([^|]+)|h%[?([^%]|]+)%]?|h", "%2")
+                plainMessage = plainMessage:gsub("|H([^|]+)|h([^|]+)|h", "%2")
+                -- Remove any remaining formatting codes
+                plainMessage = plainMessage:gsub("|[Tt]", "\t")
+                plainMessage = plainMessage:gsub("|[Nn]", "\n")
+                plainMessage = plainMessage:gsub("|K([^|]+)|k", "")
+                
+                -- Format the line
+                local line = string.format("[%s] %s: %s", timeString, authorDisplay, plainMessage)
+                table.insert(lines, line)
             end
-            
-            -- Strip color codes and hyperlinks from message
-            local plainMessage = message:gsub("|c%x%x%x%x%x%x%x%x", "")  -- Remove color codes
-            plainMessage = plainMessage:gsub("|r", "")  -- Remove reset codes
-            plainMessage = plainMessage:gsub("|H.-|h", "")  -- Remove hyperlink starts
-            plainMessage = plainMessage:gsub("|h", "")  -- Remove hyperlink ends
-            plainMessage = plainMessage:gsub("|T.-|t", "")  -- Remove textures
-            plainMessage = plainMessage:gsub("|K.-|k", "")  -- Remove BNet tags
-            plainMessage = plainMessage:gsub("|n", "\n")  -- Convert newlines
-            
-            -- Add formatted line
-            table.insert(lines, string.format("[%s] %s: %s", timeString, authorDisplay, plainMessage))
         end
     end
     
     return table.concat(lines, "\n")
 end
 
---- Create and show chat export dialog
--- @param playerKey string Canonical player key
--- @param displayName string Display name for the conversation
-function addon:ShowChatExportDialog(playerKey, displayName)
+--- Show chat export dialog with formatted history
+-- @param playerKey string Canonical player key (c_Name-Realm or bnet_Tag)
+-- @param displayName string Display name for the player (optional)
+-- @param parentWindow table Optional parent window to inherit strata/level from
+function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
     if not playerKey then
-        addon:Print("|cffff0000No player selected for chat export.|r")
+        addon:Print("|cffff0000Cannot export chat: Invalid player key.|r")
         return
     end
     
-    -- Format the chat history
-    local chatText = FormatChatForExport(playerKey, displayName)
+    local exportText = FormatChatHistoryForExport(playerKey)
+    displayName = displayName or addon:GetDisplayNameFromKey(playerKey)
     
-    -- Create the export dialog frame if it doesn't exist
-    if not WhisperManagerChatExportFrame then
-        local frame = CreateFrame("Frame", "WhisperManagerChatExportFrame", UIParent, "DialogBoxFrame")
-        frame:SetSize(600, 400)
+    -- Create or reuse export frame
+    local frame = addon.chatExportFrame
+    if not frame then
+        frame = CreateFrame("Frame", "WhisperManager_ChatExportFrame", UIParent, "BackdropTemplate")
+        frame:SetSize(600, 500)
         frame:SetPoint("CENTER")
+        frame:SetFrameStrata("FULLSCREEN_DIALOG")
+        frame:SetFrameLevel(200)
         frame:SetMovable(true)
         frame:EnableMouse(true)
-        frame:SetClampedToScreen(true)
-        frame:SetFrameStrata("DIALOG")
+        frame:RegisterForDrag("LeftButton")
+        frame:SetScript("OnDragStart", frame.StartMoving)
+        frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+        frame:SetBackdrop({
+            bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileSize = 16, edgeSize = 16,
+            insets = { left = 3, right = 3, top = 3, bottom = 3 }
+        })
+        frame:SetBackdropColor(0, 0, 0, 0.9)
+        frame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
         frame:SetToplevel(true)
         
-        -- Make frame draggable
-        frame:SetScript("OnMouseDown", function(self, button)
-            if button == "LeftButton" then
-                self:StartMoving()
-            end
-        end)
-        frame:SetScript("OnMouseUp", function(self)
-            self:StopMovingOrSizing()
-        end)
-        
         -- Title
-        local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-        title:SetPoint("TOP", 0, -15)
-        title:SetText("Chat Export")
-        frame.Title = title
-        
-        -- Subtitle with player name
-        local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        subtitle:SetPoint("TOP", title, "BOTTOM", 0, -5)
-        frame.Subtitle = subtitle
-        
-        -- Instructions
-        local instructions = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        instructions:SetPoint("TOP", subtitle, "BOTTOM", 0, -10)
-        instructions:SetText("Press CTRL+A to select all, then CTRL+C to copy")
-        instructions:SetTextColor(0.7, 0.7, 0.7)
-        frame.Instructions = instructions
-        
-        -- Create scroll frame for the text
-        local scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-        scrollFrame:SetPoint("TOPLEFT", instructions, "BOTTOMLEFT", -10, -10)
-        scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -30, 45)
-        
-        -- Create edit box for the chat text
-        local editBox = CreateFrame("EditBox", nil, scrollFrame)
-        editBox:SetMultiLine(true)
-        editBox:SetAutoFocus(false)
-        editBox:SetFontObject(ChatFontNormal)
-        editBox:SetWidth(scrollFrame:GetWidth() - 10)
-        editBox:SetMaxLetters(0)  -- No limit
-        editBox:SetScript("OnEscapePressed", function(self)
-            frame:Hide()
-        end)
-        editBox:SetScript("OnTextChanged", function(self, userInput)
-            -- Auto-resize the editbox height based on content
-            if not userInput then
-                local text = self:GetText()
-                local _, lineCount = text:gsub("\n", "\n")
-                local height = math.max(scrollFrame:GetHeight(), (lineCount + 1) * 14)
-                self:SetHeight(height)
-            end
-        end)
-        
-        scrollFrame:SetScrollChild(editBox)
-        frame.ScrollFrame = scrollFrame
-        frame.EditBox = editBox
+        frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        frame.title:SetPoint("TOP", 0, -10)
+        frame.title:SetText("Export Chat History")
         
         -- Close button
-        local closeButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        closeButton:SetSize(100, 22)
-        closeButton:SetPoint("BOTTOM", 0, 15)
-        closeButton:SetText("Close")
-        closeButton:SetScript("OnClick", function()
+        frame.closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+        frame.closeBtn:SetPoint("TOPRIGHT", -2, -2)
+        frame.closeBtn:SetSize(24, 24)
+        frame.closeBtn:SetScript("OnClick", function(self)
+            self:GetParent():Hide()
+        end)
+        
+        -- Info text
+        frame.infoText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        frame.infoText:SetPoint("TOP", 0, -35)
+        frame.infoText:SetText("Press CTRL+A to select all, then CTRL+C to copy")
+        frame.infoText:SetTextColor(0.8, 0.8, 0.8)
+        
+        -- Player name label
+        frame.playerLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        frame.playerLabel:SetPoint("TOPLEFT", 15, -60)
+        frame.playerLabel:SetJustifyH("LEFT")
+        
+        -- Scroll frame
+        frame.scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+        frame.scrollFrame:SetPoint("TOPLEFT", 15, -80)
+        frame.scrollFrame:SetPoint("BOTTOMRIGHT", -30, 15)
+        -- IMPORTANT: Do NOT enable mouse on scroll frame itself, as it will block EditBox
+        -- EditBox will handle all mouse events directly
+        
+        -- Edit box
+        frame.editBox = CreateFrame("EditBox", nil, frame.scrollFrame)
+        frame.editBox:SetMultiLine(true)
+        frame.editBox:SetMaxLetters(0)
+        frame.editBox:SetFontObject(ChatFontNormal)
+        frame.editBox:SetWidth(550)
+        frame.editBox:SetAutoFocus(false)
+        frame.editBox:EnableMouse(true)
+        frame.editBox:EnableMouseWheel(true)
+        frame.editBox:SetScript("OnMouseDown", function(self)
+            self:SetFocus()
+        end)
+        frame.editBox:SetScript("OnMouseWheel", function(self, delta)
+            -- Scroll the parent scroll frame
+            local current = frame.scrollFrame:GetVerticalScroll()
+            local range = frame.scrollFrame:GetVerticalScrollRange()
+            local step = (delta > 0) and -40 or 40
+            local newValue = math.max(0, math.min(range, current + step))
+            frame.scrollFrame:SetVerticalScroll(newValue)
+        end)
+        frame.editBox:SetScript("OnEscapePressed", function(self)
             frame:Hide()
         end)
-        frame.CloseButton = closeButton
-        
-        -- Copy All button
-        local copyButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-        copyButton:SetSize(100, 22)
-        copyButton:SetPoint("RIGHT", closeButton, "LEFT", -10, 0)
-        copyButton:SetText("Select All")
-        copyButton:SetScript("OnClick", function()
-            editBox:SetFocus()
-            editBox:HighlightText(0)
+        frame.editBox:SetScript("OnTextChanged", function(self)
+            -- Auto-adjust height based on content
+            local text = self:GetText()
+            local numLines = 1
+            for _ in text:gmatch("\n") do
+                numLines = numLines + 1
+            end
+            local height = math.max(450, numLines * 14)
+            self:SetHeight(height)
+            -- Keep scroll at bottom if we're already near bottom
+            local scrollRange = frame.scrollFrame:GetVerticalScrollRange()
+            local current = frame.scrollFrame:GetVerticalScroll()
+            if scrollRange - current < 50 then
+                frame.scrollFrame:SetVerticalScroll(scrollRange)
+            end
         end)
-        frame.CopyButton = copyButton
+        frame.editBox:SetScript("OnCursorChanged", function(self, x, y, w, h)
+            -- Keep the cursor visible by syncing vertical scroll position
+            local offset = math.abs(y)
+            local range = frame.scrollFrame:GetVerticalScrollRange()
+            if offset > range then offset = range end
+            frame.scrollFrame:SetVerticalScroll(offset)
+        end)
+        
+        frame.scrollFrame:SetScrollChild(frame.editBox)
+        
+        -- Make the frame close on ESC key
+        frame:SetScript("OnKeyDown", function(self, key)
+            if key == "ESCAPE" then
+                self:Hide()
+            end
+        end)
+        frame:SetPropagateKeyboardInput(true)
+        
+        addon.chatExportFrame = frame
     end
     
-    local frame = WhisperManagerChatExportFrame
+    -- If opened from a parent window, position relative to it
+    if parentWindow and parentWindow:IsShown() then
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", parentWindow, "CENTER", 0, 0)
+    else
+        -- Center on screen if no parent
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", UIParent, "CENTER")
+    end
+    
+    -- Always use FULLSCREEN_DIALOG strata to appear above all windows
+    -- Increment frame level to ensure each new dialog is on top
+    addon.nextDialogLevel = (addon.nextDialogLevel or 200) + 10
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameLevel(addon.nextDialogLevel)
+    
+    -- Update all child frames to use same strata
+    if frame.title then
+        frame.title:SetDrawLayer("OVERLAY", 7)
+    end
+    if frame.closeBtn then
+        frame.closeBtn:SetFrameStrata("FULLSCREEN_DIALOG")
+        frame.closeBtn:SetFrameLevel(addon.nextDialogLevel + 10)
+    end
+    if frame.scrollFrame then
+        frame.scrollFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+        frame.scrollFrame:SetFrameLevel(addon.nextDialogLevel + 5)
+    end
+    if frame.editBox then
+        frame.editBox:SetFrameStrata("FULLSCREEN_DIALOG")
+        frame.editBox:SetFrameLevel(addon.nextDialogLevel + 6)
+    end
     
     -- Update content
-    frame.Subtitle:SetText(displayName or playerKey)
-    frame.EditBox:SetText(chatText)
-    frame.EditBox:SetCursorPosition(0)
+    frame.playerLabel:SetText("Conversation with: " .. displayName)
+    frame.editBox:SetText(exportText)
+    frame.editBox:SetCursorPosition(0)
+    frame.editBox:HighlightText(0, 0) -- Clear any highlight
+    -- Proactively focus the edit box so CTRL+A / CTRL+C work immediately
+    pcall(function() frame.editBox:SetFocus() end)
     
-    -- Auto-select all text
-    C_Timer.After(0.1, function()
-        frame.EditBox:SetFocus()
-        frame.EditBox:HighlightText(0)
-    end)
-    
+    -- Show the frame
     frame:Show()
+    frame:Raise()
+    
+    -- Set scroll position to bottom after a brief delay
+    C_Timer.After(0.1, function()
+        if frame:IsShown() then
+            -- Scroll to bottom
+            frame.scrollFrame:SetVerticalScroll(frame.scrollFrame:GetVerticalScrollRange())
+        end
+    end)
 end
 

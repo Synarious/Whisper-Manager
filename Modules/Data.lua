@@ -144,33 +144,39 @@ function addon:DisplayHistory(window, playerKey)
                         messageColor = "|cff" .. colorHex
                     end
                     
-                    -- Use player's class color for name only, brackets use message color
-                    local _, playerClass = UnitClass("player")
-                    local classColor = playerClass and RAID_CLASS_COLORS[playerClass]
-                    local classColorHex
-                    if classColor then
-                        classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+                    -- Try to get RP name with color from TRP3 integration (if loaded)
+                    addon:DebugMessage("[Data:DisplayHistory] Checking for TRP3 integration:", addon.TRP3_GetMyRPNameWithColor ~= nil);
+                    local rpNameWithColor = addon.TRP3_GetMyRPNameWithColor and addon.TRP3_GetMyRPNameWithColor()
+                    addon:DebugMessage("[Data:DisplayHistory] TRP3 returned my RP name with color:", rpNameWithColor);
+                    
+                    if rpNameWithColor then
+                        -- TRP3 returned a colored name, use it directly in the hyperlink
+                        local nameLink = string.format("|Hplayer:%s|h%s|h", fullPlayerName, rpNameWithColor)
+                        coloredAuthor = string.format("%s[%s]|r: ", messageColor, nameLink)
+                        addon:DebugMessage("[Data:DisplayHistory] Using TRP3 colored name");
                     else
-                        classColorHex = "ffd100"
+                        -- No TRP3 name, fall back to class color
+                        addon:DebugMessage("[Data:DisplayHistory] No TRP3 name, using class color");
+                        local _, playerClass = UnitClass("player")
+                        local classColor = playerClass and RAID_CLASS_COLORS[playerClass]
+                        local classColorHex
+                        if classColor then
+                            classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+                        else
+                            classColorHex = "ffd100"
+                        end
+                        
+                        -- Use formatting: brackets outside, hyperlink only around the name
+                        local nameLink = string.format("|Hplayer:%s|h|cff%s%s|r|h", fullPlayerName, classColorHex, playerName)
+                        coloredAuthor = string.format("%s[%s]|r: ", messageColor, nameLink)
                     end
-                    
-                    -- Try to get RP name from TRP3 integration (if loaded)
-                    addon:DebugMessage("[Data:DisplayHistory] Checking for TRP3 integration:", addon.TRP3_GetMyRPName ~= nil);
-                    local rpName = addon.TRP3_GetMyRPName and addon.TRP3_GetMyRPName()
-                    addon:DebugMessage("[Data:DisplayHistory] TRP3 returned my RP name:", rpName);
-                    local displayPlayerName = rpName or playerName
-                    addon:DebugMessage("[Data:DisplayHistory] Using display name:", displayPlayerName);
-                    
-                    -- Use formatting: brackets outside, hyperlink only around the name
-                    local nameLink = string.format("|Hplayer:%s|h|cff%s%s|r|h", fullPlayerName, classColorHex, displayPlayerName)
-                    coloredAuthor = string.format("%s[%s]|r: ", messageColor, nameLink)
                 else
                     -- Color based on whisper type (receive)
                     if window.isBNet then
                         -- Use the window's display name instead of stored author (which might be session ID)
                         local bnetDisplayName = window.playerDisplay or displayName or author
-                        -- For BNet, use a fixed color for the name (cyan) - BNet names aren't clickable in the same way
-                        coloredAuthor = "|TInterface\\ChatFrame\\UI-ChatIcon-Blizz:14:14:0:-1|t|cff00ddff" .. bnetDisplayName .. "|r"
+                        -- For BNet, use a fixed color for the name (cyan)
+                        coloredAuthor = "|cff00ddff" .. bnetDisplayName .. "|r"
                         
                         -- Use customizable receive color for BNet message text
                         local color = self.settings.bnetReceiveColor or {r = 0.0, g = 0.66, b = 1.0}
@@ -218,7 +224,12 @@ function addon:DisplayHistory(window, playerKey)
                 -- Simple concatenation preserves all escape sequences
                 local formattedMessage = timeString .. " " .. coloredAuthor .. " " .. messageColor .. formattedText .. "|r"
                 
-                addon:DebugMessage("Adding message to historyFrame:", formattedMessage:sub(1, 80) .. "...")
+                addon:DebugMessage("Adding message to historyFrame:")
+                addon:DebugMessage("  timeString:", timeString)
+                addon:DebugMessage("  coloredAuthor length:", #coloredAuthor)
+                addon:DebugMessage("  messageColor:", messageColor)
+                addon:DebugMessage("  formattedText length:", #formattedText)
+                addon:DebugMessage("  formattedMessage length:", #formattedMessage)
                 historyFrame:AddMessage(formattedMessage)
         else
             addon:DebugMessage("Skipping message", i, "- missing data. timestamp:", timestamp ~= nil, "author:", author ~= nil, "message:", message ~= nil)

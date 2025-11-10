@@ -215,30 +215,60 @@ function addon:RefreshRecentChats()
         
         -- Click to open
         btn:SetScript("OnClick", function()
+            addon:DebugMessage("[RecentChats] Click handler called for playerKey:", chat.playerKey)
+            addon:DebugMessage("[RecentChats] isBNet:", chat.isBNet)
+            addon:DebugMessage("[RecentChats] displayName:", chat.displayName)
+            
             local success = false
-            if chat.isBNet then
-                -- Extract BattleTag from key
-                local battleTag = chat.playerKey:match("bnet_(.+)")
-                if battleTag then
-                    -- Find the current BNet ID for this BattleTag
-                    local numBNetTotal, numBNetOnline = BNGetNumFriends()
-                    for i = 1, numBNetTotal do
-                        local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
-                        if accountInfo and accountInfo.battleTag == battleTag then
-                            success = addon:OpenBNetConversation(accountInfo.bnetAccountID, chat.displayName)
-                            break
+            local errorOccurred = false
+            
+            -- Wrap in pcall to catch any errors
+            local pcallSuccess, result = pcall(function()
+                if chat.isBNet then
+                    -- Extract BattleTag from key
+                    local battleTag = chat.playerKey:match("bnet_(.+)")
+                    addon:DebugMessage("[RecentChats] Extracted BattleTag:", battleTag)
+                    if battleTag then
+                        -- Find the current BNet ID for this BattleTag
+                        local numBNetTotal, numBNetOnline = BNGetNumFriends()
+                        addon:DebugMessage("[RecentChats] Searching", numBNetTotal, "BNet friends")
+                        for i = 1, numBNetTotal do
+                            local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
+                            if accountInfo and accountInfo.battleTag == battleTag then
+                                addon:DebugMessage("[RecentChats] Found matching BattleTag, calling OpenBNetConversation")
+                                return addon:OpenBNetConversation(accountInfo.bnetAccountID, chat.displayName)
+                            end
                         end
+                        addon:DebugMessage("[RecentChats] BNet friend not found in friends list")
+                        addon:Print("|cffff8800BattleNet friend not found. They may have been removed from your friends list.|r")
+                        return false
                     end
+                else
+                    -- Use the playerKey directly (it has the correct realm)
+                    -- OpenConversation/ResolvePlayerIdentifiers will handle the c_ prefix correctly
+                    addon:DebugMessage("[RecentChats] Calling OpenConversation with playerKey:", chat.playerKey)
+                    return addon:OpenConversation(chat.playerKey)
                 end
+                return false
+            end)
+            
+            if pcallSuccess then
+                success = result
+                addon:DebugMessage("[RecentChats] OpenConversation returned:", success)
             else
-                -- Use the playerKey directly (it has the correct realm)
-                -- OpenConversation/ResolvePlayerIdentifiers will handle the c_ prefix correctly
-                success = addon:OpenConversation(chat.playerKey)
+                errorOccurred = true
+                addon:DebugMessage("[RecentChats] ERROR occurred:", result)
+                addon:Print("|cffff0000Error opening conversation: " .. tostring(result) .. "|r")
             end
+            
             -- Only close the menu if the window was successfully opened/shown
             -- If in combat, the operation is queued and success=false, so keep menu open
-            if success then
+            -- If there was an error, also close the menu to prevent confusion
+            if success or errorOccurred then
+                addon:DebugMessage("[RecentChats] Hiding recent chats frame (success=" .. tostring(success) .. ", error=" .. tostring(errorOccurred) .. ")")
                 addon.recentChatsFrame:Hide()
+            else
+                addon:DebugMessage("[RecentChats] Failed to open conversation or in combat - keeping frame open")
             end
         end)
         
