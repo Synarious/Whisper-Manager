@@ -15,20 +15,6 @@ addon.recentChats = {};          -- Recent conversation tracking
 addon.nextFrameLevel = 1;        -- Z-order tracking for windows
 addon.cascadeCounter = 0;        -- Counter for alternating window positioning
 
---- Close the most recently focused whisper window (if any)
-function addon:CloseMostRecentWindow()
-    if not self.lastFocusedWindow then
-        return false
-    end
-    local win = self.lastFocusedWindow
-    if win and win:IsShown() then
-        win:Hide()
-        self.lastFocusedWindow = nil
-        return true
-    end
-    return false
-end
-
 -- ============================================================================
 -- Constants
 -- ============================================================================

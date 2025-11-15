@@ -1,15 +1,4 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <!--
-        WhisperManager - Minimal Core Architecture
-        
-        LOAD ORDER:
-        1. Core - Creates addon namespace and global state only
-        2. Utils - General utilities (strings, formatting, notifications, context menus)
-        3. Modules - Data management, commands, dialogs, events
-        4. UI - Window components and settings
-        
-        Events.lua calls Initialize() after all modules load.
-    -->
     
     <!-- CORE: Minimal core - namespace and state only -->
     <Script file="Core.lua"/>
