@@ -37,32 +37,36 @@ end)
 
 -- Helper function to update all child frame levels relative to the parent window
 local function UpdateWindowFrameLevels(win, baseLevel)
+    addon:DebugMessage("UpdateWindowFrameLevels fired for window: " .. tostring(win:GetName() or "<unnamed>") .. " baseLevel=" .. tostring(baseLevel))
     win:SetFrameLevel(baseLevel)
-    
-    -- Update all child frames to proper relative levels
-    -- This ensures borders, text, and buttons all layer correctly with their parent
+    addon:DebugMessage("  FrameLevel set for main window: " .. tostring(win:GetName()) .. " = " .. tostring(baseLevel))
     if win.titleBar then
         win.titleBar:SetFrameLevel(baseLevel + 1)
+        addon:DebugMessage("  FrameLevel set for titleBar: " .. tostring(baseLevel + 1))
     end
     if win.History then
-        -- History (text) needs to be well above background but below buttons
-        win.History:SetFrameLevel(baseLevel + 50)
+        win.History:SetFrameLevel(baseLevel + 10)
+        addon:DebugMessage("  FrameLevel set for History: " .. tostring(baseLevel + 10))
     end
     if win.InputContainer then
-        win.InputContainer:SetFrameLevel(baseLevel + 10)
+        win.InputContainer:SetFrameLevel(baseLevel + 5)
+        addon:DebugMessage("  FrameLevel set for InputContainer: " .. tostring(baseLevel + 5))
     end
     if win.Input then
-        win.Input:SetFrameLevel(baseLevel + 11)
+        win.Input:SetFrameLevel(baseLevel + 6)
+        addon:DebugMessage("  FrameLevel set for Input: " .. tostring(baseLevel + 6))
     end
     if win.closeBtn then
-        -- Buttons need highest level to always be clickable
-        win.closeBtn:SetFrameLevel(baseLevel + 100)
+        win.closeBtn:SetFrameLevel(baseLevel + 50)
+        addon:DebugMessage("  FrameLevel set for closeBtn: " .. tostring(baseLevel + 50))
     end
     if win.copyBtn then
-        win.copyBtn:SetFrameLevel(baseLevel + 99)
+        win.copyBtn:SetFrameLevel(baseLevel + 49)
+        addon:DebugMessage("  FrameLevel set for copyBtn: " .. tostring(baseLevel + 49))
     end
     if win.resizeBtn then
-        win.resizeBtn:SetFrameLevel(baseLevel + 98)
+        win.resizeBtn:SetFrameLevel(baseLevel + 48)
+        addon:DebugMessage("  FrameLevel set for resizeBtn: " .. tostring(baseLevel + 48))
     end
 end
 
@@ -163,8 +167,15 @@ function addon:FocusWindow(window)
     window:SetAlpha(self.FOCUSED_ALPHA)
     
     -- Increment base level for this window and all its children
-    -- This brings the entire window hierarchy to the front
-    self.nextFrameLevel = self.nextFrameLevel + 200
+    -- Use smaller increments (100 instead of 200) to reduce frame level growth
+    self.nextFrameLevel = self.nextFrameLevel + 100
+    
+    -- Reset frame level counter if it gets too high (WoW has a limit around 10,000)
+    if self.nextFrameLevel > 9000 then
+        self:DebugMessage("Frame level counter exceeded 9000, resetting to base level")
+        self.nextFrameLevel = 1000
+    end
+    
     UpdateWindowFrameLevels(window, self.nextFrameLevel)
     
     window:Raise()
@@ -324,10 +335,6 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Create new window
     local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
     local win = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
-    
-    -- Create new window
-    local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
-    local win = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
     win:SetSize(400, 300)
     win:SetPoint("CENTER")
     win:SetFrameStrata("DIALOG")
@@ -353,6 +360,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         addon:SaveWindowPosition(self)
+        UpdateWindowFrameLevels(self, addon.nextFrameLevel)
     end)
     
     -- Focus window on mouse down, but don't consume clicks meant for History frame
@@ -397,18 +405,49 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
             self.InputContainer:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, 1)
             self.InputContainer:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, 1)
         end
-        
         addon:LoadWindowPosition(self)
         -- Don't auto-focus input - let user click to focus
-        
         -- Focus this window when shown
         addon:FocusWindow(self)
-        
         -- Mark messages as read when window is shown/focused
         if self.playerKey then
             addon:MarkChatAsRead(self.playerKey)
         end
+        -- Reapply frame levels to ensure correct layering
+        UpdateWindowFrameLevels(self, addon.nextFrameLevel)
     end)
+    -- Reapply frame levels after window resize
+    win:SetScript("OnSizeChanged", function(self)
+        UpdateWindowFrameLevels(self, addon.nextFrameLevel)
+    end)
+    -- Also reapply frame levels after SetSize is called directly
+    local origSetSize = win.SetSize
+    win.SetSize = function(self, ...)
+        origSetSize(self, ...)
+        UpdateWindowFrameLevels(self, addon.nextFrameLevel)
+    end
+
+    -- Reapply frame levels after showing/hiding key child frames
+    if win.closeBtn then
+        win.closeBtn:SetScript("OnShow", function(self)
+            UpdateWindowFrameLevels(win, addon.nextFrameLevel)
+        end)
+    end
+    if win.copyBtn then
+        win.copyBtn:SetScript("OnShow", function(self)
+            UpdateWindowFrameLevels(win, addon.nextFrameLevel)
+        end)
+    end
+    if win.resizeBtn then
+        win.resizeBtn:SetScript("OnShow", function(self)
+            UpdateWindowFrameLevels(win, addon.nextFrameLevel)
+        end)
+    end
+    if win.InputContainer then
+        win.InputContainer:SetScript("OnShow", function(self)
+            UpdateWindowFrameLevels(win, addon.nextFrameLevel)
+        end)
+    end
     
     -- Mark messages as read when mouse enters the window
     win:SetScript("OnEnter", function(self)
@@ -428,7 +467,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win:Hide()
     
     -- Assign unique frame level for proper stacking
-    addon.nextFrameLevel = addon.nextFrameLevel + 200
+    -- Use smaller increments so levels don't grow too fast
+    addon.nextFrameLevel = (addon.nextFrameLevel or 1000) + 100
     local baseLevel = addon.nextFrameLevel
     
     -- Title bar background
@@ -455,10 +495,9 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.copyBtn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
     win.copyBtn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
     win.copyBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
-    win.copyBtn:SetFrameLevel(baseLevel + 99)
+    win.copyBtn:SetFrameLevel(baseLevel + 49)
     win.copyBtn:SetScript("OnClick", function(self)
         addon:DebugMessage("[Chat] Copy Chat History button clicked")
-        -- Use ShowChatExportDialog since ShowCopyChatDialog doesn't exist
         addon:ShowChatExportDialog(win.playerKey, win.displayName)
     end)
     win.copyBtn:SetScript("OnEnter", function(self)
@@ -470,12 +509,72 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.copyBtn:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
     end)
+
+    -- TRP3 Button (to the right of Copy Chat History)
+    win.trp3Btn = CreateFrame("Button", nil, win)
+    win.trp3Btn:SetPoint("LEFT", win.copyBtn, "RIGHT", 4, 0)
+    win.trp3Btn:SetSize(20, 20)
+    -- Use a note-like icon similar to the copy button
+    win.trp3Btn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+    win.trp3Btn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
+    win.trp3Btn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    -- Match the copy button's frame level so both render and receive clicks consistently
+    win.trp3Btn:SetFrameLevel(baseLevel + 49)
+    win.trp3Btn:Hide() -- Hide by default
+    addon:DebugMessage("TRP3 button icon set to note-style texture for window: " .. tostring(win:GetName()))
+
+    win.trp3Btn:SetScript("OnClick", function(self)
+        if addon.settings and addon.settings.enableTRP3Button then
+            local charRealm = win.playerTarget
+            if charRealm and not charRealm:find("-") then
+                local _, realm = UnitName("player")
+                charRealm = charRealm .. "-" .. (realm or GetRealmName()):gsub("%s+", "")
+            end
+            if charRealm then
+                -- Try TRP3 API first
+                if TRP3_API and TRP3_API.register then
+                    if TRP3_API.register.openPageByUnitID then
+                        TRP3_API.register.openPageByUnitID(charRealm)
+                        return
+                    elseif TRP3_API.register.openPage then
+                        TRP3_API.register.openPage(charRealm)
+                        return
+                    end
+                end
+                -- Fallback: pre-fill and send the command in chat edit box
+                local command = "/trp3 open " .. charRealm
+                ChatFrame_OpenChat(command)
+                C_Timer.After(0.1, function()
+                    local editBox = ChatEdit_GetActiveWindow()
+                    if editBox then
+                        ChatEdit_SendText(editBox)
+                    end
+                end)
+            end
+        end
+    end)
+    win.trp3Btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Open TRP3", 1, 1, 1)
+        GameTooltip:AddLine("Click to open Total RP3 profile for this character.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    win.trp3Btn:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+
+    -- Show/hide TRP3 button based on settings
+    if addon.settings and addon.settings.enableTRP3Button then
+        win.trp3Btn:Show()
+    else
+        win.trp3Btn:Hide()
+    end
     
     -- Close button
     win.closeBtn = CreateFrame("Button", nil, win, "UIPanelCloseButton")
     win.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     win.closeBtn:SetSize(24, 24)
-    win.closeBtn:SetFrameLevel(baseLevel + 100)
+    win.closeBtn:SetFrameLevel(baseLevel + 50)
     
     -- Override the default OnClick (hiding existing frames is safe even in combat)
     win.closeBtn:SetScript("OnClick", function(self)
@@ -488,7 +587,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.resizeBtn:SetPoint("BOTTOMRIGHT")
     win.resizeBtn:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     win.resizeBtn:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-    win.resizeBtn:SetFrameLevel(baseLevel + 98)
+    win.resizeBtn:SetFrameLevel(baseLevel + 48)
     win.resizeBtn:SetScript("OnMouseDown", function()
         win:StartSizing("BOTTOMRIGHT")
         addon:FocusWindow(win)
@@ -933,10 +1032,11 @@ function addon:LoadWindowPosition(window)
     if pos then
         window:ClearAllPoints()
         window:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
-        
         if pos.width and pos.height then
             window:SetSize(pos.width, pos.height)
         end
+        -- Ensure frame levels are reapplied after restoring position/size
+        UpdateWindowFrameLevels(window, addon.nextFrameLevel)
     end
 end
 

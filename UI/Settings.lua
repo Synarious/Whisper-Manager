@@ -652,15 +652,39 @@ function addon:CreateSettingsFrame()
     taskbarCheckbox:SetPoint("TOPLEFT", 10, yOffset)
     taskbarCheckbox:SetSize(24, 24)
     taskbarCheckbox:SetChecked(addon:GetSetting("enableTaskbarAlert"))
-    
+
     local taskbarLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     taskbarLabel:SetPoint("LEFT", taskbarCheckbox, "RIGHT", 5, 0)
     taskbarLabel:SetText("Enable Windows Taskbar Alert on Whisper")
-    
+
     taskbarCheckbox:SetScript("OnClick", function(self)
         addon:SetSetting("enableTaskbarAlert", self:GetChecked())
     end)
-    yOffset = yOffset - 50
+
+    -- TRP3 Button Toggle Checkbox
+    local trp3Checkbox = CreateFrame("CheckButton", nil, scrollChild, "UICheckButtonTemplate")
+    trp3Checkbox:SetPoint("TOPLEFT", 10, yOffset - 30)
+    trp3Checkbox:SetSize(24, 24)
+    trp3Checkbox:SetChecked(addon:GetSetting("enableTRP3Button"))
+
+    local trp3Label = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    trp3Label:SetPoint("LEFT", trp3Checkbox, "RIGHT", 5, 0)
+    trp3Label:SetText("Show 'Open TRP3' Button in Whisper Window")
+
+    trp3Checkbox:SetScript("OnClick", function(self)
+        addon:SetSetting("enableTRP3Button", self:GetChecked())
+        -- Optionally refresh all windows to show/hide the button
+        for _, win in pairs(addon.windows) do
+            if win.trp3Btn then
+                if self:GetChecked() then
+                    win.trp3Btn:Show()
+                else
+                    win.trp3Btn:Hide()
+                end
+            end
+        end
+    end)
+    yOffset = yOffset - 60
     
     -- History Retention Header
     local retentionHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
