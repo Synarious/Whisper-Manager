@@ -7,4 +7,4 @@
 ## Dependencies: Blizzard_ChatFrame
 ## SavedVariables: WhisperManager_HistoryDB, WhisperManager_WindowDB, WhisperManager_Config, WhisperManager_RecentChats
 
-WhisperManager.xml
+Whisper-Manager.xml

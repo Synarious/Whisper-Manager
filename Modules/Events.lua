@@ -92,7 +92,8 @@ function addon:RegisterEvents()
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "ADDON_LOADED" then
             local addonName = ...
-            if addonName == "WhisperManager" then
+            -- Compare to the value stored in the addon namespace so renaming the folder or toc doesn't break loading
+            if addonName == addon._tocName or addonName == "WhisperManager" then
                 DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Loaded successfully!")
                 -- Saved variables are now loaded, initialize the addon
                 addon:Initialize()

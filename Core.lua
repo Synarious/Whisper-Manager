@@ -2,8 +2,12 @@
 local DEFAULT_DEBUG_MODE = false
 
 -- Create the main addon table (global namespace)
-WhisperManager = {};
-local addon = WhisperManager;
+-- Use the standard addon entry pattern so an internal toc name or folder rename doesn't break references.
+local ADDON_NAME, addonFromTOC = ...
+-- Ensure a global table named 'WhisperManager' exists. Keep it as the canonical table used throughout the codebase.
+_G["WhisperManager"] = _G["WhisperManager"] or {}
+local addon = _G["WhisperManager"]
+addon._tocName = ADDON_NAME
 
 -- ============================================================================
 -- Addon State (runtime data structures)
