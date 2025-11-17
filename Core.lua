@@ -232,6 +232,62 @@ function addon:RegisterSlashCommands()
     self:DebugMessage("Slash commands registered: /wmgr and /whispermanager")
 end
 
+-- ============================================================================
+-- Slash Command Handling
+-- ============================================================================
+
+--- Reset all saved window positions (whisper windows, floating button, recent chats, history viewer, settings)
+function addon:ResetWindowPositions()
+    if not WhisperManager_Config then
+        self:Print("No window positions to reset.")
+        return
+    end
+    
+    local positionKeys = {
+        "windowPositions",   -- Whisper windows (individual chats)
+        "buttonPos",         -- Floating action button
+        "recentChatsPos",    -- Recent Chats frame
+        "historyPos",        -- History Viewer frame
+        "settingsPos",       -- Settings frame (add for consistency)
+    }
+    
+    local totalCount = 0
+    local details = {}
+    
+    -- Count and track what's being cleared
+    for _, key in ipairs(positionKeys) do
+        if WhisperManager_Config[key] then
+            local count = 0
+            if key == "windowPositions" then
+                -- Count individual whisper windows
+                for _, _ in pairs(WhisperManager_Config[key]) do
+                    count = count + 1
+                end
+            else
+                -- Single window/button positions
+                count = 1
+            end
+            
+            if count > 0 then
+                totalCount = totalCount + count
+                table.insert(details, string.format("%d %s", count, key))
+            end
+        end
+    end
+    
+    -- Clear all positions
+    for _, key in ipairs(positionKeys) do
+        WhisperManager_Config[key] = nil
+    end
+    
+    if totalCount > 0 then
+        local detailStr = table.concat(details, ", ")
+        self:Print(string.format("|cffff00ffReset all window positions (%s). Now use /reload and all windows will spawn at default locations.|r", detailStr))
+    else
+        self:Print("No window positions to reset.")
+    end
+end
+
 --- Handle slash command input
 -- @param message string Command text entered by user
 function addon:HandleSlashCommand(message)
@@ -239,9 +295,8 @@ function addon:HandleSlashCommand(message)
     local input = self:TrimWhitespace(message or "") or ""
     if input == "" or input:lower() == "help" then
         self:Print("Usage:")
-        self:Print("/wmgr <player> - Open a WhisperManager window.")
         self:Print("/wmgr debug [on|off|toggle] - Control diagnostic chat output.")
-        self:Print("/wmgr resetwindows - Reset saved window positions.")
+        self:Print("/wmgr reset_positions - Reset saved window positions.")
         self:Print("/wmgr reset_all_data - [Dangerous]  Clear all saved data (history, windows, config).")
         self:Print("/wmgr delete_data_retention_test - [Dangerous] Data retention cleanup (keep 3 recent, delete older than 5 min).")
         self:Print("/wmgr cleanup_empty - [Dangerous] Remove empty conversation entries from history.")
@@ -261,7 +316,7 @@ function addon:HandleSlashCommand(message)
         else
             self:SetDebugEnabled(not self.debugEnabled)
         end
-    elseif command == "resetwindows" then
+    elseif command == "reset_positions" then
         self:ResetWindowPositions()
     elseif command == "reset_all_data" then
         WhisperManager_HistoryDB = {}

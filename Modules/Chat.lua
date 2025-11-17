@@ -129,6 +129,14 @@ function addon:FocusWindow(window)
         return
     end
     
+    -- Update lastFocus timestamp when focusing a window
+    if window.playerKey and WhisperManager_Config and WhisperManager_Config.windowPositions then
+        local pos = WhisperManager_Config.windowPositions[window.playerKey]
+        if pos then
+            pos.lastFocus = time()
+        end
+    end
+    
     -- Dim all other windows but don't change their frame levels
     for _, win in pairs(self.windows) do
         if win ~= window and win:IsShown() then
@@ -991,6 +999,7 @@ function addon:SaveWindowPosition(window)
             yOfs = yOfs,
             width = width,
             height = height,
+            lastFocus = time(),  -- Record UTC timestamp when position was last saved (focused)
         }
     end
 end
@@ -1007,6 +1016,10 @@ function addon:LoadWindowPosition(window)
         window:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
         if pos.width and pos.height then
             window:SetSize(pos.width, pos.height)
+        end
+        -- Initialize lastFocus if it doesn't exist (for backward compatibility)
+        if not pos.lastFocus then
+            pos.lastFocus = time()
         end
         -- Ensure frame levels are reapplied after restoring position/size
         UpdateWindowFrameLevels(window, addon.nextFrameLevel)

@@ -379,7 +379,7 @@ function addon:RunHistoryRetentionCleanup()
         if type(history) == "table" and #history > 0 then
             -- Sort messages by timestamp (newest first)
             table.sort(history, function(a, b)
-                return (a.timestamp or 0) > (b.timestamp or 0)
+                return (a.t or 0) > (b.t or 0)
             end)
             
             local messagesToKeep = {}
@@ -387,7 +387,7 @@ function addon:RunHistoryRetentionCleanup()
             
             -- Process messages
             for i, message in ipairs(history) do
-                local messageAge = currentTime - (message.timestamp or 0)
+                local messageAge = currentTime - (message.t or 0)
                 local ageInMonths = messageAge / secondsPerMonth
                 
                 local shouldKeep = false
@@ -428,6 +428,14 @@ function addon:RunHistoryRetentionCleanup()
     -- Clean up empty entries
     local emptyRemoved = addon:CleanupEmptyHistoryEntries()
     
+    -- Clean up window positions not accessed in over 7 days
+    local windowPositionsRemoved = addon:CleanupWindowPositions()
+    
+    -- Refresh all open windows to reflect deleted messages
+    if totalMessagesDeleted > 0 or emptyRemoved > 0 then
+        addon:RefreshAllOpenWindows()
+    end
+    
     -- Always show cleanup results to user if messages were deleted
     if totalMessagesDeleted > 0 then
         local message = string.format("|cFF00FF00[WhisperManager]|r History cleanup complete: Removed %d old message%s from %d conversation%s to keep your saved history lean.", 
@@ -456,9 +464,9 @@ function addon:RunDebugRetentionCleanup()
     
     local keepCount = 3  -- Keep 3 most recent messages
     local keepSeconds = 120  -- Protected for 2 minutes
-    local deleteSeconds = 300  -- Delete messages older than 5 minutes
+    local deleteSeconds = 120  -- Delete messages older than 2 minutes
     
-    print("|cFF00FF00[WhisperManager]|r Debug Retention Test: Keep " .. keepCount .. " recent (protect <2min), delete >5min old")
+    print("|cFF00FF00[WhisperManager]|r Debug Retention Test: Keep 3 recent (protect <2min), delete >2min old")
     
     local totalPlayersProcessed = 0
     local totalMessagesDeleted = 0
@@ -468,7 +476,7 @@ function addon:RunDebugRetentionCleanup()
         if type(history) == "table" and #history > 0 then
             -- Sort messages by timestamp (newest first)
             table.sort(history, function(a, b)
-                return (a.timestamp or 0) > (b.timestamp or 0)
+                return (a.t or 0) > (b.t or 0)
             end)
             
             local messagesToKeep = {}
@@ -476,20 +484,19 @@ function addon:RunDebugRetentionCleanup()
             
             -- Process messages
             for i, message in ipairs(history) do
-                local messageAge = currentTime - (message.timestamp or 0)
+                local messageAge = currentTime - (message.t or 0)
                 
                 local shouldKeep = false
                 
-                -- Protected messages: within keepCount AND within keepSeconds
+                -- Always keep the top 3 most recent messages
                 if i <= keepCount then
+                    shouldKeep = true
+                    -- Mark as protected if also within keepSeconds
                     if messageAge <= keepSeconds then
-                        shouldKeep = true
                         protectedCount = protectedCount + 1
                     end
-                end
-                
-                -- Non-protected messages: keep if younger than deleteSeconds
-                if not shouldKeep and messageAge < deleteSeconds then
+                -- Delete messages older than 5 minutes (if not in top 3)
+                elseif messageAge < deleteSeconds then
                     shouldKeep = true
                 end
                 
@@ -514,12 +521,30 @@ function addon:RunDebugRetentionCleanup()
     -- Clean up empty entries
     local emptyRemoved = addon:CleanupEmptyHistoryEntries()
     
+    -- Refresh all open windows to reflect deleted messages
+    if totalMessagesDeleted > 0 or emptyRemoved > 0 then
+        addon:RefreshAllOpenWindows()
+    end
+    
     local message = string.format("|cFF00FF00[WhisperManager]|r Debug cleanup complete: %d players, %d messages deleted", 
         totalPlayersProcessed, totalMessagesDeleted)
     if emptyRemoved > 0 then
         message = message .. string.format(", %d empty removed", emptyRemoved)
     end
     print(message)
+end
+
+--- Refresh all currently open whisper windows to display updated history
+-- This is called after retention cleanup to show updated messages to the user
+function addon:RefreshAllOpenWindows()
+    if not addon.windows then return end
+    
+    for playerKey, window in pairs(addon.windows) do
+        if window and window:IsVisible() then
+            addon:DebugMessage("Refreshing window for: " .. tostring(playerKey))
+            addon:DisplayHistory(window, playerKey)
+        end
+    end
 end
 
 -- Clean up empty history entries
@@ -553,4 +578,39 @@ function addon:CleanupEmptyHistoryEntries()
     end
     
     return removedCount
+end
+
+-- Clean up window positions not accessed in over 7 days
+function addon:CleanupWindowPositions()
+    if not WhisperManager_Config or not WhisperManager_Config.windowPositions then
+        return 0
+    end
+    
+    local positions = WhisperManager_Config.windowPositions
+    local currentTime = time()
+    local sevenDaysInSeconds = 7 * 24 * 60 * 60
+    local keysToRemove = {}
+    
+    -- Find positions that haven't been focused in over 7 days
+    for playerKey, pos in pairs(positions) do
+        if type(pos) == "table" then
+            local lastFocus = pos.lastFocus
+            if lastFocus and (currentTime - lastFocus) > sevenDaysInSeconds then
+                table.insert(keysToRemove, playerKey)
+                addon:DebugMessage(string.format("[Data] Removing window position for %s (last focused %.1f days ago)", 
+                    playerKey, (currentTime - lastFocus) / (24 * 60 * 60)))
+            end
+        end
+    end
+    
+    -- Remove the old positions
+    for _, key in ipairs(keysToRemove) do
+        positions[key] = nil
+    end
+    
+    if #keysToRemove > 0 then
+        addon:DebugMessage(string.format("[Data] Removed %d window position(s) not used in 7 days", #keysToRemove))
+    end
+    
+    return #keysToRemove
 end
