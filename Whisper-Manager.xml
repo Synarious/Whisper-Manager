@@ -14,6 +14,7 @@
     <Script file="Modules\RecentChats.lua"/>    <!-- Recent conversations UI -->
     
     <!-- UI COMPONENTS: Window and interface (moved to Modules) -->
+    <Script file="UI\Window.lua"/>              <!-- Window management and combat handler (MUST load before Chat.lua) -->
     <Script file="Modules\Chat.lua"/>         <!-- Individual whisper windows (renamed) -->
     <Script file="UI\HistoryViewer.lua"/>       <!-- History browser -->
     <Script file="UI\FloatingButton.lua"/>      <!-- Floating action button -->

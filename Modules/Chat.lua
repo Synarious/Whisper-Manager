@@ -2,35 +2,8 @@
 
 local addon = WhisperManager
 
--- ============================================================================
--- Combat Lockdown Queue
--- ============================================================================
-
-local combatQueue = {}
-
--- Create combat event handler
-local combatFrame = CreateFrame("Frame")
-combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED") -- Entering combat
-combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")  -- Leaving combat
-combatFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_REGEN_ENABLED" then
-        -- Process queued operations after combat ends
-        local queueCount = #combatQueue
-        if queueCount > 0 then
-            addon:DebugMessage("Combat ended - processing " .. queueCount .. " queued operations")
-            addon:Print("|cff00ff00Combat ended - opening queued whisper windows...|r")
-            for _, queuedFunc in ipairs(combatQueue) do
-                local success, err = pcall(queuedFunc)
-                if not success then
-                    addon:DebugMessage("Error processing combat queue:", err)
-                end
-            end
-            wipe(combatQueue)
-        end
-    elseif event == "PLAYER_REGEN_DISABLED" then
-        addon:DebugMessage("Entered combat - queueing frame operations")
-    end
-end)
+-- Note: Combat Lockdown Queue (addon.combatQueue) is defined in Core.lua
+-- All window operations use the shared queue managed there
 
 -- Helper Functions
 -- ============================================================================
@@ -152,7 +125,7 @@ function addon:FocusWindow(window)
     -- Queue operation if in combat
     if InCombatLockdown() then
         self:DebugMessage("In combat - queueing FocusWindow operation")
-        table.insert(combatQueue, function() addon:FocusWindow(window) end)
+        table.insert(addon.combatQueue, function() addon:FocusWindow(window) end)
         return
     end
     
@@ -207,8 +180,8 @@ function addon:OpenConversation(playerName)
     if not win and InCombatLockdown() then
         self:DebugMessage("In combat - queueing window creation (messages will display after combat)")
         self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
-        table.insert(combatQueue, function() addon:OpenConversation(playerName) end)
-        return false
+        table.insert(addon.combatQueue, function() addon:OpenConversation(playerName) end)
+        return true  -- Return true since we successfully queued the operation
     end
     
     if not win then
@@ -264,8 +237,8 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     if not win and InCombatLockdown() then
         self:DebugMessage("In combat - queueing BNet window creation (messages will display after combat)")
         self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
-        table.insert(combatQueue, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
-        return false
+        table.insert(addon.combatQueue, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
+        return true  -- Return true since we successfully queued the operation
     end
     
     if not win then
@@ -570,7 +543,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         win.trp3Btn:Hide()
     end
     
-    -- Close button
+    -- Close button (UIPanelCloseButton template is available via Blizzard_ChatFrame dependency)
     win.closeBtn = CreateFrame("Button", nil, win, "UIPanelCloseButton")
     win.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     win.closeBtn:SetSize(24, 24)
@@ -724,7 +697,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
                 BNSendWhisper(win.bnSenderID, message)
             else
                 -- Send regular whisper
-                C_ChatInfo.SendChatMessage(message, "WHISPER", nil, win.playerTarget)
+                SendChatMessage(message, "WHISPER", nil, win.playerTarget)
             end
             -- Don't manually add to history here - let the INFORM event handle it
             self:SetText("")

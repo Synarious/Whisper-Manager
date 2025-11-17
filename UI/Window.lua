@@ -5,29 +5,27 @@
 local addon = WhisperManager;
 
 -- ============================================================================
--- Combat Lockdown Queue
+-- Combat Lockdown Handler
 -- ============================================================================
 
-local combatQueue = {};
-
--- Create combat event handler
+-- Create combat event handler to process queued operations
 local combatFrame = CreateFrame("Frame");
 combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED"); -- Entering combat
 combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED");  -- Leaving combat
 combatFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_REGEN_ENABLED" then
         -- Process queued operations after combat ends
-        local queueCount = #combatQueue
+        local queueCount = #addon.combatQueue
         if queueCount > 0 then
             addon:DebugMessage("Combat ended - processing " .. queueCount .. " queued operations")
             addon:Print("|cff00ff00Combat ended - opening queued whisper windows...|r")
-            for _, queuedFunc in ipairs(combatQueue) do
+            for _, queuedFunc in ipairs(addon.combatQueue) do
                 local success, err = pcall(queuedFunc)
                 if not success then
                     addon:DebugMessage("Error processing combat queue:", err)
                 end
             end
-            wipe(combatQueue)
+            wipe(addon.combatQueue)
         end
     elseif event == "PLAYER_REGEN_DISABLED" then
         addon:DebugMessage("Entered combat - queueing frame operations")
@@ -593,7 +591,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         GameTooltip:Hide()
     end)
     
-    -- Close button
+    -- Close button (UIPanelCloseButton template is available via Blizzard_ChatFrame dependency)
     win.closeBtn = CreateFrame("Button", nil, win, "UIPanelCloseButton")
     win.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     win.closeBtn:SetSize(24, 24)

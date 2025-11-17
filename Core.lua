@@ -18,6 +18,7 @@ addon.playerDisplayNames = {};   -- Cached display names
 addon.recentChats = {};          -- Recent conversation tracking
 addon.nextFrameLevel = 1;        -- Z-order tracking for windows
 addon.cascadeCounter = 0;        -- Counter for alternating window positioning
+addon.combatQueue = {};          -- Queue for operations during combat lockdown
 
 -- ============================================================================
 -- Constants
