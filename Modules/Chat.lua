@@ -512,25 +512,10 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
                 charRealm = charRealm .. "-" .. (realm or GetRealmName()):gsub("%s+", "")
             end
             if charRealm then
-                -- Try TRP3 API first
-                if TRP3_API and TRP3_API.register then
-                    if TRP3_API.register.openPageByUnitID then
-                        TRP3_API.register.openPageByUnitID(charRealm)
-                        return
-                    elseif TRP3_API.register.openPage then
-                        TRP3_API.register.openPage(charRealm)
-                        return
-                    end
-                end
-                -- Fallback: pre-fill and send the command in chat edit box
+                -- Paste command into chat edit box and let user press Enter
                 local command = "/trp3 open " .. charRealm
                 ChatFrame_OpenChat(command)
-                C_Timer.After(0.1, function()
-                    local editBox = ChatEdit_GetActiveWindow()
-                    if editBox then
-                        ChatEdit_SendText(editBox)
-                    end
-                end)
+                addon:Print("Press |cff00ff00Enter|r to open the TRP3 profile.")
             end
         end
     end)
@@ -549,6 +534,46 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         win.trp3Btn:Show()
     else
         win.trp3Btn:Hide()
+    end
+
+    -- Ginvite Button (to the right of TRP3 button)
+    win.ginviteBtn = CreateFrame("Button", nil, win)
+    win.ginviteBtn:SetPoint("LEFT", win.trp3Btn, "RIGHT", 4, 0)
+    win.ginviteBtn:SetSize(20, 20)
+    -- Use a Blizzard guild member note icon for visual consistency
+    win.ginviteBtn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-MemberNote-Up")
+    win.ginviteBtn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-MemberNote-Down")
+    win.ginviteBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+    win.ginviteBtn:SetFrameLevel(baseLevel + 49)
+    win.ginviteBtn:Hide() -- Hide by default
+    addon:DebugMessage("Ginvite button icon set for window: " .. tostring(win:GetName()) .. " (member note icon)")
+
+    win.ginviteBtn:SetScript("OnClick", function(self)
+        if addon.settings and addon.settings.enableGinviteButton then
+            local charName = win.playerTarget
+            if charName then
+                -- Paste command into chat edit box and let user press Enter
+                local command = "/ginvite " .. charName
+                ChatFrame_OpenChat(command)
+                addon:Print("Press |cff00ff00Enter|r to send the guild invite.")
+            end
+        end
+    end)
+    win.ginviteBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Send Guild Invite", 1, 1, 1)
+        GameTooltip:AddLine("Click to send a guild invite to this player.", 0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    win.ginviteBtn:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+
+    -- Show/hide Ginvite button based on settings
+    if addon.settings and addon.settings.enableGinviteButton then
+        win.ginviteBtn:Show()
+    else
+        win.ginviteBtn:Hide()
     end
     
     -- Close button (UIPanelCloseButton template is available via Blizzard_ChatFrame dependency)

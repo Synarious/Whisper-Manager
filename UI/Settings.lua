@@ -51,6 +51,10 @@ local DEFAULT_SETTINGS = {
     inputBoxAlpha = 0.9,
     recentChatBackgroundColor = {r = 0, g = 0, b = 0},
     recentChatBackgroundAlpha = 0.9,
+    
+    -- Button settings
+    enableTRP3Button = false, -- Show TRP3 button (disabled by default)
+    enableGinviteButton = false, -- Show ginvite button (disabled by default)
 }
 
 -- Available fonts
@@ -120,6 +124,13 @@ function addon:LoadSettings()
             WhisperManager_Config.settings[key] = value
             self:DebugMessage("[LoadSettings] Applied default for '" .. key .. "' = " .. tostring(value))
         end
+    end
+    -- Ensure new button settings always exist
+    if WhisperManager_Config.settings.enableTRP3Button == nil then
+        WhisperManager_Config.settings.enableTRP3Button = false
+    end
+    if WhisperManager_Config.settings.enableGinviteButton == nil then
+        WhisperManager_Config.settings.enableGinviteButton = false
     end
 
     self:DebugMessage("[LoadSettings] Values AFTER applying defaults:")
@@ -673,7 +684,6 @@ function addon:CreateSettingsFrame()
 
     trp3Checkbox:SetScript("OnClick", function(self)
         addon:SetSetting("enableTRP3Button", self:GetChecked())
-        -- Optionally refresh all windows to show/hide the button
         for _, win in pairs(addon.windows) do
             if win.trp3Btn then
                 if self:GetChecked() then
@@ -684,7 +694,32 @@ function addon:CreateSettingsFrame()
             end
         end
     end)
-    yOffset = yOffset - 60
+    -- Place Ginvite checkbox directly below TRP3 checkbox
+    yOffset = yOffset - 34
+
+    -- Ginvite Button Toggle Checkbox
+    local ginviteCheckbox = CreateFrame("CheckButton", nil, scrollChild, "UICheckButtonTemplate")
+    ginviteCheckbox:SetPoint("TOPLEFT", 10, yOffset)
+    ginviteCheckbox:SetSize(24, 24)
+    ginviteCheckbox:SetChecked(addon:GetSetting("enableGinviteButton"))
+
+    local ginviteLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    ginviteLabel:SetPoint("LEFT", ginviteCheckbox, "RIGHT", 5, 0)
+    ginviteLabel:SetText("Show 'Send Guild Invite' Button in Whisper Window")
+
+    ginviteCheckbox:SetScript("OnClick", function(self)
+        addon:SetSetting("enableGinviteButton", self:GetChecked())
+        for _, win in pairs(addon.windows) do
+            if win.ginviteBtn then
+                if self:GetChecked() then
+                    win.ginviteBtn:Show()
+                else
+                    win.ginviteBtn:Hide()
+                end
+            end
+        end
+    end)
+    yOffset = yOffset - 34
     
     -- History Retention Header
     local retentionHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -1006,5 +1041,22 @@ function addon:ToggleSettingsFrame()
         self.settingsFrame:Hide()
     else
         self.settingsFrame:Show()
+        -- Refresh all window buttons when settings frame is shown
+        for _, win in pairs(addon.windows) do
+            if win.trp3Btn then
+                if addon:GetSetting("enableTRP3Button") then
+                    win.trp3Btn:Show()
+                else
+                    win.trp3Btn:Hide()
+                end
+            end
+            if win.ginviteBtn then
+                if addon:GetSetting("enableGinviteButton") then
+                    win.ginviteBtn:Show()
+                else
+                    win.ginviteBtn:Hide()
+                end
+            end
+        end
     end
 end
