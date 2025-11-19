@@ -303,11 +303,9 @@ local function FormatChatHistoryForExport(playerKey)
     local displayName = addon:GetDisplayNameFromKey(playerKey)
     
     -- Add header
-    table.insert(lines, "========================================")
     table.insert(lines, "Chat History Export")
     table.insert(lines, "Conversation with: " .. displayName)
     table.insert(lines, "Player Key: " .. playerKey)
-    table.insert(lines, "Exported: " .. date("%Y-%m-%d %H:%M:%S"))
     if wasTruncated then
         table.insert(lines, string.format("Showing last %d messages (of %d total)", MAX_LINES, totalMessages))
     else
@@ -436,8 +434,7 @@ function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
         frame.scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
         frame.scrollFrame:SetPoint("TOPLEFT", 15, -80)
         frame.scrollFrame:SetPoint("BOTTOMRIGHT", -30, 15)
-        -- IMPORTANT: Do NOT enable mouse on scroll frame itself, as it will block EditBox
-        -- EditBox will handle all mouse events directly
+        frame.scrollFrame:EnableMouse(true)
         
         -- Edit box
         frame.editBox = CreateFrame("EditBox", nil, frame.scrollFrame)
@@ -448,44 +445,9 @@ function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
         frame.editBox:SetAutoFocus(false)
         frame.editBox:EnableMouse(true)
         frame.editBox:EnableMouseWheel(true)
-        frame.editBox:SetScript("OnMouseDown", function(self)
-            self:SetFocus()
-        end)
-        frame.editBox:SetScript("OnMouseWheel", function(self, delta)
-            -- Scroll the parent scroll frame
-            local current = frame.scrollFrame:GetVerticalScroll()
-            local range = frame.scrollFrame:GetVerticalScrollRange()
-            local step = (delta > 0) and -40 or 40
-            local newValue = math.max(0, math.min(range, current + step))
-            frame.scrollFrame:SetVerticalScroll(newValue)
-        end)
         frame.editBox:SetScript("OnEscapePressed", function(self)
             frame:Hide()
         end)
-        frame.editBox:SetScript("OnTextChanged", function(self)
-            -- Auto-adjust height based on content
-            local text = self:GetText()
-            local numLines = 1
-            for _ in text:gmatch("\n") do
-                numLines = numLines + 1
-            end
-            local height = math.max(450, numLines * 14)
-            self:SetHeight(height)
-            -- Keep scroll at bottom if we're already near bottom
-            local scrollRange = frame.scrollFrame:GetVerticalScrollRange()
-            local current = frame.scrollFrame:GetVerticalScroll()
-            if scrollRange - current < 50 then
-                frame.scrollFrame:SetVerticalScroll(scrollRange)
-            end
-        end)
-        frame.editBox:SetScript("OnCursorChanged", function(self, x, y, w, h)
-            -- Keep the cursor visible by syncing vertical scroll position
-            local offset = math.abs(y)
-            local range = frame.scrollFrame:GetVerticalScrollRange()
-            if offset > range then offset = range end
-            frame.scrollFrame:SetVerticalScroll(offset)
-        end)
-        
         frame.scrollFrame:SetScrollChild(frame.editBox)
         
         -- Make the frame close on ESC key
@@ -538,18 +500,9 @@ function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
     frame.editBox:SetCursorPosition(0)
     frame.editBox:HighlightText(0, 0) -- Clear any highlight
     -- Proactively focus the edit box so CTRL+A / CTRL+C work immediately
-    pcall(function() frame.editBox:SetFocus() end)
+
     
     -- Show the frame
     frame:Show()
     frame:Raise()
-    
-    -- Set scroll position to bottom after a brief delay
-    C_Timer.After(0.1, function()
-        if frame:IsShown() then
-            -- Scroll to bottom
-            frame.scrollFrame:SetVerticalScroll(frame.scrollFrame:GetVerticalScrollRange())
-        end
-    end)
 end
-

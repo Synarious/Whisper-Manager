@@ -358,107 +358,17 @@ end
 -- ============================================================================
 
 function addon:SetupContextMenu()
-    -- Prevent duplicate menu modifications
+    -- Intentionally disable context-menu modifications.
+    -- The addon will rely on the default "Whisper" action (which already opens
+    -- a WhisperManager window via other hooks) instead of adding its own menu
+    -- entries. Keeping this function minimal avoids adding a divider-only
+    -- menu item or causing errors when `contextData` is not a table.
     if addon.__contextMenuInstalled then
         addon:DebugMessage("Context menu already installed, skipping.")
         return
     end
     addon.__contextMenuInstalled = true
-    
-    local function AddWhisperManagerButton(owner, rootDescription, contextData)
-        addon:DebugMessage("=== AddWhisperManagerButton START ===")
-        addon:DebugMessage("owner:", owner and owner:GetName() or "nil")
-        addon:DebugMessage("rootDescription:", rootDescription ~= nil)
-        addon:DebugMessage("contextData:", contextData ~= nil)
-    
-        if not contextData then
-            addon:DebugMessage("|cffff0000ERROR: contextData is nil!|r")
-            return
-        end
-    
-        addon:DebugMessage("=== Inspecting contextData ===")
-        addon:DebugMessage("contextData type:", type(contextData))
-        
-        -- Log all contextData fields
-        for k, v in pairs(contextData) do
-            addon:DebugMessage(string.format("- contextData.%s: %s (type: %s)", tostring(k), tostring(v), type(v)))
-        end
-        
-        if contextData.unit then
-            addon:DebugMessage("- contextData.unit:", contextData.unit)
-        else
-            addon:DebugMessage("- contextData.unit: nil")
-        end
-        if contextData.name then
-            addon:DebugMessage("- contextData.name:", contextData.name)
-        else
-            addon:DebugMessage("- contextData.name: nil")
-        end
-    
-        local playerName
-        local unit = contextData.unit
-        
-        -- Try to get name from unit token first
-        if unit and UnitExists(unit) and UnitIsPlayer(unit) then
-            local name, realm = UnitName(unit)
-            if name then
-                if realm and realm ~= "" then
-                    playerName = string.format("%s-%s", name, realm)
-                else
-                    playerName = name
-                end
-            end
-            addon:DebugMessage("Player name found from unit token:", playerName)
-        end
-        
-        -- Fallback to contextData.name if available
-        if not playerName and contextData.name and contextData.name ~= "" then
-            playerName = contextData.name
-            addon:DebugMessage("Player name found from contextData.name:", playerName)
-        end
-    
-        if playerName then
-            addon:DebugMessage("Successfully determined playerName:", playerName)
-            local playerKey = addon:ResolvePlayerIdentifiers(playerName)
-            if playerKey then
-                addon:DebugMessage("Adding button to the menu...")
-                rootDescription:CreateDivider()
-                addon:DebugMessage("Button added successfully.")
-            else
-                addon:DebugMessage("|cffffff00INFO: Could not normalize player key.|r")
-            end
-        else
-            addon:DebugMessage("|cffffff00INFO: Could not determine a player name. Not adding button.|r")
-        end
-    end
-
-    local tagsToModify = {
-        "MENU_UNIT_TARGET",
-        "MENU_UNIT_FOCUS",
-        "MENU_UNIT_FRIEND",
-        "MENU_UNIT_CHAT_PLAYER",
-        "MENU_UNIT_PLAYER",
-        "MENU_UNIT_ENEMY_PLAYER",
-        "MENU_UNIT_RAID_PLAYER",
-        "MENU_UNIT_SELF",
-    }
-    for i = 1, 4 do 
-        table.insert(tagsToModify, "MENU_UNIT_PARTY"..i)
-        table.insert(tagsToModify, "MENU_UNIT_RAID"..i)
-    end
-    for i = 1, 40 do
-        table.insert(tagsToModify, "MENU_UNIT_RAID_PLAYER"..i)
-    end
-    
-    addon:DebugMessage("=== Modifying Context Menus ===")
-    addon:DebugMessage("Total menu tags to modify:", #tagsToModify)
-    
-    for _, tag in ipairs(tagsToModify) do 
-        addon:DebugMessage("Modifying menu tag:", tag)
-        Menu.ModifyMenu(tag, AddWhisperManagerButton) 
-    end
-    
-    addon:DebugMessage("=== Context Menu Setup Complete ===")
+    addon:DebugMessage("Context menu modification disabled: relying on default Whisper action.")
 end
 
 -- ============================================================================

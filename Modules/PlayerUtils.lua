@@ -60,25 +60,34 @@ end
 
 function addon:ResolveBNetID(authorString, playerKey)
     if not authorString or authorString == "" then return "Unknown" end
+
+    -- Session tokens look like |Kp123|k — try to resolve to a friendly display name
     if authorString:match("^|Kp%d+|k$") then
+        -- 1) Prefer the BattleTag extracted from the provided playerKey (fast and deterministic)
         if playerKey and playerKey:match("^bnet_") then
             local battleTag = playerKey:match("^bnet_(.+)")
-            if battleTag then
-                local displayName = battleTag:match("^([^#]+)") or battleTag
-                return displayName
+            if battleTag and battleTag ~= "" then
+                return battleTag:match("^([^#]+)") or battleTag
             end
         end
-        local numBNetTotal, _ = BNGetNumFriends()
-        for i = 1, numBNetTotal do
-            local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
-            if accountInfo and accountInfo.battleTag then
-                if accountInfo.gameAccountInfo and accountInfo.gameAccountInfo.playerGuid then
-                    local displayName = accountInfo.accountName or accountInfo.battleTag:match("^([^#]+)") or accountInfo.battleTag
-                    return displayName
+
+        -- 2) Fallback: scan the Battle.net friends list for a friendly name (accountName preferred)
+        local num = BNGetNumFriends() or 0
+        for i = 1, num do
+            local info = C_BattleNet.GetFriendAccountInfo(i)
+            if info then
+                if info.accountName and info.accountName ~= "" then
+                    return info.accountName
+                elseif info.battleTag and info.battleTag ~= "" then
+                    return info.battleTag:match("^([^#]+)") or info.battleTag
                 end
             end
         end
+
+        -- 3) Last resort
         return "BNet Friend"
     end
+
+    -- Not a session token — return input unchanged
     return authorString
 end

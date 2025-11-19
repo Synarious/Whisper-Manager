@@ -4,10 +4,6 @@
 
 local addon = WhisperManager;
 
--- ============================================================================
--- Recent Chats Frame Creation
--- ============================================================================
-
 function addon:CreateRecentChatsFrame()
     local frame = CreateFrame("Frame", "WhisperManager_RecentChats", UIParent, "BackdropTemplate")
     frame:SetSize(300, 400)
