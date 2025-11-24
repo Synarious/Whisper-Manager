@@ -635,6 +635,49 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Hyperlink handlers: Use SetItemRef which properly integrates with other addons
     win.History:SetScript("OnHyperlinkClick", function(self, link, text, button)
         addon:DebugMessage("Hyperlink clicked in window:", link, text, button)
+        
+        -- Handle chatfilter links 
+        -- These links (e.g., chatfilter:censoredmessage:12345) are used by the profanity filter
+        -- Clicking them should uncensor the message
+        local type, value = link:match("(%a+):(.+)")
+        local isChatFilter = (type == "chatfilter" and value and value:match("^censoredmessage"))
+        local isCensoredMessage = (link:match("^censoredmessage"))
+        
+        if isChatFilter or isCensoredMessage then
+             local lineID
+             if isChatFilter then
+                 local _, id = strsplit(":", value)
+                 lineID = tonumber(id)
+             else
+                 local _, id = strsplit(":", link)
+                 lineID = tonumber(id)
+             end
+             
+             if lineID then
+                 C_ChatInfo.UncensorChatLine(lineID)
+                 local newText = C_ChatInfo.GetChatLineText(lineID)
+                 if newText and newText ~= "" then
+                     -- Update history DB
+                     if WhisperManager_HistoryDB and WhisperManager_HistoryDB[win.playerKey] then
+                         local history = WhisperManager_HistoryDB[win.playerKey]
+                         -- Scan backwards as it's likely a recent message
+                         for i = #history, 1, -1 do
+                             -- Check if the message contains the link we just clicked
+                             if history[i].m and history[i].m:find(link, 1, true) then
+                                 history[i].m = newText
+                                 break
+                             end
+                         end
+                         -- Refresh display to show the uncensored message
+                         addon:DisplayHistory(win, win.playerKey)
+                     end
+                 else
+                     addon:Print("Unable to reveal message: The original text is no longer in the game memory (session expired).")
+                 end
+             end
+             return
+        end
+
         -- Use SetItemRef which allows other addons to hook and modify behavior
         -- This is the standard WoW API for handling all hyperlink clicks
         SetItemRef(link, text, button, self)

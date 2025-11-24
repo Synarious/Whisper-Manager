@@ -218,6 +218,46 @@ function addon:CreateHistoryFrame()
     frame.detailScrollFrame:SetMouseClickEnabled(true)
     frame.detailScrollFrame:SetScript("OnHyperlinkClick", function(self, link, text, button)
         addon:DebugMessage("Hyperlink clicked in history:", link, text, button)
+        
+        -- Handle chatfilter links manually
+        local type, value = link:match("(%a+):(.+)")
+        local isChatFilter = (type == "chatfilter" and value and value:match("^censoredmessage"))
+        local isCensoredMessage = (link:match("^censoredmessage"))
+        
+        if isChatFilter or isCensoredMessage then
+             local lineID
+             if isChatFilter then
+                 local _, id = strsplit(":", value)
+                 lineID = tonumber(id)
+             else
+                 local _, id = strsplit(":", link)
+                 lineID = tonumber(id)
+             end
+             
+             if lineID then
+                 C_ChatInfo.UncensorChatLine(lineID)
+                 local newText = C_ChatInfo.GetChatLineText(lineID)
+                 if newText and newText ~= "" then
+                     -- Update history DB
+                     local playerKey = addon.historyFrame and addon.historyFrame.exportBtn and addon.historyFrame.exportBtn.playerKey
+                     if playerKey and WhisperManager_HistoryDB and WhisperManager_HistoryDB[playerKey] then
+                         local history = WhisperManager_HistoryDB[playerKey]
+                         for i = #history, 1, -1 do
+                             if history[i].m and history[i].m:find(link, 1, true) then
+                                 history[i].m = newText
+                                 break
+                             end
+                         end
+                         -- Refresh display
+                         addon:ShowHistoryDetail(playerKey, addon.historyFrame.exportBtn.displayName)
+                     end
+                 else
+                     addon:Print("Unable to reveal message: The original text is no longer in the game memory (session expired).")
+                 end
+             end
+             return
+        end
+
         -- Use SetItemRef which allows other addons to hook and modify behavior
         -- This is the standard WoW API for handling all hyperlink clicks
         SetItemRef(link, text, button, self)
