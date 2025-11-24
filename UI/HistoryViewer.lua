@@ -512,6 +512,8 @@ function addon:ShowHistoryDetail(playerKey, displayName)
             -- CRITICAL: Don't use gsub on message - preserve hyperlinks as-is
             -- Apply emote and speech formatting (this function preserves hyperlinks)
             local formattedText = self:FormatEmotesAndSpeech(message)
+            -- Trim any leading whitespace so there is exactly one space after the colon
+            formattedText = formattedText:gsub("^%s+", "")
             
             -- Format message - concatenate parts WITHOUT string.format to preserve hyperlinks
             -- Simple concatenation preserves all escape sequences

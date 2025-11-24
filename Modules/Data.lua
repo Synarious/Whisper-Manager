@@ -152,7 +152,7 @@ function addon:DisplayHistory(window, playerKey)
                     if rpNameWithColor then
                         -- TRP3 returned a colored name, use it directly in the hyperlink
                         local nameLink = string.format("|Hplayer:%s|h%s|h", fullPlayerName, rpNameWithColor)
-                        coloredAuthor = string.format("%s[%s]|r: ", messageColor, nameLink)
+                        coloredAuthor = string.format("%s[%s]:|r", messageColor, nameLink)
                         addon:DebugMessage("[Data:DisplayHistory] Using TRP3 colored name");
                     else
                         -- No TRP3 name, fall back to class color
@@ -168,7 +168,7 @@ function addon:DisplayHistory(window, playerKey)
                         
                         -- Use formatting: brackets outside, hyperlink only around the name
                         local nameLink = string.format("|Hplayer:%s|h|cff%s%s|r|h", fullPlayerName, classColorHex, playerName)
-                        coloredAuthor = string.format("%s[%s]|r: ", messageColor, nameLink)
+                        coloredAuthor = string.format("%s[%s]:|r", messageColor, nameLink)
                     end
                 else
                     -- Color based on whisper type (receive)
@@ -216,6 +216,8 @@ function addon:DisplayHistory(window, playerKey)
                 -- CRITICAL: Don't use gsub on message - preserve hyperlinks as-is
                 -- Apply emote and speech formatting (this function preserves hyperlinks)
                 local formattedText = self:FormatEmotesAndSpeech(message)
+                -- Trim any leading whitespace so there is exactly one space after the colon
+                formattedText = formattedText:gsub("^%s+", "")
                 
                 -- Convert URLs to clickable links
                 formattedText = self:ConvertURLsToLinks(formattedText)
