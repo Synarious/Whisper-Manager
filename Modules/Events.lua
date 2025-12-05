@@ -79,6 +79,8 @@ function addon:RegisterEvents()
     
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Creating event frame and registering events...")
     
+
+    -- Might be broken, as it may be ChatFrameUtils_AddMessageEventFilter
     -- Register chat message filters to suppress whispers handled by our windows
     ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", ChatMessageEventFilter)
     ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", ChatMessageEventFilter)
