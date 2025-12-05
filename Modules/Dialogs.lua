@@ -91,9 +91,7 @@ function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnS
                 if guid then C_ReportSystem.OpenReportPlayerDialog(guid, playerName) end
             end)
         elseif isBNet and bnSenderID then
-            if ChatFrame_SendBNetTell then
-                rootDescription:CreateButton(WHISPER, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
-            end
+            rootDescription:CreateButton(WHISPER, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
             rootDescription:CreateButton("Export Chat", function() 
                 local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
                 if accountInfo and accountInfo.battleTag then
@@ -103,9 +101,7 @@ function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnS
                     addon:Print("|cffff0000Could not export chat: BattleTag not found.|r")
                 end
             end)
-            if BNInviteFriend then
-                rootDescription:CreateButton(INVITE, function() BNInviteFriend(bnSenderID) end)
-            end
+            rootDescription:CreateButton(INVITE, function() BNInviteFriend(bnSenderID) end)
         end
 
         rootDescription:CreateButton(CANCEL, function() end)

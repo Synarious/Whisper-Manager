@@ -194,13 +194,13 @@ function addon:Initialize()
     end
     
     -- Hook shift-click item linking into our edit boxes
-    local originalChatEdit_InsertLink = ChatEdit_InsertLink
-    ChatEdit_InsertLink = function(link)
+    local originalInsertLink = ChatFrameUtil.InsertLink
+    ChatFrameUtil.InsertLink = function(link)
         if addon.activeEditBox and addon.activeEditBox:IsVisible() and addon.activeEditBox:HasFocus() then
             addon.activeEditBox:Insert(link)
             return true
         else
-            return originalChatEdit_InsertLink(link)
+            return originalInsertLink(link)
         end
     end
 
@@ -401,13 +401,15 @@ local function hookChatFrameEditBox(editBox)
     end
 end
 
-hooksecurefunc("ChatEdit_ActivateChat", function(editBox)
+local originalActivateChat = ChatFrameUtil.ActivateChat
+ChatFrameUtil.ActivateChat = function(editBox)
+    originalActivateChat(editBox)
     hookChatFrameEditBox(editBox)
-end)
+end
 
-local ChatEdit_GetActiveWindow_orig = ChatEdit_GetActiveWindow
-function ChatEdit_GetActiveWindow()
-    return addon.EditBoxInFocus or ChatEdit_GetActiveWindow_orig()
+local originalGetActiveWindow = ChatFrameUtil.GetActiveWindow
+function ChatFrameUtil.GetActiveWindow()
+    return addon.EditBoxInFocus or originalGetActiveWindow()
 end
 
 function addon:SetEditBoxFocus(editBox)
@@ -427,7 +429,7 @@ function addon:SetupChatHooks()
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox then
         hookChatFrameEditBox(DEFAULT_CHAT_FRAME.editBox)
     end
-    for i = 1, NUM_CHAT_WINDOWS do
+    for i = 1, Constants.ChatFrameConstants.MaxChatWindows do
         local chatFrame = _G["ChatFrame" .. i]
         if chatFrame and chatFrame.editBox then
             hookChatFrameEditBox(chatFrame.editBox)

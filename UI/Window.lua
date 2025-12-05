@@ -824,7 +824,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
                 addon:Print("|cffff8800Unable to determine whisper target for this window.|r")
             else
                 win.playerTarget = target
-                SendChatMessage(message, "WHISPER", nil, target)
+                C_ChatInfo.SendChatMessage(message, "WHISPER", nil, target)
                 sent = true
             end
         end

@@ -260,26 +260,29 @@ function addon:SetupHooks()
     end
     addon.__hooksInstalled = true
     
-    -- Hook whisper command extraction
-    hooksecurefunc("ChatEdit_ExtractTellTarget", function(editBox, text)
+    -- Hook whisper command extraction - use editbox mixin method
+    local function OnExtractTellTarget(editBox, text)
         local target = addon:ExtractWhisperTarget(text)
         if not target then return end
-        addon:DebugMessage("Hooked /w via ChatEdit_ExtractTellTarget. Target:", target)
+        addon:DebugMessage("Hooked /w via ExtractTellTarget. Target:", target)
         
         if addon:OpenConversation(target) then
-            _G.ChatEdit_OnEscapePressed(editBox)
+            ChatFrameUtil.DeactivateChat(editBox)
         end
-    end)
+    end
+    
+    -- Hook the mixin method on ChatFrameEditBox
+    hooksecurefunc(ChatFrameEditBoxMixin, "ExtractTellTarget", OnExtractTellTarget)
 
     -- Hook chat frame opening
-    hooksecurefunc("ChatFrame_OpenChat", function(text, chatFrame)
+    hooksecurefunc(ChatFrameUtil, "OpenChat", function(text, chatFrame, desiredCursorPosition)
         -- Don't trigger if we're closing a window
         if addon.__closingWindow then
-            addon:DebugMessage("ChatFrame_OpenChat ignored - window closing")
+            addon:DebugMessage("OpenChat ignored - window closing")
             return
         end
         
-        local editBox = chatFrame and chatFrame.editBox or _G.ChatEdit_ChooseBoxForSend(chatFrame)
+        local editBox = ChatFrameUtil.ChooseBoxForSend(chatFrame)
         if not editBox then return end
 
         local chatType = editBox:GetAttribute("chatType")
@@ -289,7 +292,7 @@ function addon:SetupHooks()
 
         -- Only intercept if text contains /w or /whisper command
         if not text or not text:match("^/[Ww]") then
-            addon:DebugMessage("ChatFrame_OpenChat ignored - no /w command in text")
+            addon:DebugMessage("OpenChat ignored - no /w command in text")
             return
         end
 
@@ -299,10 +302,10 @@ function addon:SetupHooks()
         if editBox.__WhisperManagerHandled then return end
         editBox.__WhisperManagerHandled = true
 
-        addon:DebugMessage("ChatFrame_OpenChat captured whisper target:", target)
+        addon:DebugMessage("OpenChat captured whisper target:", target)
 
         if addon:OpenConversation(target) then
-            _G.ChatEdit_OnEscapePressed(editBox)
+            ChatFrameUtil.DeactivateChat(editBox)
         end
         
         C_Timer.After(0.1, function()
@@ -311,40 +314,40 @@ function addon:SetupHooks()
     end)
 
     -- Hook reply tell
-    hooksecurefunc("ChatFrame_ReplyTell", function()
-        local target = _G.ChatEdit_GetLastTellTarget()
+    hooksecurefunc(ChatFrameUtil, "ReplyTell", function(chatFrame)
+        local target = ChatFrameUtil.GetLastTellTarget()
         if target and addon:OpenConversation(target) then
-            local activeEditBox = _G.ChatEdit_ChooseBoxForSend()
+            local activeEditBox = ChatFrameUtil.ChooseBoxForSend()
             if activeEditBox then
-                _G.ChatEdit_OnEscapePressed(activeEditBox)
+                ChatFrameUtil.DeactivateChat(activeEditBox)
             end
         end
     end)
 
     -- Hook the default Whisper menu action so it opens WhisperManager windows
-    hooksecurefunc("ChatFrame_SendTell", function(target)
-        if not target or target == "" then return end
+    hooksecurefunc(ChatFrameUtil, "SendTell", function(name, chatFrame)
+        if not name or name == "" then return end
         -- Open conversation. If successful, close any opened chat editbox to avoid duplicate UI
         local ok = false
-        pcall(function() ok = addon:OpenConversation(target) end)
+        pcall(function() ok = addon:OpenConversation(name) end)
         if ok then
-            local editBox = _G.ChatEdit_ChooseBoxForSend()
+            local editBox = ChatFrameUtil.ChooseBoxForSend()
             if editBox and editBox:IsShown() then
-                _G.ChatEdit_OnEscapePressed(editBox)
+                ChatFrameUtil.DeactivateChat(editBox)
             end
         end
     end)
 
     -- Hook BNet whisper default action similarly
-    hooksecurefunc("ChatFrame_SendBNetTell", function(target)
-        if not target or target == "" then return end
+    hooksecurefunc(ChatFrameUtil, "SendBNetTell", function(tokenizedName)
+        if not tokenizedName or tokenizedName == "" then return end
         local ok = false
-        -- ChatFrame_SendBNetTell may pass a BattleTag or name; try to open by BattleTag when possible
-        pcall(function() ok = addon:OpenBNetConversation(target) end)
+        -- SendBNetTell may pass a BattleTag or name; try to open by BattleTag when possible
+        pcall(function() ok = addon:OpenBNetConversation(tokenizedName) end)
         if ok then
-            local editBox = _G.ChatEdit_ChooseBoxForSend()
+            local editBox = ChatFrameUtil.ChooseBoxForSend()
             if editBox and editBox:IsShown() then
-                _G.ChatEdit_OnEscapePressed(editBox)
+                ChatFrameUtil.DeactivateChat(editBox)
             end
         end
     end)

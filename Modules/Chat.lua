@@ -514,7 +514,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
             if charRealm then
                 -- Paste command into chat edit box and let user press Enter
                 local command = "/trp3 open " .. charRealm
-                ChatFrame_OpenChat(command)
+                ChatFrameUtil.OpenChat(command)
                 addon:Print("Press |cff00ff00Enter|r to open the TRP3 profile.")
             end
         end
@@ -554,7 +554,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
             if charName then
                 -- Paste command into chat edit box and let user press Enter
                 local command = "/ginvite " .. charName
-                ChatFrame_OpenChat(command)
+                ChatFrameUtil.OpenChat(command)
                 addon:Print("Press |cff00ff00Enter|r to send the guild invite.")
             end
         end
@@ -773,7 +773,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
                 BNSendWhisper(win.bnSenderID, message)
             else
                 -- Send regular whisper
-                SendChatMessage(message, "WHISPER", nil, win.playerTarget)
+                C_ChatInfo.SendChatMessage(message, "WHISPER", nil, win.playerTarget)
             end
             -- Don't manually add to history here - let the INFORM event handle it
             self:SetText("")
