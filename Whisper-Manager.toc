@@ -9,4 +9,3 @@
 ## SavedVariables: WhisperManager_HistoryDB, WhisperManager_WindowDB, WhisperManager_Config, WhisperManager_RecentChats, WhisperManager_CharacterDB
 
 Whisper-Manager.xml
-debug_addons\TRP3_Module\WhisperManager.lua
