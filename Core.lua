@@ -29,6 +29,7 @@ addon.CHAT_MAX_LETTERS = 245;
 addon.RECENT_CHAT_EXPIRY = 72 * 60 * 60;  -- 72 hours in seconds
 addon.FOCUSED_ALPHA = 1.0;
 addon.UNFOCUSED_ALPHA = 0.65;
+addon.OVERLAY_STRATA = "FULLSCREEN_DIALOG"; -- Keep UI visible above large Blizzard overlays (e.g., Housing)
 
 -- Class ID to Class Token mapping (for compact storage)
 -- Numeric IDs are stored in database, converted to tokens for color lookup
@@ -64,6 +65,75 @@ addon.CLASS_TOKEN_TO_ID = {
     ["DEMONHUNTER"] = 12,
     ["EVOKER"] = 13,
 }
+
+-- ============================================================================
+-- Overlay Helpers (keep frames visible over major Blizzard scenes like Housing)
+-- ============================================================================
+
+--- Return the safest parent that remains visible when UIParent is hidden
+function addon:GetOverlayParent()
+    if UIParent and UIParent:IsShown() then
+        return UIParent
+    end
+
+    local housingFrame = _G.HouseEditorFrame or _G.PlayerHousingFrame
+    if housingFrame and housingFrame:IsShown() then
+        return housingFrame
+    end
+
+    return WorldFrame
+end
+
+--- Apply overlay settings (parent/strata/level) to a frame
+-- @param frame table Frame to adjust
+-- @param level number|nil Optional frame level to enforce
+function addon:EnsureFrameOverlay(frame, level)
+    if not frame then return end
+
+    local parent = self:GetOverlayParent()
+    if parent and frame:GetParent() ~= parent then
+        frame:SetParent(parent)
+    end
+
+    frame:SetFrameStrata(self.OVERLAY_STRATA)
+
+    if level then
+        frame:SetFrameLevel(level)
+    end
+
+    if frame.SetToplevel then
+        frame:SetToplevel(true)
+    end
+end
+
+--- Re-apply overlay settings to all primary WhisperManager frames
+function addon:RefreshOverlayAnchors()
+    local parent = self:GetOverlayParent()
+
+    local function apply(frame, level)
+        if not frame then return end
+        if parent and frame:GetParent() ~= parent then
+            frame:SetParent(parent)
+        end
+        frame:SetFrameStrata(self.OVERLAY_STRATA)
+        if level then frame:SetFrameLevel(level) end
+        if frame.SetToplevel then frame:SetToplevel(true) end
+    end
+
+    apply(self.floatingButton)
+    apply(self.recentChatsFrame)
+    apply(self.historyFrame)
+    apply(self.settingsFrame)
+    apply(self.chatExportFrame)
+
+    -- Active whisper windows and their input containers
+    for _, win in pairs(self.windows) do
+        if win then
+            apply(win)
+            apply(win.InputContainer)
+        end
+    end
+end
 
 -- ============================================================================
 -- Debug System
@@ -207,6 +277,21 @@ function addon:Initialize()
     -- Register events (defined in Events.lua)
     if addon.RegisterEvents then
         addon:RegisterEvents()
+    end
+
+    -- Keep key frames visible when the Housing editor or other fullscreen UIs hide UIParent
+    self:RefreshOverlayAnchors()
+    if UIParent and not UIParent.__wmOverlayHookedForWhisperManager then
+        UIParent.__wmOverlayHookedForWhisperManager = true
+        UIParent:HookScript("OnShow", function() addon:RefreshOverlayAnchors() end)
+        UIParent:HookScript("OnHide", function() addon:RefreshOverlayAnchors() end)
+    end
+
+    local housingFrame = _G.HouseEditorFrame or _G.PlayerHousingFrame
+    if housingFrame and not housingFrame.__wmOverlayHookedForWhisperManager then
+        housingFrame.__wmOverlayHookedForWhisperManager = true
+        housingFrame:HookScript("OnShow", function() addon:RefreshOverlayAnchors() end)
+        housingFrame:HookScript("OnHide", function() addon:RefreshOverlayAnchors() end)
     end
 
     self:DebugMessage("WhisperManager initialized.");

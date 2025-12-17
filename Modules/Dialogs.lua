@@ -382,10 +382,10 @@ function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
     -- Create or reuse export frame
     local frame = addon.chatExportFrame
     if not frame then
-        frame = CreateFrame("Frame", "WhisperManager_ChatExportFrame", UIParent, "BackdropTemplate")
+        frame = CreateFrame("Frame", "WhisperManager_ChatExportFrame", addon:GetOverlayParent(), "BackdropTemplate")
         frame:SetSize(600, 500)
         frame:SetPoint("CENTER")
-        frame:SetFrameStrata("FULLSCREEN_DIALOG")
+        frame:SetFrameStrata(addon.OVERLAY_STRATA)
         frame:SetFrameLevel(200)
         frame:SetMovable(true)
         frame:EnableMouse(true)
@@ -464,29 +464,31 @@ function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
     else
         -- Center on screen if no parent
         frame:ClearAllPoints()
-        frame:SetPoint("CENTER", UIParent, "CENTER")
+        frame:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER")
     end
     
-    -- Always use FULLSCREEN_DIALOG strata to appear above all windows
+    -- Always use overlay strata to appear above full-screen UIs (e.g., Housing)
     -- Increment frame level to ensure each new dialog is on top
     addon.nextDialogLevel = (addon.nextDialogLevel or 200) + 10
-    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetFrameStrata(addon.OVERLAY_STRATA)
     frame:SetFrameLevel(addon.nextDialogLevel)
+
+    addon:EnsureFrameOverlay(frame, addon.nextDialogLevel)
     
     -- Update all child frames to use same strata
     if frame.title then
         frame.title:SetDrawLayer("OVERLAY", 7)
     end
     if frame.closeBtn then
-        frame.closeBtn:SetFrameStrata("FULLSCREEN_DIALOG")
+        frame.closeBtn:SetFrameStrata(addon.OVERLAY_STRATA)
         frame.closeBtn:SetFrameLevel(addon.nextDialogLevel + 10)
     end
     if frame.scrollFrame then
-        frame.scrollFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+        frame.scrollFrame:SetFrameStrata(addon.OVERLAY_STRATA)
         frame.scrollFrame:SetFrameLevel(addon.nextDialogLevel + 5)
     end
     if frame.editBox then
-        frame.editBox:SetFrameStrata("FULLSCREEN_DIALOG")
+        frame.editBox:SetFrameStrata(addon.OVERLAY_STRATA)
         frame.editBox:SetFrameLevel(addon.nextDialogLevel + 6)
     end
     

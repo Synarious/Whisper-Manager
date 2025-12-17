@@ -5,6 +5,8 @@
 ## Version: @project-version@
 ## X-Curse-Project-ID: 1377667
 ## Dependencies: Blizzard_ChatFrame
+## OptionalDeps: TotalRP3
 ## SavedVariables: WhisperManager_HistoryDB, WhisperManager_WindowDB, WhisperManager_Config, WhisperManager_RecentChats
 
 Whisper-Manager.xml
+debug_addons\TRP3_Module\WhisperManager.lua

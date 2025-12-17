@@ -14,9 +14,11 @@ function addon:CreateFloatingButton()
         return
     end
     
-    local btn = CreateFrame("Button", "WhisperManager_FloatingButton", UIParent)
+    local btn = CreateFrame("Button", "WhisperManager_FloatingButton", addon:GetOverlayParent())
     btn:SetSize(40, 40)
-    btn:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    btn:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER", 0, 0)
+    btn:SetFrameStrata(addon.OVERLAY_STRATA)
+    btn:SetToplevel(true)
     btn:SetMovable(true)
     btn:EnableMouse(true)
     btn:RegisterForDrag("LeftButton")
@@ -69,8 +71,13 @@ function addon:CreateFloatingButton()
         end
     end)
     
+    btn:SetScript("OnShow", function(self)
+        addon:EnsureFrameOverlay(self)
+    end)
+
     addon.floatingButton = btn
     addon:LoadFloatingButtonPosition()
+    addon:EnsureFrameOverlay(btn)
 end
 
 function addon:SaveFloatingButtonPosition()
@@ -92,5 +99,5 @@ function addon:LoadFloatingButtonPosition()
     
     local pos = WhisperManager_Config.buttonPos
     self.floatingButton:ClearAllPoints()
-    self.floatingButton:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
+    self.floatingButton:SetPoint(pos.point, addon:GetOverlayParent(), pos.relativePoint, pos.xOfs, pos.yOfs)
 end

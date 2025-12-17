@@ -10,6 +10,11 @@ local addon = WhisperManager
 
 -- Helper function to update all child frame levels relative to the parent window
 local function UpdateWindowFrameLevels(win, baseLevel)
+    addon:EnsureFrameOverlay(win)
+    if win.InputContainer then
+        addon:EnsureFrameOverlay(win.InputContainer)
+    end
+
     addon:DebugMessage("UpdateWindowFrameLevels fired for window: " .. tostring(win:GetName() or "<unnamed>") .. " baseLevel=" .. tostring(baseLevel))
     win:SetFrameLevel(baseLevel)
     addon:DebugMessage("  FrameLevel set for main window: " .. tostring(win:GetName()) .. " = " .. tostring(baseLevel))
@@ -139,6 +144,9 @@ end
 
 function addon:FocusWindow(window)
     if not window then return end
+
+    self:EnsureFrameOverlay(window)
+    self:EnsureFrameOverlay(window.InputContainer)
     
     -- Queue operation if in combat
     if InCombatLockdown() then
@@ -333,14 +341,16 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     -- Create new window
     local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
-    local win = CreateFrame("Frame", frameName, UIParent, "BackdropTemplate")
+    local overlayParent = addon:GetOverlayParent()
+    local win = CreateFrame("Frame", frameName, overlayParent, "BackdropTemplate")
     win:SetSize(400, 300)
     win:SetPoint("CENTER")
-    win:SetFrameStrata("DIALOG")
+    win:SetFrameStrata(addon.OVERLAY_STRATA)
     win:SetMovable(true)
     win:SetResizable(true)
     win:SetResizeBounds(250, 200, 800, 600)
     win:EnableMouse(true)
+    win:SetToplevel(true)
     win:RegisterForDrag("LeftButton")
     
     -- Store metadata
@@ -398,6 +408,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end)
     
     win:SetScript("OnShow", function(self)
+        addon:EnsureFrameOverlay(self)
+        addon:EnsureFrameOverlay(self.InputContainer)
         -- Show and position input container when window is shown
         if self.InputContainer then
             self.InputContainer:Show()
@@ -713,10 +725,10 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Input Container Frame (separate frame below main window)
     local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
     local containerName = frameName .. "InputContainer"
-    win.InputContainer = CreateFrame("Frame", containerName, UIParent, "BackdropTemplate")
+    win.InputContainer = CreateFrame("Frame", containerName, overlayParent, "BackdropTemplate")
     win.InputContainer:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, 1)  -- 1px offset to connect seamlessly
     win.InputContainer:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, 1)
-    win.InputContainer:SetFrameStrata("DIALOG")
+    win.InputContainer:SetFrameStrata(addon.OVERLAY_STRATA)
     win.InputContainer:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -726,9 +738,11 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     })
     win.InputContainer:SetBackdropColor(0, 0, 0, 0.9)
     win.InputContainer:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+    win.InputContainer:SetToplevel(true)
     
     -- Make input container move with window
     win.InputContainer:SetScript("OnShow", function(self)
+        addon:EnsureFrameOverlay(self)
         self:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, 1)
         self:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, 1)
     end)
@@ -1107,7 +1121,7 @@ function addon:LoadWindowPosition(window)
     
     if pos then
         window:ClearAllPoints()
-        window:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
+        window:SetPoint(pos.point, addon:GetOverlayParent(), pos.relativePoint, pos.xOfs, pos.yOfs)
         if pos.width and pos.height then
             window:SetSize(pos.width, pos.height)
         end

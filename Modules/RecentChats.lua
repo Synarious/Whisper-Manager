@@ -5,10 +5,11 @@
 local addon = WhisperManager;
 
 function addon:CreateRecentChatsFrame()
-    local frame = CreateFrame("Frame", "WhisperManager_RecentChats", UIParent, "BackdropTemplate")
+    local frame = CreateFrame("Frame", "WhisperManager_RecentChats", addon:GetOverlayParent(), "BackdropTemplate")
     frame:SetSize(300, 400)
     frame:SetPoint("CENTER")
-    frame:SetFrameStrata("DIALOG")
+    frame:SetFrameStrata(addon.OVERLAY_STRATA)
+    frame:SetToplevel(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
@@ -31,6 +32,10 @@ function addon:CreateRecentChatsFrame()
     frame:SetBackdropColor(recentColor.r, recentColor.g, recentColor.b, recentAlpha)
     frame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     frame:Hide()
+
+    frame:SetScript("OnShow", function(self)
+        addon:EnsureFrameOverlay(self)
+    end)
     
     -- ESC key handling - don't use UISpecialFrames to avoid conflicts
     frame:SetScript("OnKeyDown", function(self, key)
@@ -116,7 +121,7 @@ function addon:LoadRecentChatsPosition()
     
     local pos = WhisperManager_Config.recentChatsPos
     self.recentChatsFrame:ClearAllPoints()
-    self.recentChatsFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
+    self.recentChatsFrame:SetPoint(pos.point, addon:GetOverlayParent(), pos.relativePoint, pos.xOfs, pos.yOfs)
 end
 
 function addon:ToggleRecentChatsFrame()
