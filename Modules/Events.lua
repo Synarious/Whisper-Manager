@@ -99,7 +99,11 @@ function addon:RegisterEvents()
                 DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Loaded successfully!")
                 -- Saved variables are now loaded, initialize the addon
                 addon:Initialize()
-                eventFrame:UnregisterEvent("ADDON_LOADED") -- Only need this once
+                -- Don't unregister yet - we need to watch for TRP3 loading
+            elseif addonName == "totalRP3" or addonName == "TotalRP3" then
+                -- TRP3 just loaded, try to set up integration
+                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r TotalRP3 detected, setting up integration...")
+                addon:InitializeTRP3Integration()
             end
         elseif event == "PLAYER_STARTED_MOVING" then
             -- Player moved = window is focused, stop taskbar alert
@@ -155,6 +159,10 @@ function addon:RegisterEvents()
             local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
             local fullPlayerName = playerName .. "-" .. realm
             local _, playerClass = UnitClass("player")
+            
+            -- Track this character as belonging to the player's account
+            if not WhisperManager_CharacterDB then WhisperManager_CharacterDB = {} end
+            WhisperManager_CharacterDB[fullPlayerName] = true
             
             addon:AddMessageToHistory(playerKey, displayName or resolvedTarget, fullPlayerName, message, playerClass)
             addon:UpdateRecentChat(playerKey, displayName or resolvedTarget, false)
@@ -213,6 +221,11 @@ function addon:RegisterEvents()
             local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
             local fullPlayerName = playerName .. "-" .. realm
             local _, playerClass = UnitClass("player")
+            
+            -- Track this character as belonging to the player's account
+            if not WhisperManager_CharacterDB then WhisperManager_CharacterDB = {} end
+            WhisperManager_CharacterDB[fullPlayerName] = true
+            
             addon:AddMessageToHistory(playerKey, displayName, fullPlayerName, message, playerClass)
             addon:UpdateRecentChat(playerKey, displayName, true)
             addon:OpenBNetConversation(bnSenderID, displayName)

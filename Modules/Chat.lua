@@ -341,11 +341,10 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     -- Create new window
     local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
-    local overlayParent = addon:GetOverlayParent()
-    local win = CreateFrame("Frame", frameName, overlayParent, "BackdropTemplate")
+    local win = CreateFrame("Frame", frameName, addon:GetOverlayParent(), "BackdropTemplate")
     win:SetSize(400, 300)
     win:SetPoint("CENTER")
-    win:SetFrameStrata(addon.OVERLAY_STRATA)
+    win:SetFrameStrata("DIALOG")
     win:SetMovable(true)
     win:SetResizable(true)
     win:SetResizeBounds(250, 200, 800, 600)
@@ -409,7 +408,9 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     win:SetScript("OnShow", function(self)
         addon:EnsureFrameOverlay(self)
-        addon:EnsureFrameOverlay(self.InputContainer)
+        if self.InputContainer then
+            addon:EnsureFrameOverlay(self.InputContainer)
+        end
         -- Show and position input container when window is shown
         if self.InputContainer then
             self.InputContainer:Show()
@@ -725,10 +726,10 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Input Container Frame (separate frame below main window)
     local frameName = "WhisperManager_Window_" .. playerKey:gsub("[^%w]", "")
     local containerName = frameName .. "InputContainer"
-    win.InputContainer = CreateFrame("Frame", containerName, overlayParent, "BackdropTemplate")
+    win.InputContainer = CreateFrame("Frame", containerName, addon:GetOverlayParent(), "BackdropTemplate")
     win.InputContainer:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, 1)  -- 1px offset to connect seamlessly
     win.InputContainer:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, 1)
-    win.InputContainer:SetFrameStrata(addon.OVERLAY_STRATA)
+    win.InputContainer:SetFrameStrata("DIALOG")
     win.InputContainer:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -742,7 +743,6 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     -- Make input container move with window
     win.InputContainer:SetScript("OnShow", function(self)
-        addon:EnsureFrameOverlay(self)
         self:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, 1)
         self:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, 1)
     end)

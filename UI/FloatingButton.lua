@@ -15,9 +15,9 @@ function addon:CreateFloatingButton()
     end
     
     local btn = CreateFrame("Button", "WhisperManager_FloatingButton", addon:GetOverlayParent())
-    btn:SetSize(40, 40)
+    btn:SetSize(64, 64)
     btn:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER", 0, 0)
-    btn:SetFrameStrata(addon.OVERLAY_STRATA)
+    btn:SetFrameStrata("DIALOG")
     btn:SetToplevel(true)
     btn:SetMovable(true)
     btn:EnableMouse(true)
@@ -51,6 +51,7 @@ function addon:CreateFloatingButton()
     end)
     btn:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
+        addon:EnsureFrameOverlay(self)
         addon:SaveFloatingButtonPosition()
     end)
     
@@ -75,6 +76,7 @@ function addon:CreateFloatingButton()
         addon:EnsureFrameOverlay(self)
     end)
 
+    addon:EnsureFrameOverlay(btn)
     addon.floatingButton = btn
     addon:LoadFloatingButtonPosition()
     addon:EnsureFrameOverlay(btn)

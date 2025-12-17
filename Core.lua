@@ -29,7 +29,70 @@ addon.CHAT_MAX_LETTERS = 245;
 addon.RECENT_CHAT_EXPIRY = 72 * 60 * 60;  -- 72 hours in seconds
 addon.FOCUSED_ALPHA = 1.0;
 addon.UNFOCUSED_ALPHA = 0.65;
-addon.OVERLAY_STRATA = "FULLSCREEN_DIALOG"; -- Keep UI visible above large Blizzard overlays (e.g., Housing)
+
+-- ============================================================================
+-- Overlay Helpers (keep frames visible over major Blizzard scenes like Housing)
+-- ============================================================================
+
+--- Return the safest parent that remains visible when UIParent is hidden
+function addon:GetOverlayParent()
+    if UIParent and UIParent:IsShown() then
+        return UIParent
+    end
+
+    local housingFrame = _G.HouseEditorFrame or _G.PlayerHousingFrame
+    if housingFrame and housingFrame:IsShown() then
+        return housingFrame
+    end
+
+    return WorldFrame
+end
+
+--- Apply overlay settings (parent only, keep DIALOG strata for dropdown compatibility)
+-- @param frame table Frame to adjust
+function addon:EnsureFrameOverlay(frame)
+    if not frame then return end
+
+    local parent = self:GetOverlayParent()
+    if parent and frame:GetParent() ~= parent then
+        frame:SetParent(parent)
+    end
+
+    -- Always use DIALOG strata for dropdown menu compatibility
+    frame:SetFrameStrata("DIALOG")
+
+    if frame.SetToplevel then
+        frame:SetToplevel(true)
+    end
+end
+
+--- Re-apply overlay settings to all primary WhisperManager frames
+function addon:RefreshOverlayAnchors()
+    local parent = self:GetOverlayParent()
+
+    local function apply(frame)
+        if not frame then return end
+        if parent and frame:GetParent() ~= parent then
+            frame:SetParent(parent)
+        end
+        frame:SetFrameStrata("DIALOG")
+        if frame.SetToplevel then frame:SetToplevel(true) end
+    end
+
+    apply(self.floatingButton)
+    apply(self.recentChatsFrame)
+    apply(self.historyFrame)
+    apply(self.settingsFrame)
+    apply(self.chatExportFrame)
+
+    -- Active whisper windows and their input containers
+    for _, win in pairs(self.windows) do
+        if win then
+            apply(win)
+            apply(win.InputContainer)
+        end
+    end
+end
 
 -- Class ID to Class Token mapping (for compact storage)
 -- Numeric IDs are stored in database, converted to tokens for color lookup
@@ -66,74 +129,7 @@ addon.CLASS_TOKEN_TO_ID = {
     ["EVOKER"] = 13,
 }
 
--- ============================================================================
--- Overlay Helpers (keep frames visible over major Blizzard scenes like Housing)
--- ============================================================================
 
---- Return the safest parent that remains visible when UIParent is hidden
-function addon:GetOverlayParent()
-    if UIParent and UIParent:IsShown() then
-        return UIParent
-    end
-
-    local housingFrame = _G.HouseEditorFrame or _G.PlayerHousingFrame
-    if housingFrame and housingFrame:IsShown() then
-        return housingFrame
-    end
-
-    return WorldFrame
-end
-
---- Apply overlay settings (parent/strata/level) to a frame
--- @param frame table Frame to adjust
--- @param level number|nil Optional frame level to enforce
-function addon:EnsureFrameOverlay(frame, level)
-    if not frame then return end
-
-    local parent = self:GetOverlayParent()
-    if parent and frame:GetParent() ~= parent then
-        frame:SetParent(parent)
-    end
-
-    frame:SetFrameStrata(self.OVERLAY_STRATA)
-
-    if level then
-        frame:SetFrameLevel(level)
-    end
-
-    if frame.SetToplevel then
-        frame:SetToplevel(true)
-    end
-end
-
---- Re-apply overlay settings to all primary WhisperManager frames
-function addon:RefreshOverlayAnchors()
-    local parent = self:GetOverlayParent()
-
-    local function apply(frame, level)
-        if not frame then return end
-        if parent and frame:GetParent() ~= parent then
-            frame:SetParent(parent)
-        end
-        frame:SetFrameStrata(self.OVERLAY_STRATA)
-        if level then frame:SetFrameLevel(level) end
-        if frame.SetToplevel then frame:SetToplevel(true) end
-    end
-
-    apply(self.floatingButton)
-    apply(self.recentChatsFrame)
-    apply(self.historyFrame)
-    apply(self.settingsFrame)
-    apply(self.chatExportFrame)
-
-    -- Active whisper windows and their input containers
-    for _, win in pairs(self.windows) do
-        if win then
-            apply(win)
-            apply(win.InputContainer)
-        end
-    end
-end
 
 -- ============================================================================
 -- Debug System
@@ -168,6 +164,8 @@ function addon:SetDebugEnabled(enabled)
     end
 end
 
+
+
 -- ============================================================================
 -- Initialization
 -- ============================================================================
@@ -187,6 +185,43 @@ function addon:Initialize()
     
     if type(WhisperManager_WindowDB) ~= "table" then
         WhisperManager_WindowDB = {}
+    end
+    
+    if type(WhisperManager_CharacterDB) ~= "table" then
+        WhisperManager_CharacterDB = {}
+    end
+    
+    -- Add current character to character database
+    local playerName, playerRealm = UnitName("player")
+    local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
+    local fullPlayerName = playerName .. "-" .. realm
+    WhisperManager_CharacterDB[fullPlayerName] = true
+    
+    -- Scan existing BNet conversation history to find all our character names
+    -- In BNet conversations, our own messages will have character names while received messages have BNet IDs
+    if WhisperManager_HistoryDB then
+        local charactersFound = 0
+        for playerKey, history in pairs(WhisperManager_HistoryDB) do
+            -- Only scan BNet conversations
+            if playerKey ~= "__schema" and playerKey:match("^bnet_") and type(history) == "table" then
+                for _, entry in ipairs(history) do
+                    local author = entry.a or entry.author
+                    -- In BNet conversations:
+                    -- - Received messages have BNet session IDs like |Kp123|k
+                    -- - Our sent messages have character names like Character-Realm
+                    if author and author:match("^[^|]+%-[^|]+$") and not author:match("|K") then
+                        -- This is a character name format (Name-Realm), likely one of our characters
+                        if not WhisperManager_CharacterDB[author] then
+                            WhisperManager_CharacterDB[author] = true
+                            charactersFound = charactersFound + 1
+                        end
+                    end
+                end
+            end
+        end
+        if charactersFound > 0 then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Found " .. charactersFound .. " additional character(s) in BNet history")
+        end
     end
     
     if type(WhisperManager_Config) ~= "table" then
@@ -293,6 +328,9 @@ function addon:Initialize()
         housingFrame:HookScript("OnShow", function() addon:RefreshOverlayAnchors() end)
         housingFrame:HookScript("OnHide", function() addon:RefreshOverlayAnchors() end)
     end
+
+    -- Initialize TRP3 integration if available
+    self:InitializeTRP3Integration()
 
     self:DebugMessage("WhisperManager initialized.");
 end

@@ -9,6 +9,7 @@
     
     <!-- MODULES: Feature modules -->
     <Script file="Modules\SchemaValidator.lua"/> <!-- Schema validation (MUST load first) -->
+    <Script file="Modules\TRP3.lua"/>           <!-- Total RP 3 integration -->
     <Script file="Modules\Data.lua"/>           <!-- History, recent chats, class cache -->
     <Script file="Modules\Dialogs.lua"/>        <!-- URL copy, chat export dialogs, and context menu -->
     <Script file="Modules\RecentChats.lua"/>    <!-- Recent conversations UI -->

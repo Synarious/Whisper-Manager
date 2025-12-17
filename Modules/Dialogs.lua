@@ -315,6 +315,25 @@ local function FormatChatHistoryForExport(playerKey)
     local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
     local fullPlayerName = playerName .. "-" .. realm
     
+    -- Helper function to check if an author is one of the player's characters
+    local function IsPlayerCharacter(authorName)
+        if not authorName then return false end
+        if authorName == "Me" then return true end
+        
+        -- Initialize character DB if needed (shouldn't happen, but safety check)
+        if not WhisperManager_CharacterDB then WhisperManager_CharacterDB = {} end
+        
+        -- Check if this is a known player character
+        if WhisperManager_CharacterDB[authorName] then return true end
+        
+        -- Also check current character variants
+        if authorName == playerName or authorName == fullPlayerName then
+            return true
+        end
+        
+        return false
+    end
+    
     -- Format each message (only last MAX_LINES messages)
     for i = startIndex, totalMessages do
         local entry = history[i]
@@ -331,8 +350,9 @@ local function FormatChatHistoryForExport(playerKey)
                 
                 -- Determine if this is a sent or received message
                 local authorDisplay
-                if author == "Me" or author == playerName or author == fullPlayerName then
-                    authorDisplay = "You"
+                if IsPlayerCharacter(author) then
+                    -- Use the actual character name instead of "You"
+                    authorDisplay = author:match("^([^%-]+)") or author
                 else
                     -- Resolve BNet IDs if needed
                     if playerKey:match("^bnet_") and author:match("^|Kp%d+|k$") then
@@ -385,7 +405,7 @@ function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
         frame = CreateFrame("Frame", "WhisperManager_ChatExportFrame", addon:GetOverlayParent(), "BackdropTemplate")
         frame:SetSize(600, 500)
         frame:SetPoint("CENTER")
-        frame:SetFrameStrata(addon.OVERLAY_STRATA)
+        frame:SetFrameStrata("DIALOG")
         frame:SetFrameLevel(200)
         frame:SetMovable(true)
         frame:EnableMouse(true)
@@ -467,28 +487,26 @@ function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
         frame:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER")
     end
     
-    -- Always use overlay strata to appear above full-screen UIs (e.g., Housing)
+    -- Always use DIALOG strata to appear correctly with dropdowns
     -- Increment frame level to ensure each new dialog is on top
     addon.nextDialogLevel = (addon.nextDialogLevel or 200) + 10
-    frame:SetFrameStrata(addon.OVERLAY_STRATA)
+    frame:SetFrameStrata("DIALOG")
     frame:SetFrameLevel(addon.nextDialogLevel)
-
-    addon:EnsureFrameOverlay(frame, addon.nextDialogLevel)
     
     -- Update all child frames to use same strata
     if frame.title then
         frame.title:SetDrawLayer("OVERLAY", 7)
     end
     if frame.closeBtn then
-        frame.closeBtn:SetFrameStrata(addon.OVERLAY_STRATA)
+        frame.closeBtn:SetFrameStrata("DIALOG")
         frame.closeBtn:SetFrameLevel(addon.nextDialogLevel + 10)
     end
     if frame.scrollFrame then
-        frame.scrollFrame:SetFrameStrata(addon.OVERLAY_STRATA)
+        frame.scrollFrame:SetFrameStrata("DIALOG")
         frame.scrollFrame:SetFrameLevel(addon.nextDialogLevel + 5)
     end
     if frame.editBox then
-        frame.editBox:SetFrameStrata(addon.OVERLAY_STRATA)
+        frame.editBox:SetFrameStrata("DIALOG")
         frame.editBox:SetFrameLevel(addon.nextDialogLevel + 6)
     end
     

@@ -123,6 +123,25 @@ function addon:DisplayHistory(window, playerKey)
     local playerName, playerRealm = UnitName("player")
     local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
     local fullPlayerName = playerName .. "-" .. realm
+    
+    -- Helper function to check if an author is one of the player's characters
+    local function IsPlayerCharacter(authorName)
+        if not authorName then return false end
+        if authorName == "Me" then return true end
+        
+        -- Initialize character DB if needed (shouldn't happen, but safety check)
+        if not WhisperManager_CharacterDB then WhisperManager_CharacterDB = {} end
+        
+        -- Check if this is a known player character
+        if WhisperManager_CharacterDB[authorName] then return true end
+        
+        -- Also check current character variants
+        if authorName == playerName or authorName == fullPlayerName then
+            return true
+        end
+        
+        return false
+    end
 
     for i, entry in ipairs(history) do
         -- Support both old and new format
@@ -136,11 +155,12 @@ function addon:DisplayHistory(window, playerKey)
         end
         
         -- Resolve BNet IDs (|KpXX|k) to display names for BNet conversations
+        local originalAuthor = author
         if window.isBNet and author then
             author = addon:ResolveBNetID(author, playerKey)
         end
         
-        addon:DebugMessage("Processing message", i, "- timestamp:", timestamp, "author:", author, "message length:", message and #message or 0)
+        addon:DebugMessage("Processing message", i, "- timestamp:", timestamp, "originalAuthor:", originalAuthor, "resolvedAuthor:", author, "message length:", message and #message or 0)
         
         if timestamp and author and message then
             AddDateDivider(window, timestamp)
@@ -152,7 +172,7 @@ function addon:DisplayHistory(window, playerKey)
                 
                 local coloredAuthor
                 local messageColor
-                if author == "Me" or author == playerName or author == fullPlayerName then
+                if IsPlayerCharacter(author) then
                     -- Use customizable send color for message text
                     if window.isBNet then
                         local color = self.settings.bnetSendColor or {r = 0.0, g = 0.66, b = 1.0}
@@ -171,14 +191,17 @@ function addon:DisplayHistory(window, playerKey)
                     
                     if rpNameWithColor then
                         -- TRP3 returned a colored name, use it directly in the hyperlink
-                        local nameLink = string.format("|Hplayer:%s|h%s|h", fullPlayerName, rpNameWithColor)
+                        -- Use the stored author name (character-realm) for the hyperlink target
+                        local nameLink = string.format("|Hplayer:%s|h%s|h", author, rpNameWithColor)
                         coloredAuthor = string.format("%s[%s]:|r", messageColor, nameLink)
                         addon:DebugMessage("[Data:DisplayHistory] Using TRP3 colored name");
                     else
-                        -- No TRP3 name, fall back to class color
+                        -- No TRP3 name, fall back to class color and character name
                         addon:DebugMessage("[Data:DisplayHistory] No TRP3 name, using class color");
-                        local _, playerClass = UnitClass("player")
-                        local classColor = playerClass and RAID_CLASS_COLORS[playerClass]
+                        
+                        -- Use the class token stored in the message if available
+                        local authorClass = classToken
+                        local classColor = authorClass and RAID_CLASS_COLORS[authorClass]
                         local classColorHex
                         if classColor then
                             classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
@@ -186,8 +209,11 @@ function addon:DisplayHistory(window, playerKey)
                             classColorHex = "ffd100"
                         end
                         
+                        -- Extract just the character name (without realm) for display
+                        local charName = author:match("^([^%-]+)") or author
+                        
                         -- Use formatting: brackets outside, hyperlink only around the name
-                        local nameLink = string.format("|Hplayer:%s|h|cff%s%s|r|h", fullPlayerName, classColorHex, playerName)
+                        local nameLink = string.format("|Hplayer:%s|h|cff%s%s|r|h", author, classColorHex, charName)
                         coloredAuthor = string.format("%s[%s]:|r", messageColor, nameLink)
                     end
                 else
@@ -254,7 +280,7 @@ function addon:DisplayHistory(window, playerKey)
                 addon:DebugMessage("  formattedMessage length:", #formattedMessage)
                 historyFrame:AddMessage(formattedMessage)
         else
-            addon:DebugMessage("Skipping message", i, "- missing data. timestamp:", timestamp ~= nil, "author:", author ~= nil, "message:", message ~= nil)
+            addon:DebugMessage("Skipping message", i, "- missing data. timestamp:", tostring(timestamp), "author:", tostring(author), "message:", tostring(message))
         end
     end
     

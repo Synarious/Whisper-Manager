@@ -433,7 +433,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end
     
     win:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER", spawnX, spawnY)
-    win:SetFrameStrata(addon.OVERLAY_STRATA)
+    win:SetFrameStrata("DIALOG")
     win:SetMovable(true)
     win:SetResizable(true)
     win:SetResizeBounds(250, 200, 800, 600)
@@ -509,7 +509,9 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     win:SetScript("OnShow", function(self)
         addon:EnsureFrameOverlay(self)
-        addon:EnsureFrameOverlay(self.InputContainer)
+        if self.InputContainer then
+            addon:EnsureFrameOverlay(self.InputContainer)
+        end
         -- Show and position input container when window is shown
         if self.InputContainer then
             self.InputContainer:Show()
@@ -728,7 +730,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.InputContainer = CreateFrame("Frame", containerName, addon:GetOverlayParent(), "BackdropTemplate")
     win.InputContainer:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, 1)  -- 1px offset to connect seamlessly
     win.InputContainer:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, 1)
-    win.InputContainer:SetFrameStrata(addon.OVERLAY_STRATA)
+    win.InputContainer:SetFrameStrata("DIALOG")
     win.InputContainer:SetFrameLevel(baseLevel + 10)
     win.InputContainer:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
