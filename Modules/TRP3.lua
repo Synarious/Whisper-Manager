@@ -26,15 +26,15 @@ function addon:SetupTRP3Integration(TRP3_API)
     self:DebugMessage("Setting up TRP3 integration with API access")
 
     -- Cache TRP3 API functions for performance
-    local getPlayerID = function() return TRP3_API.globals.player_id end  -- Get dynamically
+    local getCurrentUser = AddOn_TotalRP3.Player.GetCurrentUser
     local getFullname = TRP3_API.chat.getFullnameForUnitUsingChatMethod
     local showCustomColors = TRP3_API.chat.configShowNameCustomColors
     local getCharacterInfo = TRP3_API.utils.getCharacterInfoTab
     local getConfig = TRP3_API.configuration.getValue
     local icon = TRP3_API.utils.str.icon
-    local playerName = TRP3_API.globals.player
     local isOOC = TRP3_API.chat.disabledByOOC
     local unitInfoToID = TRP3_API.utils.str.unitInfoToID
+    local getPlayerCharacterData = TRP3_API.profile.getPlayerCharacter
 
     self:DebugMessage("TRP3 globals.player_id:", TRP3_API.globals.player_id)
     self:DebugMessage("TRP3 globals.player:", TRP3_API.globals.player)
@@ -104,48 +104,32 @@ function addon:SetupTRP3Integration(TRP3_API)
 
     --- Get player's own RP name (plain text, no color codes)
     local function GetMyRPName()
-        local playerID = getPlayerID()
-        addon:DebugMessage("[TRP3:GetMyRPName] Starting - isOOC:", isOOC(), "playerID:", playerID)
+        addon:DebugMessage("[TRP3:GetMyRPName] Starting - isOOC:", isOOC())
         if isOOC() then 
             addon:DebugMessage("[TRP3:GetMyRPName] OOC mode is active, returning nil")
             return nil 
         end
-        if not playerID or playerID == "" then 
-            addon:DebugMessage("[TRP3:GetMyRPName] No playerID, returning nil")
-            return nil 
+
+        -- Use the current user Player object to get data
+        local player = getCurrentUser()
+        if not player then
+            addon:DebugMessage("[TRP3:GetMyRPName] No current user object")
+            return nil
         end
 
-        local success, info = pcall(getCharacterInfo, playerID)
-        addon:DebugMessage("[TRP3:GetMyRPName] getCharacterInfo success:", success, "has info:", info ~= nil)
+        -- Try to get first name + last name from profile
+        local firstName = player:GetFirstName()
+        local lastName = player:GetLastName()
+        addon:DebugMessage("[TRP3:GetMyRPName] FirstName:", firstName, "LastName:", lastName)
+        
         local name = nil
-        local hasProfile = false
-        
-        if success and info and info.characteristics then
-            local firstName = info.characteristics.FN
-            local lastName = info.characteristics.LN
-            addon:DebugMessage("[TRP3:GetMyRPName] FirstName:", firstName, "LastName:", lastName)
-            
-            if firstName and firstName ~= "" then
-                hasProfile = true
-                name = firstName
-                if lastName and lastName ~= "" then
-                    name = name .. " " .. lastName
-                end
+        if firstName and firstName ~= "" then
+            name = firstName
+            if lastName and lastName ~= "" then
+                name = name .. " " .. lastName
             end
-        end
-        
-        if hasProfile and name and name ~= "" then 
             addon:DebugMessage("[TRP3:GetMyRPName] Returning profile name:", name)
-            return name 
-        end
-        
-        if not name or name == "" then
-            local fullnameSuccess, fullname = pcall(getFullname, playerID)
-            addon:DebugMessage("[TRP3:GetMyRPName] getFullname success:", fullnameSuccess, "fullname:", fullname, "playerName:", playerName)
-            if fullnameSuccess and fullname and fullname ~= "" and fullname ~= playerName then
-                addon:DebugMessage("[TRP3:GetMyRPName] Returning fullname:", fullname)
-                return fullname
-            end
+            return name
         end
         
         addon:DebugMessage("[TRP3:GetMyRPName] No valid RP name found, returning nil")
@@ -157,16 +141,16 @@ function addon:SetupTRP3Integration(TRP3_API)
         local name = GetMyRPName()
         if not name then return nil end
 
-        local playerID = getPlayerID()
+        -- Use the current user Player object
+        local player = getCurrentUser()
+        if not player then return name end
+
         local color = nil
         
         -- Get custom color if enabled (with error protection)
         if showCustomColors() then
-            local success, player = pcall(AddOn_TotalRP3.Player.GetCurrentUser)
-            if success and player then
-                local colorSuccess, customColor = pcall(player.GetCustomColorForDisplay, player)
-                if colorSuccess and customColor then color = customColor end
-            end
+            local success, customColor = pcall(player.GetCustomColorForDisplay, player)
+            if success and customColor then color = customColor end
         end
         
         -- Fall back to class color if no custom color
@@ -177,10 +161,11 @@ function addon:SetupTRP3Integration(TRP3_API)
 
         if color then name = color:WrapTextInColorCode(name) end
 
-        if getConfig("chat_show_icon") and playerID and playerID ~= "" then
-            local success, info = pcall(getCharacterInfo, playerID)
-            if success and info and info.characteristics and info.characteristics.IC then
-                name = icon(info.characteristics.IC, 15) .. " " .. name
+        -- Add icon if enabled
+        if getConfig("chat_show_icon") then
+            local characterData = getPlayerCharacterData()
+            if characterData and characterData.characteristics and characterData.characteristics.IC then
+                name = icon(characterData.characteristics.IC, 15) .. " " .. name
             end
         end
 
