@@ -923,7 +923,7 @@ function addon:LoadWindowHistory(win)
         
         if timestamp and author and message then
             -- Timestamp with customizable color
-            local tsColor = self.settings.timestampColor or {r = 0.5, g = 0.5, b = 0.5}
+            local tsColor = self.settings.timestampColor or {r = 0.8078, g = 0.4863, b = 0.0}
             local tsColorHex = string.format("%02x%02x%02x", tsColor.r * 255, tsColor.g * 255, tsColor.b * 255)
             local timeString = "|cff" .. tsColorHex .. date("%H:%M", timestamp) .. "|r"
             
@@ -1041,7 +1041,7 @@ function addon:AddMessageToWindow(playerKey, author, message, timestamp)
     end
     
     -- Timestamp with customizable color
-    local tsColor = self.settings.timestampColor or {r = 0.5, g = 0.5, b = 0.5}
+    local tsColor = self.settings.timestampColor or {r = 0.8078, g = 0.4863, b = 0.0}
     local tsColorHex = string.format("%02x%02x%02x", tsColor.r * 255, tsColor.g * 255, tsColor.b * 255)
     local timeString = "|cff" .. tsColorHex .. date("%H:%M", timestamp) .. "|r"
     

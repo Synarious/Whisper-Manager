@@ -115,6 +115,24 @@ local function UpdateInputHeight(inputBox)
     end)
 end
 
+-- Helper: insert a gray date divider line when messages cross day boundaries
+local function GetDayKey(timestamp)
+    if not timestamp then return nil end
+    return date("%Y%m%d", timestamp)
+end
+
+local function AddDateDivider(win, timestamp)
+    if not win or not win.History or not timestamp then return end
+    local dayKey = GetDayKey(timestamp)
+    if not dayKey then return end
+
+    if win.__wm_lastDayKey ~= dayKey then
+        local label = date("%a, %b %d, %Y", timestamp)
+        win.History:AddMessage("----- " .. label .. " -----", 0.8078, 0.4863, 0.0)
+        win.__wm_lastDayKey = dayKey
+    end
+end
+
 -- ============================================================================
 -- Window Focus Management
 -- ============================================================================
@@ -835,6 +853,7 @@ function addon:LoadWindowHistory(win)
     local displayName = win.displayName
     
     win.History:Clear()
+    win.__wm_lastDayKey = nil
     
     if not WhisperManager_HistoryDB or not WhisperManager_HistoryDB[playerKey] then
         win.History:AddMessage("No message history found.")
@@ -857,8 +876,9 @@ function addon:LoadWindowHistory(win)
         local classToken = entry.c  -- Get stored class token
         
         if timestamp and author and message then
+            AddDateDivider(win, timestamp)
             -- Timestamp with customizable color
-            local tsColor = self.settings.timestampColor or {r = 0.5, g = 0.5, b = 0.5}
+            local tsColor = self.settings.timestampColor or {r = 0.8078, g = 0.4863, b = 0.0}
             local tsColorHex = string.format("%02x%02x%02x", tsColor.r * 255, tsColor.g * 255, tsColor.b * 255)
             local timeString = "|cff" .. tsColorHex .. date("%H:%M", timestamp) .. "|r"
             
@@ -963,8 +983,10 @@ function addon:AddMessageToWindow(playerKey, author, message, timestamp)
         end
     end
     
+    AddDateDivider(win, timestamp)
+
     -- Timestamp with customizable color
-    local tsColor = self.settings.timestampColor or {r = 0.5, g = 0.5, b = 0.5}
+    local tsColor = self.settings.timestampColor or {r = 0.8078, g = 0.4863, b = 0.0}
     local tsColorHex = string.format("%02x%02x%02x", tsColor.r * 255, tsColor.g * 255, tsColor.b * 255)
     local timeString = "|cff" .. tsColorHex .. date("%H:%M", timestamp) .. "|r"
     

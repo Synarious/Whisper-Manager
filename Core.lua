@@ -24,7 +24,7 @@ addon.combatQueue = {};          -- Queue for operations during combat lockdown
 -- Constants
 -- ============================================================================
 
-addon.MAX_HISTORY_LINES = 200;
+addon.MAX_HISTORY_LINES = 1000;
 addon.CHAT_MAX_LETTERS = 245;
 addon.RECENT_CHAT_EXPIRY = 72 * 60 * 60;  -- 72 hours in seconds
 addon.FOCUSED_ALPHA = 1.0;

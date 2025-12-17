@@ -207,7 +207,7 @@ function addon:CreateHistoryFrame()
     -- Detail scroll frame with proper scrolling support
     frame.detailScrollFrame = CreateFrame("ScrollingMessageFrame", nil, frame.detailFrame)
     frame.detailScrollFrame:SetPoint("TOPLEFT", 10, -35)
-    frame.detailScrollFrame:SetPoint("BOTTOMRIGHT", -10, 10)
+    frame.detailScrollFrame:SetPoint("BOTTOMRIGHT", -30, 10)
     frame.detailScrollFrame:SetFading(false)
     frame.detailScrollFrame:SetMaxLines(addon.MAX_HISTORY_LINES)
     frame.detailScrollFrame:SetFont(addon:GetSetting("fontFamily") or "Fonts\\FRIZQT__.TTF", addon:GetSetting("messageFontSize") or 14, (select(3, ChatFontNormal:GetFont())) or "")
@@ -216,6 +216,30 @@ function addon:CreateHistoryFrame()
     frame.detailScrollFrame:EnableMouse(true)
     frame.detailScrollFrame:SetMouseMotionEnabled(true)
     frame.detailScrollFrame:SetMouseClickEnabled(true)
+    
+    -- Create scrollbar for detail view
+    frame.detailScrollBar = CreateFrame("Slider", nil, frame.detailFrame, "UIPanelScrollBarTemplate")
+    frame.detailScrollBar:SetPoint("TOPRIGHT", -5, -40)
+    frame.detailScrollBar:SetPoint("BOTTOMRIGHT", -5, 15)
+    frame.detailScrollBar:SetMinMaxValues(0, 1)
+    frame.detailScrollBar:SetValueStep(1)
+    frame.detailScrollBar:SetValue(0)
+    frame.detailScrollBar:SetWidth(16)
+    frame.detailScrollBar:SetScript("OnValueChanged", function(self, value)
+        -- Invert the scroll direction: scrollbar at bottom = scroll offset 0 (showing most recent)
+        local _, maxValue = self:GetMinMaxValues()
+        local invertedValue = maxValue - value
+        frame.detailScrollFrame:SetScrollOffset(math.floor(invertedValue))
+    end)
+    
+    -- Update scrollbar range when messages are displayed
+    frame.detailScrollBar.UpdateRange = function()
+        local numMessages = frame.detailScrollFrame:GetNumMessages()
+        local maxScroll = math.max(0, numMessages)
+        frame.detailScrollBar:SetMinMaxValues(0, maxScroll)
+        -- Set scrollbar to bottom position (value = maxScroll means bottom of scrollbar)
+        frame.detailScrollBar:SetValue(maxScroll)
+    end
     frame.detailScrollFrame:SetScript("OnHyperlinkClick", function(self, link, text, button)
         addon:DebugMessage("Hyperlink clicked in history:", link, text, button)
         
@@ -395,7 +419,7 @@ function addon:RefreshHistoryList(filterText)
     local yOffset = 0
     for i, conv in ipairs(conversations) do
         local btn = CreateFrame("Button", nil, scrollChild)
-        btn:SetSize(180, 50)
+        btn:SetSize(180, 37)
         btn:SetPoint("TOPLEFT", 0, -yOffset)
         
         -- Background
@@ -418,7 +442,7 @@ function addon:RefreshHistoryList(filterText)
         
         -- Time text
         btn.timeText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btn.timeText:SetPoint("BOTTOMLEFT", 5, 5)
+        btn.timeText:SetPoint("TOPLEFT", btn.nameText, "BOTTOMLEFT", 0, -2)
         btn.timeText:SetText(self.GetTimeAgo(conv.lastTimestamp))
         btn.timeText:SetTextColor(0.7, 0.7, 0.7)
         
@@ -427,7 +451,7 @@ function addon:RefreshHistoryList(filterText)
             addon:ShowHistoryDetail(conv.playerKey, conv.displayName)
         end)
         
-        yOffset = yOffset + 55
+        yOffset = yOffset + 41
     end
     
     scrollChild:SetHeight(math.max(yOffset, 1))
@@ -467,6 +491,13 @@ function addon:ShowHistoryDetail(playerKey, displayName)
     -- Determine if this is a BNet conversation
     local isBNet = playerKey:match("^bnet_") ~= nil
     
+    -- Track last day for date dividers
+    local lastDayKey = nil
+    local function GetDayKey(timestamp)
+        if not timestamp then return nil end
+        return date("%Y%m%d", timestamp)
+    end
+    
     for _, entry in ipairs(history) do
         -- Support both old and new format
         local timestamp = entry.t or entry.timestamp
@@ -484,8 +515,16 @@ function addon:ShowHistoryDetail(playerKey, displayName)
         end
         
         if timestamp and author and message then
+            -- Add date divider if day changed
+            local dayKey = GetDayKey(timestamp)
+            if dayKey and lastDayKey ~= dayKey then
+                local label = date("%a, %b %d, %Y", timestamp)
+                detailScroll:AddMessage("----- " .. label .. " -----", 0.8078, 0.4863, 0.0)
+                lastDayKey = dayKey
+            end
+            
             -- Timestamp with customizable color
-            local tsColor = self.settings.timestampColor or {r = 0.5, g = 0.5, b = 0.5}
+            local tsColor = self.settings.timestampColor or {r = 0.8078, g = 0.4863, b = 0.0}
             local tsColorHex = string.format("%02x%02x%02x", tsColor.r * 255, tsColor.g * 255, tsColor.b * 255)
             local timeString = "|cff" .. tsColorHex .. date("%H:%M", timestamp) .. "|r"
             
@@ -562,8 +601,11 @@ function addon:ShowHistoryDetail(playerKey, displayName)
         end
     end
     
-    -- Scroll to bottom
+    -- Scroll to bottom and update scrollbar
     C_Timer.After(0, function()
         detailScroll:ScrollToBottom()
+        if self.historyFrame and self.historyFrame.detailScrollBar and self.historyFrame.detailScrollBar.UpdateRange then
+            self.historyFrame.detailScrollBar.UpdateRange()
+        end
     end)
 end

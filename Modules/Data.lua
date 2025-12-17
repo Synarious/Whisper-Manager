@@ -9,6 +9,24 @@
 local addon = WhisperManager;
 local SCHEMA_VERSION = 1
 
+-- Helper: insert a gray date divider line when messages cross day boundaries
+local function GetDayKey(timestamp)
+    if not timestamp then return nil end
+    return date("%Y%m%d", timestamp)
+end
+
+local function AddDateDivider(window, timestamp)
+    if not window or not window.History or not timestamp then return end
+    local dayKey = GetDayKey(timestamp)
+    if not dayKey then return end
+
+    if window.__wm_lastDayKey ~= dayKey then
+        local label = date("%a, %b %d, %Y", timestamp)
+        window.History:AddMessage("----- " .. label .. " -----", 0.8078, 0.4863, 0.0)
+        window.__wm_lastDayKey = dayKey
+    end
+end
+
 -- ============================================================================
 -- SECTION 1: Message History Management
 -- ============================================================================
@@ -78,6 +96,7 @@ function addon:DisplayHistory(window, playerKey)
     
     local historyFrame = window.History
     historyFrame:Clear()
+    window.__wm_lastDayKey = nil
     
     local history = WhisperManager_HistoryDB[playerKey]
     if not history then 
@@ -124,9 +143,10 @@ function addon:DisplayHistory(window, playerKey)
         addon:DebugMessage("Processing message", i, "- timestamp:", timestamp, "author:", author, "message length:", message and #message or 0)
         
         if timestamp and author and message then
-            -- Regular message handling
+            AddDateDivider(window, timestamp)
+                -- Regular message handling
             -- Timestamp with customizable color
-                local tsColor = self.settings.timestampColor or {r = 0.5, g = 0.5, b = 0.5}
+                local tsColor = self.settings.timestampColor or {r = 0.8078, g = 0.4863, b = 0.0}
                 local tsColorHex = string.format("%02x%02x%02x", tsColor.r * 255, tsColor.g * 255, tsColor.b * 255)
                 local timeString = "|cff" .. tsColorHex .. date("%H:%M", timestamp) .. "|r"
                 
