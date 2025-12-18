@@ -989,26 +989,34 @@ function addon:LoadWindowHistory(win)
                     messageColor = "|cff" .. colorHex
                     
                     -- Try to get RP name from TRP3 integration (if loaded)
-                    addon:DebugMessage("[Window] Checking for TRP3 integration:", addon.TRP3_GetRPName ~= nil);
+                    addon:DebugMessage("[Window] Checking for TRP3 integration:", addon.TRP3_GetRPNameWithColor ~= nil);
                     addon:DebugMessage("[Window] Author name:", author);
-                    local rpName = addon.TRP3_GetRPName and addon.TRP3_GetRPName(author)
-                    addon:DebugMessage("[Window] TRP3 returned RP name:", rpName);
-                    local authorDisplayName = rpName or (author:match("^([^%-]+)") or author)
-                    addon:DebugMessage("[Window] Using author display name:", authorDisplayName);
+                    local rpNameWithColor = addon.TRP3_GetRPNameWithColor and addon.TRP3_GetRPNameWithColor(author)
+                    addon:DebugMessage("[Window] TRP3 returned RP name with color:", rpNameWithColor);
                     
-                    local classColorHex
-                    
-                    -- Use stored class token (converted from numeric ID)
-                    if classToken then
-                        local classColor = RAID_CLASS_COLORS[classToken]
-                        if classColor then
-                            classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+                    if rpNameWithColor then
+                        -- TRP3 returned a colored name with possible icon, use it directly
+                        addon:DebugMessage("[Window] Using TRP3 colored name");
+                        coloredAuthor = string.format("|Hplayer:%s|h%s[|r%s%s]:|h", author, messageColor, rpNameWithColor, messageColor)
+                    else
+                        -- No TRP3 name, use default class color
+                        local authorDisplayName = author:match("^([^%-]+)") or author
+                        addon:DebugMessage("[Window] No TRP3 name, using class color for:", authorDisplayName);
+                        
+                        local classColorHex
+                        
+                        -- Use stored class token (converted from numeric ID)
+                        if classToken then
+                            local classColor = RAID_CLASS_COLORS[classToken]
+                            if classColor then
+                                classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+                            end
                         end
+                        
+                        local nameColorHex = classColorHex or "ffd100"  -- Class color or gold
+                        -- Format: brackets in message color, name in class color
+                        coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", author, messageColor, nameColorHex, authorDisplayName, messageColor)
                     end
-                    
-                    local nameColorHex = classColorHex or "ffd100"  -- Class color or gold
-                    -- Format: brackets in message color, name in class color
-                    coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", author, messageColor, nameColorHex, authorDisplayName, messageColor)
                 end
             end
             
@@ -1106,26 +1114,34 @@ function addon:AddMessageToWindow(playerKey, author, message, timestamp)
             messageColor = "|cff" .. colorHex
             
             -- Try to get RP name from TRP3 integration (if loaded)
-            addon:DebugMessage("[AddMessage] Checking for TRP3 integration:", addon.TRP3_GetRPName ~= nil);
+            addon:DebugMessage("[AddMessage] Checking for TRP3 integration:", addon.TRP3_GetRPNameWithColor ~= nil);
             addon:DebugMessage("[AddMessage] Author name:", author);
-            local rpName = addon.TRP3_GetRPName and addon.TRP3_GetRPName(author)
-            addon:DebugMessage("[AddMessage] TRP3 returned RP name:", rpName);
-            local authorDisplayName = rpName or (author:match("^([^%-]+)") or author)
-            addon:DebugMessage("[AddMessage] Using author display name:", authorDisplayName);
+            local rpNameWithColor = addon.TRP3_GetRPNameWithColor and addon.TRP3_GetRPNameWithColor(author)
+            addon:DebugMessage("[AddMessage] TRP3 returned RP name with color:", rpNameWithColor);
             
-            local classColorHex
-            
-            -- Use stored class token (converted from numeric ID)
-            if classToken then
-                local classColor = RAID_CLASS_COLORS[classToken]
-                if classColor then
-                    classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+            if rpNameWithColor then
+                -- TRP3 returned a colored name with possible icon, use it directly
+                addon:DebugMessage("[AddMessage] Using TRP3 colored name");
+                coloredAuthor = string.format("|Hplayer:%s|h%s[|r%s%s]:|h", author, messageColor, rpNameWithColor, messageColor)
+            else
+                -- No TRP3 name, use default class color
+                local authorDisplayName = author:match("^([^%-]+)") or author
+                addon:DebugMessage("[AddMessage] No TRP3 name, using class color for:", authorDisplayName);
+                
+                local classColorHex
+                
+                -- Use stored class token (converted from numeric ID)
+                if classToken then
+                    local classColor = RAID_CLASS_COLORS[classToken]
+                    if classColor then
+                        classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
+                    end
                 end
+                
+                local nameColorHex = classColorHex or "ffd100"  -- Class color or gold
+                -- Format: brackets in message color, name in class color
+                coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", author, messageColor, nameColorHex, authorDisplayName, messageColor)
             end
-            
-            local nameColorHex = classColorHex or "ffd100"  -- Class color or gold
-            -- Format: brackets in message color, name in class color
-            coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", author, messageColor, nameColorHex, authorDisplayName, messageColor)
         end
     end
     
