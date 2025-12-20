@@ -73,24 +73,46 @@ function addon:SetupTRP3Integration(TRP3_API)
         local unitID = unitInfoToID(name, realm ~= "" and realm or nil)
         if not unitID or unitID == "" then return nil end
 
+        addon:DebugMessage("[TRP3:GetRPNameWithColor] unitID:", unitID, "rpName:", rpName)
+
         local color = nil
         
         -- Get custom color if enabled (with error protection)
         if showCustomColors() then
+            addon:DebugMessage("[TRP3:GetRPNameWithColor] Custom colors enabled, creating player object")
             local success, player = pcall(AddOn_TotalRP3.Player.CreateFromCharacterID, unitID)
+            addon:DebugMessage("[TRP3:GetRPNameWithColor] CreateFromCharacterID success:", success, "player:", player ~= nil)
             if success and player then
                 local colorSuccess, customColor = pcall(player.GetCustomColorForDisplay, player)
-                if colorSuccess and customColor then color = customColor end
+                addon:DebugMessage("[TRP3:GetRPNameWithColor] GetCustomColorForDisplay success:", colorSuccess, "customColor:", customColor)
+                if colorSuccess and customColor then 
+                    color = customColor 
+                    addon:DebugMessage("[TRP3:GetRPNameWithColor] Got custom color")
+                end
             end
         end
         
         -- Fall back to class color if no custom color
         if not color then
-            local success, classColor = pcall(TRP3_API.GetClassDisplayColor, UnitClassBase(unitID))
-            if success and classColor then color = classColor end
+            addon:DebugMessage("[TRP3:GetRPNameWithColor] No custom color, getting class from character data")
+            -- Get class from TRP3 character data
+            local characterData = TRP3_API.register.getUnitIDCharacter(unitID)
+            if characterData and characterData.class then
+                addon:DebugMessage("[TRP3:GetRPNameWithColor] Class from character data:", characterData.class)
+                local success, classColor = pcall(TRP3_API.GetClassDisplayColor, characterData.class)
+                addon:DebugMessage("[TRP3:GetRPNameWithColor] GetClassDisplayColor success:", success, "classColor:", classColor)
+                if success and classColor then color = classColor end
+            else
+                addon:DebugMessage("[TRP3:GetRPNameWithColor] No character data or class found")
+            end
         end
 
-        if color then rpName = color:WrapTextInColorCode(rpName) end
+        if color then 
+            addon:DebugMessage("[TRP3:GetRPNameWithColor] Wrapping name in color")
+            rpName = color:WrapTextInColorCode(rpName) 
+        else
+            addon:DebugMessage("[TRP3:GetRPNameWithColor] No color found, returning plain name")
+        end
 
         if getConfig("chat_show_icon") then
             local success, info = pcall(getCharacterInfo, unitID)
@@ -99,6 +121,7 @@ function addon:SetupTRP3Integration(TRP3_API)
             end
         end
 
+        addon:DebugMessage("[TRP3:GetRPNameWithColor] Returning:", rpName)
         return rpName
     end
 
