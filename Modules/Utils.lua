@@ -34,40 +34,9 @@ function addon:FormatEmotesAndSpeech(message)
 end
 
 function addon:TriggerTaskbarAlert()
-    if self.isFlashing then return end
-    if not self.alertFrame then
-        self.alertFrame = CreateFrame("Frame", "WhisperManager_AlertFrame", UIParent)
-        self.alertFrame:SetSize(1, 1)
-        self.alertFrame:SetPoint("CENTER")
-        self.alertFrame:SetFrameStrata("TOOLTIP")
-        self.alertFrame:Hide()
-    end
-    local alertFrame = self.alertFrame
-    self.isFlashing = true
-    local flashCount = 0
-    local function Flash()
-        if not self.isFlashing or (flashCount > 0 and addon.lastFlashCheck and GetTime() ~= addon.lastFlashCheck) then
-            alertFrame:Hide()
-            self.isFlashing = false
-            return
-        end
-        addon.lastFlashCheck = GetTime()
-        flashCount = flashCount + 1
-        if flashCount % 2 == 1 then
-            alertFrame:Show()
-        else
-            alertFrame:Hide()
-        end
-        C_Timer.After(0.5, Flash)
-    end
-    Flash()
+    FlashClientIcon()
 end
 
 function addon:StopTaskbarAlert()
-    if self.isFlashing then
-        self.isFlashing = false
-        if self.alertFrame then
-            self.alertFrame:Hide()
-        end
-    end
+    -- FlashClientIcon stops automatically when the client is focused
 end

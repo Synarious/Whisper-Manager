@@ -13,15 +13,6 @@ local DEFAULT_SETTINGS = {
     inputFontSize = 14,
     fontFamily = "Fonts\\ARIALN.TTF", -- Default to Arial per user request
     
-    -- Message colors (using WoW's default whisper colors)
-    whisperReceiveColor = {r = 1.0, g = 0.5, b = 1.0}, -- Pink (default whisper receive)
-    -- Default whisper send color: #D832FF -> (216,50,255)
-    whisperSendColor = {r = 216/255, g = 50/255, b = 255/255},
-    bnetReceiveColor = {r = 0.0, g = 0.66, b = 1.0}, -- Blue (default BNet receive)
-    -- Default BNet send color: #0072FF -> (0,114,255)
-    bnetSendColor = {r = 0/255, g = 126/255, b = 255/255}, -- #007EFF (BNet send)
-    timestampColor = {r = 0.5, g = 0.5, b = 0.5}, -- Gray (timestamp color)
-    
     -- Notification settings
     notificationSound = SOUNDKIT.TELL_MESSAGE, -- Default notification sound (using sound kit ID)
     soundChannel = "Master", -- Sound channel (Master, SFX, Music, Ambience, Dialog)
@@ -33,11 +24,10 @@ local DEFAULT_SETTINGS = {
     -- Window spawn settings
     spawnAnchorX = 450, -- X offset from center (default: screen center)
     spawnAnchorY = 200, -- Y offset from center (default: upper center)
-    windowSpacing = 50, -- Vertical spacing between windows
     
     -- Default window size
-    defaultWindowWidth = 350,
-    defaultWindowHeight = 250,
+    defaultWindowWidth = 340,
+    defaultWindowHeight = 200,
     
     -- History retention settings
     historyRetentionMode = "mode1", -- none, mode1, mode2, mode3, mode4, mode5
@@ -574,27 +564,20 @@ function addon:CreateSettingsFrame()
     yOffset = yOffset - 50
     
     -- Color Settings Section Header
-    local colorHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    colorHeader:SetPoint("TOPLEFT", 10, yOffset)
-    colorHeader:SetText("Message Colors")
-    colorHeader:SetTextColor(1, 0.82, 0)
-    yOffset = yOffset - 30
+    -- REMOVED per user request
+    -- yOffset = yOffset - 30
     
     -- Whisper Receive / Send (inline)
-    frame.whisperReceiveColor = CreateColorPicker(scrollChild, "Whisper Receive:", "whisperReceiveColor", 10, yOffset)
-    -- place send to the right of receive
-    frame.whisperSendColor = CreateColorPicker(scrollChild, "Whisper Send:", "whisperSendColor", 180, yOffset)
-    yOffset = yOffset - 30
+    -- REMOVED
+    -- yOffset = yOffset - 30
 
     -- BNet Receive / Send (inline)
-    frame.bnetReceiveColor = CreateColorPicker(scrollChild, "BNet Receive:", "bnetReceiveColor", 10, yOffset)
-    -- place send to the right of receive
-    frame.bnetSendColor = CreateColorPicker(scrollChild, "BNet Send:", "bnetSendColor", 180, yOffset)
-    yOffset = yOffset - 30
+    -- REMOVED
+    -- yOffset = yOffset - 30
 
     -- Timestamp Color (own line)
-    frame.timestampColor = CreateColorPicker(scrollChild, "Timestamp:", "timestampColor", 10, yOffset)
-    yOffset = yOffset - 50
+    -- REMOVED
+    -- yOffset = yOffset - 50
     
     -- Notification Settings Header
     local notificationHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -830,33 +813,8 @@ function addon:CreateSettingsFrame()
     yOffset = yOffset - 60
     
     -- Window Spacing
-    local spacingLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    spacingLabel:SetPoint("TOPLEFT", 10, yOffset)
-    spacingLabel:SetText("Window Spacing:")
-    
-    local spacingSlider = CreateFrame("Slider", nil, scrollChild, "OptionsSliderTemplate")
-    spacingSlider:SetPoint("TOPLEFT", 20, yOffset - 20)
-    spacingSlider:SetWidth(400)
-    spacingSlider:SetMinMaxValues(0, 200)
-    spacingSlider:SetValueStep(5)
-    spacingSlider:SetObeyStepOnDrag(true)
-    
-    -- Set up the callback first
-    -- Set the initial value first
-    spacingSlider:SetValue(addon:GetSetting("windowSpacing") or 50)
-    if not spacingSlider.Text then
-        spacingSlider.Text = spacingSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        spacingSlider.Text:SetPoint("BOTTOMLEFT", spacingSlider, "TOPLEFT", 0, 0)
-    end
-    spacingSlider.Text:SetText("Spacing: " .. (addon:GetSetting("windowSpacing") or 50) .. " pixels")
-    
-    -- Set up the callback
-    spacingSlider:SetScript("OnValueChanged", function(self, value)
-        self.Text:SetText("Spacing: " .. math.floor(value) .. " pixels")
-        addon:SetSetting("windowSpacing", math.floor(value))
-    end)
-    
-    yOffset = yOffset - 60
+    -- REMOVED per user request
+    -- yOffset = yOffset - 60
     
     -- Default Window Width
     local widthLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -872,12 +830,12 @@ function addon:CreateSettingsFrame()
     
     -- Set up the callback first
     -- Set the initial value first
-    widthSlider:SetValue(addon:GetSetting("defaultWindowWidth") or 400)
+    widthSlider:SetValue(addon:GetSetting("defaultWindowWidth") or 340)
     if not widthSlider.Text then
         widthSlider.Text = widthSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         widthSlider.Text:SetPoint("BOTTOMLEFT", widthSlider, "TOPLEFT", 0, 0)
     end
-    widthSlider.Text:SetText("Width: " .. (addon:GetSetting("defaultWindowWidth") or 400) .. " pixels")
+    widthSlider.Text:SetText("Width: " .. (addon:GetSetting("defaultWindowWidth") or 340) .. " pixels")
     
     -- Set up the callback
     widthSlider:SetScript("OnValueChanged", function(self, value)
@@ -895,17 +853,17 @@ function addon:CreateSettingsFrame()
     local heightSlider = CreateFrame("Slider", nil, scrollChild, "OptionsSliderTemplate")
     heightSlider:SetPoint("TOPLEFT", 20, yOffset - 20)
     heightSlider:SetWidth(400)
-    heightSlider:SetMinMaxValues(200, 600)
+    heightSlider:SetMinMaxValues(100, 600)
     heightSlider:SetValueStep(10)
     heightSlider:SetObeyStepOnDrag(true)
     
     -- Set the initial value first
-    heightSlider:SetValue(addon:GetSetting("defaultWindowHeight") or 300)
+    heightSlider:SetValue(addon:GetSetting("defaultWindowHeight") or 200)
     if not heightSlider.Text then
         heightSlider.Text = heightSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         heightSlider.Text:SetPoint("BOTTOMLEFT", heightSlider, "TOPLEFT", 0, 0)
     end
-    heightSlider.Text:SetText("Height: " .. (addon:GetSetting("defaultWindowHeight") or 300) .. " pixels")
+    heightSlider.Text:SetText("Height: " .. (addon:GetSetting("defaultWindowHeight") or 200) .. " pixels")
     
     -- Set up the callback
     heightSlider:SetScript("OnValueChanged", function(self, value)

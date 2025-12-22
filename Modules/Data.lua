@@ -116,7 +116,7 @@ function addon:DisplayHistory(window, playerKey)
     local displayName = self:GetDisplayNameFromKey(playerKey)
     if window.Title then
         window.playerDisplay = displayName
-        local titlePrefix = window.isBNet and "BNet Whisper: " or "Whisper: "
+        local titlePrefix = window.isBNet and "BNet: " or "Whisper: "
         window.Title:SetText(titlePrefix .. displayName)
     end
     

@@ -315,7 +315,7 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     
     self:DisplayHistory(win, playerKey)
     if win.title then
-        win.title:SetText("BNet Whisper: " .. displayName)
+        win.title:SetText("BNet: " .. displayName)
     end
     self:LoadWindowPosition(win)
     win:Show()
@@ -402,7 +402,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         local horizontalOffset = (addon.cascadeCounter % 2 == 0) and 150 or -150
         
         spawnX = focusedX + horizontalOffset
-        spawnY = focusedY - 300  -- 300px below focused window
+        spawnY = focusedY - 100  -- 100px below focused window (Hardcoded per user request)
         
         addon:DebugMessage("Spawning relative to focused window - Offset:", horizontalOffset, "at X:", spawnX, "Y:", spawnY)
         
