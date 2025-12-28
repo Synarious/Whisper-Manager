@@ -424,6 +424,8 @@ local function CreateInputFrame(win, frameName)
     
     win.Input:SetScript("OnHyperlinkLeave", function(self) HideUIPanel(GameTooltip) end)
     win.Input:SetScript("OnMouseDown", function(self) addon:FocusWindow(win) end)
+    win.Input:SetScript("OnEditFocusGained", function(self) addon:SetEditBoxFocus(self) end)
+    win.Input:SetScript("OnEditFocusLost", function(self) addon:SetEditBoxFocus(nil) end)
     
     local inputCount = win.InputContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     local countYOffset = -math.max(4, math.floor((win.Input.__wm_topBottomPadding or 7) / 2))

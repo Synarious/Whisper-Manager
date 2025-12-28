@@ -535,6 +535,13 @@ function ChatFrameUtil.GetActiveWindow()
     return addon.EditBoxInFocus or originalGetActiveWindow()
 end
 
+if ChatEdit_GetActiveWindow then
+    local originalChatEdit_GetActiveWindow = ChatEdit_GetActiveWindow
+    function ChatEdit_GetActiveWindow()
+        return addon.EditBoxInFocus or originalChatEdit_GetActiveWindow()
+    end
+end
+
 function addon:SetEditBoxFocus(editBox)
     self.EditBoxInFocus = editBox
     if editBox then
