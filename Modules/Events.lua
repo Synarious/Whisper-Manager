@@ -234,6 +234,7 @@ function addon:RegisterEvents()
             
             -- Create floating button after hooks are set up
             addon:CreateFloatingButton()
+            addon:UpdateFloatingButtonUnreadStatus()
             
             -- Run retention cleanup on login
             addon:RunHistoryRetentionCleanup()

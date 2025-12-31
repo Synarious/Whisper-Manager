@@ -369,6 +369,8 @@ function addon:HandleSlashCommand(message)
         self:Print("/wmgr reset_all_data - [Dangerous]  Clear all saved data (history, windows, config).")
         self:Print("/wmgr delete_data_retention_test - [Dangerous] Data retention cleanup (keep 3 recent, delete older than 5 min).")
         self:Print("/wmgr cleanup_empty - [Dangerous] Remove empty conversation entries from history.")
+        self:Print("/wmgr test-unread - Create a fake unread message.")
+        self:Print("/wmgr read-all - Mark all messages as read.")
         self:Print("Aliases: /wmgr, /whispermanager")
         return
     end
@@ -402,6 +404,32 @@ function addon:HandleSlashCommand(message)
             self:Print(string.format("Removed %d empty conversation%s from history.", removed, removed ~= 1 and "s" or ""))
         else
             self:Print("No empty conversations found.")
+        end
+    elseif command == "test-unread" then
+        -- Simulate an unread message
+        local testKey = "TestPlayer-TestRealm"
+        if not WhisperManager_RecentChats then WhisperManager_RecentChats = {} end
+        WhisperManager_RecentChats[testKey] = {
+            lastMessageTime = time(),
+            isRead = false,
+            isBNet = false
+        }
+        self:Print("Created test unread message for " .. testKey)
+        self:UpdateFloatingButtonUnreadStatus()
+        if self.recentChatsFrame and self.recentChatsFrame:IsShown() then
+            self:RefreshRecentChats()
+        end
+    elseif command == "read-all" then
+        -- Mark all as read
+        if WhisperManager_RecentChats then
+            for key, data in pairs(WhisperManager_RecentChats) do
+                data.isRead = true
+            end
+            self:Print("Marked all chats as read.")
+            self:UpdateFloatingButtonUnreadStatus()
+            if self.recentChatsFrame and self.recentChatsFrame:IsShown() then
+                self:RefreshRecentChats()
+            end
         end
     else
         -- Try to open conversation with the input as player name
@@ -663,6 +691,8 @@ function addon:RegisterCoreEvents()
             addon:DebugMessage("Hooks installed.");
             
             addon:CreateFloatingButton()
+            addon:UpdateFloatingButtonUnreadStatus() -- Restore unread status on login
+            
             addon:RunHistoryRetentionCleanup()
             
             C_Timer.NewTicker(86400, function()

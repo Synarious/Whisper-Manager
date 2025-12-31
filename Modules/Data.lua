@@ -63,6 +63,10 @@ function addon:AddMessageToHistory(playerKey, displayName, author, message, clas
     if #history > self.MAX_HISTORY_LINES then
         table.remove(history, 1)
     end
+    
+    -- Update recent chats
+    local isBNet = playerKey:match("^bnet_") ~= nil
+    self:UpdateRecentChat(playerKey, displayName, isBNet, authorName)
 end
 
 --- Display message history in a window
@@ -313,7 +317,7 @@ function addon:DisplayHistory(window, playerKey)
 end
 
 -- Recent Chat Management
-function addon:UpdateRecentChat(playerKey, displayName, isBNet)
+function addon:UpdateRecentChat(playerKey, displayName, isBNet, author)
     -- SCHEMA PROTECTION: Block if validation failed
     if not addon:IsSafeToOperate() then return end
     
@@ -332,15 +336,39 @@ function addon:UpdateRecentChat(playerKey, displayName, isBNet)
         end
     end
     
+    -- Determine if message is unread
+    local isRead = false
+    local playerName, playerRealm = UnitName("player")
+    local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
+    local fullPlayerName = playerName .. "-" .. realm
+    
+    if author == "Me" or author == playerName or author == fullPlayerName then
+        isRead = true
+    else
+        -- Check if window is focused
+        local win = addon.windows[playerKey]
+        if win and win:IsShown() and win.Input and win.Input:HasFocus() then
+            isRead = true
+        end
+    end
+    
     -- Update or create entry
     if not WhisperManager_RecentChats[playerKey] then
         WhisperManager_RecentChats[playerKey] = {
             lastMessageTime = now,
-            isRead = false,
+            isRead = isRead,
             isBNet = isBNet or false,
         }
     else
         WhisperManager_RecentChats[playerKey].lastMessageTime = now
+        if not isRead then
+            WhisperManager_RecentChats[playerKey].isRead = false
+        end
+    end
+    
+    addon:UpdateFloatingButtonUnreadStatus()
+    if addon.recentChatsFrame and addon.recentChatsFrame:IsShown() then
+        addon:RefreshRecentChats()
     end
 end
 
@@ -349,6 +377,10 @@ end
 function addon:MarkChatAsRead(playerKey)
     if WhisperManager_RecentChats and WhisperManager_RecentChats[playerKey] then
         WhisperManager_RecentChats[playerKey].isRead = true
+        addon:UpdateFloatingButtonUnreadStatus()
+        if addon.recentChatsFrame and addon.recentChatsFrame:IsShown() then
+            addon:RefreshRecentChats()
+        end
     end
 end
 

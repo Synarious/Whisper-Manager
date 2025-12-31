@@ -94,7 +94,145 @@ function addon:CreateRecentChatsFrame()
     end)
     
     addon.recentChatsFrame = frame
+    
+    -- Initial population
+    addon:RefreshRecentChats()
+    
     return frame
+end
+
+function addon:RefreshRecentChats()
+    if not addon.recentChatsFrame then return end
+    local scrollChild = addon.recentChatsFrame.scrollChild
+    if not scrollChild then return end
+    
+    -- Clear existing children
+    local children = {scrollChild:GetChildren()}
+    for _, child in ipairs(children) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+    
+    if not WhisperManager_RecentChats then
+        WhisperManager_RecentChats = {}
+    end
+    
+    -- Convert to sorted array
+    local chats = {}
+    for playerKey, data in pairs(WhisperManager_RecentChats) do
+        if playerKey and data and data.lastMessageTime then
+            local displayName = self:GetDisplayNameFromKey(playerKey) or "Unknown"
+            table.insert(chats, {
+                playerKey = playerKey,
+                displayName = displayName,
+                lastMessageTime = data.lastMessageTime,
+                isRead = data.isRead, -- Can be nil, false, or true
+                isBNet = data.isBNet or false,
+            })
+        end
+    end
+    
+    -- Sort by most recent first
+    table.sort(chats, function(a, b)
+        return a.lastMessageTime > b.lastMessageTime
+    end)
+    
+    -- Create buttons for each chat
+    local yOffset = 0
+    for i, chat in ipairs(chats) do
+        local btn = CreateFrame("Button", nil, scrollChild)
+        btn:SetSize(260, 40)
+        btn:SetPoint("TOPLEFT", 0, -yOffset)
+        
+        -- Background
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+        btn.bg:SetAllPoints()
+        btn.bg:SetColorTexture(0.2, 0.2, 0.2, 0.5)
+        
+        -- Highlight
+        btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+        btn.highlight:SetAllPoints()
+        btn.highlight:SetColorTexture(0.3, 0.3, 0.3, 0.5)
+        
+        -- Unread Indicator (Left border strip)
+        if chat.isRead == false then
+            btn.unreadIndicator = btn:CreateTexture(nil, "OVERLAY")
+            btn.unreadIndicator:SetPoint("LEFT", 0, 0)
+            btn.unreadIndicator:SetSize(4, 40)
+            btn.unreadIndicator:SetColorTexture(0, 1, 0, 1) -- Green strip for unread
+            
+            -- Also highlight background slightly green
+            btn.bg:SetColorTexture(0.2, 0.4, 0.2, 0.5)
+        end
+        
+        -- Name text
+        btn.nameText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        btn.nameText:SetPoint("TOPLEFT", 10, -5)
+        btn.nameText:SetText(chat.displayName or "Unknown")
+        btn.nameText:SetJustifyH("LEFT")
+        
+        -- Desaturate if read
+        if chat.isRead ~= false then
+            btn.nameText:SetTextColor(0.6, 0.6, 0.6)
+        else
+            btn.nameText:SetTextColor(1, 1, 1)
+        end
+        
+        -- Time text
+        btn.timeText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btn.timeText:SetPoint("BOTTOMLEFT", 10, 5)
+        btn.timeText:SetText(self.GetTimeAgo(chat.lastMessageTime))
+        btn.timeText:SetTextColor(0.7, 0.7, 0.7)
+        
+        -- Click to open
+        btn:SetScript("OnClick", function()
+            addon:DebugMessage("[RecentChats] Click handler called for playerKey:", chat.playerKey)
+            
+            -- Mark as read immediately on click
+            addon:MarkChatAsRead(chat.playerKey)
+            
+            local success = false
+            local errorOccurred = false
+            
+            -- Wrap in pcall to catch any errors
+            local pcallSuccess, result = pcall(function()
+                if chat.isBNet then
+                    -- Extract BattleTag from key
+                    local battleTag = chat.playerKey:match("bnet_(.+)")
+                    if battleTag then
+                        -- Find the current BNet ID for this BattleTag
+                        local numBNetTotal, numBNetOnline = BNGetNumFriends()
+                        for i = 1, numBNetTotal do
+                            local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
+                            if accountInfo and accountInfo.battleTag == battleTag then
+                                return addon:OpenBNetConversation(accountInfo.bnetAccountID, chat.displayName)
+                            end
+                        end
+                        addon:Print("|cffff8800BattleNet friend not found. They may have been removed from your friends list.|r")
+                        return false
+                    end
+                else
+                    return addon:OpenConversation(chat.playerKey)
+                end
+                return false
+            end)
+            
+            if pcallSuccess then
+                success = result
+            else
+                errorOccurred = true
+                addon:Print("|cffff0000Error opening conversation: " .. tostring(result) .. "|r")
+            end
+            
+            if success or errorOccurred then
+                addon.recentChatsFrame:Hide()
+            end
+        end)
+        
+        yOffset = yOffset + 45
+    end
+    
+    scrollChild:SetHeight(math.max(yOffset, 1))
 end
 
 function addon:SaveRecentChatsPosition()
@@ -138,140 +276,4 @@ function addon:ToggleRecentChatsFrame()
         self:RefreshRecentChats()
         self.recentChatsFrame:Show()
     end
-end
-
-function addon:RefreshRecentChats()
-    if not self.recentChatsFrame then return end
-    
-    -- Clear existing buttons
-    local scrollChild = self.recentChatsFrame.scrollChild
-    for _, child in ipairs({scrollChild:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
-    end
-    
-    if not WhisperManager_RecentChats then
-        WhisperManager_RecentChats = {}
-    end
-    
-    -- Convert to sorted array
-    local chats = {}
-    for playerKey, data in pairs(WhisperManager_RecentChats) do
-        if playerKey and data and data.lastMessageTime then
-            local displayName = self:GetDisplayNameFromKey(playerKey) or "Unknown"
-            self:DebugMessage("RecentChats: playerKey =", playerKey, "displayName =", displayName)
-            table.insert(chats, {
-                playerKey = playerKey,
-                displayName = displayName,
-                lastMessageTime = data.lastMessageTime,
-                isRead = data.isRead or false,
-                isBNet = data.isBNet or false,
-            })
-        end
-    end
-    
-    -- Sort by most recent first
-    table.sort(chats, function(a, b)
-        return a.lastMessageTime > b.lastMessageTime
-    end)
-    
-    -- Create buttons for each chat
-    local yOffset = 0
-    for i, chat in ipairs(chats) do
-        local btn = CreateFrame("Button", nil, scrollChild)
-        btn:SetSize(260, 40)
-        btn:SetPoint("TOPLEFT", 0, -yOffset)
-        
-        -- Background
-        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-        btn.bg:SetAllPoints()
-        btn.bg:SetColorTexture(0.2, 0.2, 0.2, 0.5)
-        
-        -- Highlight
-        btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
-        btn.highlight:SetAllPoints()
-        btn.highlight:SetColorTexture(0.3, 0.3, 0.3, 0.5)
-        
-        -- Name text
-        btn.nameText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        btn.nameText:SetPoint("TOPLEFT", 5, -5)
-        btn.nameText:SetText(chat.displayName or "Unknown")
-        btn.nameText:SetJustifyH("LEFT")
-        
-        -- Desaturate if read
-        if chat.isRead then
-            btn.nameText:SetTextColor(0.6, 0.6, 0.6)
-        else
-            btn.nameText:SetTextColor(1, 1, 1)
-        end
-        
-        -- Time text
-        btn.timeText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btn.timeText:SetPoint("BOTTOMLEFT", 5, 5)
-        btn.timeText:SetText(self.GetTimeAgo(chat.lastMessageTime))
-        btn.timeText:SetTextColor(0.7, 0.7, 0.7)
-        
-        -- Click to open
-        btn:SetScript("OnClick", function()
-            addon:DebugMessage("[RecentChats] Click handler called for playerKey:", chat.playerKey)
-            addon:DebugMessage("[RecentChats] isBNet:", chat.isBNet)
-            addon:DebugMessage("[RecentChats] displayName:", chat.displayName)
-            
-            local success = false
-            local errorOccurred = false
-            
-            -- Wrap in pcall to catch any errors
-            local pcallSuccess, result = pcall(function()
-                if chat.isBNet then
-                    -- Extract BattleTag from key
-                    local battleTag = chat.playerKey:match("bnet_(.+)")
-                    addon:DebugMessage("[RecentChats] Extracted BattleTag:", battleTag)
-                    if battleTag then
-                        -- Find the current BNet ID for this BattleTag
-                        local numBNetTotal, numBNetOnline = BNGetNumFriends()
-                        addon:DebugMessage("[RecentChats] Searching", numBNetTotal, "BNet friends")
-                        for i = 1, numBNetTotal do
-                            local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
-                            if accountInfo and accountInfo.battleTag == battleTag then
-                                addon:DebugMessage("[RecentChats] Found matching BattleTag, calling OpenBNetConversation")
-                                return addon:OpenBNetConversation(accountInfo.bnetAccountID, chat.displayName)
-                            end
-                        end
-                        addon:DebugMessage("[RecentChats] BNet friend not found in friends list")
-                        addon:Print("|cffff8800BattleNet friend not found. They may have been removed from your friends list.|r")
-                        return false
-                    end
-                else
-                    -- Use the playerKey directly (it has the correct realm)
-                    -- OpenConversation/ResolvePlayerIdentifiers will handle the c_ prefix correctly
-                    addon:DebugMessage("[RecentChats] Calling OpenConversation with playerKey:", chat.playerKey)
-                    return addon:OpenConversation(chat.playerKey)
-                end
-                return false
-            end)
-            
-            if pcallSuccess then
-                success = result
-                addon:DebugMessage("[RecentChats] OpenConversation returned:", success)
-            else
-                errorOccurred = true
-                addon:DebugMessage("[RecentChats] ERROR occurred:", result)
-                addon:Print("|cffff0000Error opening conversation: " .. tostring(result) .. "|r")
-            end
-            
-            -- Only close the menu if the window was successfully opened/shown
-            -- If in combat, the operation is queued and success=false, so keep menu open
-            -- If there was an error, also close the menu to prevent confusion
-            if success or errorOccurred then
-                addon:DebugMessage("[RecentChats] Hiding recent chats frame (success=" .. tostring(success) .. ", error=" .. tostring(errorOccurred) .. ")")
-                addon.recentChatsFrame:Hide()
-            else
-                addon:DebugMessage("[RecentChats] Failed to open conversation or in combat - keeping frame open")
-            end
-        end)
-        
-        yOffset = yOffset + 45
-    end
-    
-    scrollChild:SetHeight(math.max(yOffset, 1))
 end

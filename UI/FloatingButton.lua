@@ -96,3 +96,64 @@ function addon:LoadFloatingButtonPosition()
     self.floatingButton:ClearAllPoints()
     self.floatingButton:SetPoint(pos.point, addon:GetOverlayParent(), pos.relativePoint, pos.xOfs, pos.yOfs)
 end
+
+function addon:UpdateFloatingButtonUnreadStatus()
+    if not self.floatingButton then return end
+    
+    local hasUnread = false
+    local unreadCount = 0
+    if WhisperManager_RecentChats then
+        for key, data in pairs(WhisperManager_RecentChats) do
+            if data.isRead == false then
+                hasUnread = true
+                unreadCount = unreadCount + 1
+                -- Don't break, count them for debug
+            end
+        end
+    end
+    
+    if unreadCount > 0 then
+        addon:DebugMessage("UpdateFloatingButtonUnreadStatus: Found " .. unreadCount .. " unread conversations.")
+    end
+    
+    if hasUnread then
+        -- Create glow if not exists
+        if not self.floatingButton.glow then
+            self.floatingButton.glow = self.floatingButton:CreateTexture(nil, "OVERLAY")
+            self.floatingButton.glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
+            self.floatingButton.glow:SetBlendMode("ADD")
+            self.floatingButton.glow:SetAlpha(0.8)
+            self.floatingButton.glow:SetPoint("CENTER", 0, 0)
+            self.floatingButton.glow:SetSize(70, 70)
+            self.floatingButton.glow:SetVertexColor(0, 1, 0) -- Green glow
+            
+            -- Animation group
+            self.floatingButton.glow.animGroup = self.floatingButton.glow:CreateAnimationGroup()
+            self.floatingButton.glow.animGroup:SetLooping("REPEAT")
+            
+            local alpha = self.floatingButton.glow.animGroup:CreateAnimation("Alpha")
+            alpha:SetFromAlpha(0.2)
+            alpha:SetToAlpha(1.0)
+            alpha:SetDuration(0.8)
+            alpha:SetSmoothing("IN_OUT")
+            alpha:SetOrder(1)
+            
+            local alpha2 = self.floatingButton.glow.animGroup:CreateAnimation("Alpha")
+            alpha2:SetFromAlpha(1.0)
+            alpha2:SetToAlpha(0.2)
+            alpha2:SetDuration(0.8)
+            alpha2:SetSmoothing("IN_OUT")
+            alpha2:SetOrder(2)
+        end
+        
+        self.floatingButton.glow:Show()
+        if not self.floatingButton.glow.animGroup:IsPlaying() then
+            self.floatingButton.glow.animGroup:Play()
+        end
+    else
+        if self.floatingButton.glow then
+            self.floatingButton.glow:Hide()
+            self.floatingButton.glow.animGroup:Stop()
+        end
+    end
+end

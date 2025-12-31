@@ -768,7 +768,12 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.Input:SetScript("OnMouseDown", function(self)
         addon:FocusWindow(win)
     end)
-    win.Input:SetScript("OnEditFocusGained", function(self) addon:SetEditBoxFocus(self) end)
+    win.Input:SetScript("OnEditFocusGained", function(self) 
+        addon:SetEditBoxFocus(self) 
+        if win.playerKey then
+            addon:MarkChatAsRead(win.playerKey)
+        end
+    end)
     win.Input:SetScript("OnEditFocusLost", function(self) addon:SetEditBoxFocus(nil) end)
     
     -- Character Count (positioned at top-right of input container)
