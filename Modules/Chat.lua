@@ -93,16 +93,31 @@ local function GetDayKey(timestamp)
     return date("%Y%m%d", timestamp)
 end
 
-local function AddDateDivider(win, timestamp)
-    if not win or not win.History or not timestamp then return end
-    local dayKey = GetDayKey(timestamp)
-    if not dayKey then return end
-
-    if win.__wm_lastDayKey ~= dayKey then
-        local label = date("%a, %b %d, %Y", timestamp)
-        win.History:AddMessage("----- " .. label .. " -----", 0.8078, 0.4863, 0.0)
-        win.__wm_lastDayKey = dayKey
+local function GetRelativeDateLabel(timestamp)
+    local now = time()
+    local diff = now - timestamp
+    local dateStr = date("%m/%d/%y", timestamp)
+    
+    local relative = ""
+    if diff < 3600 then
+        relative = math.floor(diff / 60) .. "m ago"
+    elseif diff < 86400 then
+        relative = math.floor(diff / 3600) .. "h ago"
+    elseif diff < 604800 then
+        relative = math.floor(diff / 86400) .. "d ago"
+    elseif diff < 2592000 then
+        relative = math.floor(diff / 604800) .. "w ago"
+    else
+        relative = math.floor(diff / 2592000) .. "mo ago"
     end
+    
+    return string.format("----- (%s) %s -----", relative, dateStr)
+end
+
+local function AddDateFooter(win, timestamp)
+    if not win or not win.History or not timestamp then return end
+    local label = GetRelativeDateLabel(timestamp)
+    win.History:AddMessage(label, 0.8078, 0.4863, 0.0)
 end
 
 local function FormatMessageForDisplay(win, author, message, timestamp, classToken)
@@ -714,7 +729,8 @@ function addon:LoadWindowHistory(win)
     
     local playerKey = win.playerKey
     win.History:Clear()
-    win.__wm_lastDayKey = nil
+    win.lastMessageTimestamp = nil
+    win.lastMessageHasSeparator = false
     
     if not WhisperManager_HistoryDB or not WhisperManager_HistoryDB[playerKey] then
         win.History:AddMessage("No message history found.")
@@ -723,16 +739,40 @@ function addon:LoadWindowHistory(win)
     
     local history = WhisperManager_HistoryDB[playerKey]
     
-    for _, entry in ipairs(history) do
+    for i, entry in ipairs(history) do
         local timestamp = entry.t or entry.timestamp
         local author = entry.a or entry.author
         local message = entry.m or entry.message
         local classToken = entry.c
         
         if timestamp and author and message then
-            AddDateDivider(win, timestamp)
             local formattedMessage = FormatMessageForDisplay(win, author, message, timestamp, classToken)
             win.History:AddMessage(formattedMessage)
+            
+            -- Check for divider AFTER this message
+            local nextEntry = history[i+1]
+            local showDivider = false
+            
+            if nextEntry then
+                local nextTimestamp = nextEntry.t or nextEntry.timestamp
+                if GetDayKey(timestamp) ~= GetDayKey(nextTimestamp) then
+                    showDivider = true
+                end
+            else
+                -- Last message: show divider if older than 6 hours
+                if (time() - timestamp) > (6 * 3600) then
+                    showDivider = true
+                end
+            end
+            
+            if showDivider then
+                AddDateFooter(win, timestamp)
+                win.lastMessageHasSeparator = true
+            else
+                win.lastMessageHasSeparator = false
+            end
+            
+            win.lastMessageTimestamp = timestamp
         end
     end
     C_Timer.After(0, function() win.History:ScrollToBottom() end)
@@ -755,9 +795,25 @@ function addon:AddMessageToWindow(playerKey, author, message, timestamp)
         end
     end
     
-    AddDateDivider(win, timestamp)
+    -- Check if we need to add a divider for the PREVIOUS message
+    if win.lastMessageTimestamp then
+        if GetDayKey(win.lastMessageTimestamp) ~= GetDayKey(timestamp) then
+             if not win.lastMessageHasSeparator then
+                 AddDateFooter(win, win.lastMessageTimestamp)
+                 win.lastMessageHasSeparator = true
+             end
+        else
+             -- Same day, so no separator should be here.
+             -- If one exists (e.g. from >6h rule), we leave it as a session break.
+             win.lastMessageHasSeparator = false
+        end
+    end
+    
     local formattedMessage = FormatMessageForDisplay(win, author, message, timestamp, classToken)
     win.History:AddMessage(formattedMessage)
+    
+    win.lastMessageTimestamp = timestamp
+    win.lastMessageHasSeparator = false
     
     C_Timer.After(0, function()
         if win.History then win.History:ScrollToBottom() end

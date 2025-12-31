@@ -71,11 +71,10 @@ local SOUND_CHANNEL_OPTIONS = {
 
 -- History retention modes
 local RETENTION_OPTIONS = {
-    {name = "(Safest) Keep 10 recent (3 mo), delete after 3 mo", value = "mode1", keepCount = 10, keepMonths = 3, deleteMonths = 3},
-    {name = "(Safe) Keep 25 recent (6 mo), delete after 2 mo", value = "mode2", keepCount = 25, keepMonths = 6, deleteMonths = 2},
-    {name = "(Okay) Keep 25 recent (12 mo), delete after 2 mo", value = "mode3", keepCount = 25, keepMonths = 12, deleteMonths = 2},
-    {name = "(Unsafe) Keep 10 recent (24 mo), delete after 2 mo", value = "mode4", keepCount = 10, keepMonths = 24, deleteMonths = 2},
-    {name = "(Unsafe!!) Keep 25 recent (forever), delete after 1 mo", value = "mode5", keepCount = 25, keepMonths = nil, deleteMonths = 1},
+    {name = "(Safest) Keep 10 recent (3 mo), delete rest 3 mo", value = "mode1", keepCount = 10, keepMonths = 3, deleteMonths = 3},
+    {name = "(Safe) Keep 20 recent (6 mo), delete rest 4 mo", value = "mode2", keepCount = 20, keepMonths = 6, deleteMonths = 4},
+    {name = "(!Recruiter) Keep 5 recent (6 mo), delete rest 6 mo", value = "mode3", keepCount = 5, keepMonths = 6, deleteMonths = 6},
+    {name = "(!Unsafe) Keep 30 recent (12 mo), delete rest 6 mo", value = "mode4", keepCount = 30, keepMonths = 12, deleteMonths = 6},
 }
 
 function addon:LoadSettings()

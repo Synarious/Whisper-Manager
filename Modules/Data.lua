@@ -7,16 +7,31 @@ local function GetDayKey(timestamp)
     return date("%Y%m%d", timestamp)
 end
 
-local function AddDateDivider(window, timestamp)
-    if not window or not window.History or not timestamp then return end
-    local dayKey = GetDayKey(timestamp)
-    if not dayKey then return end
-
-    if window.__wm_lastDayKey ~= dayKey then
-        local label = date("%a, %b %d, %Y", timestamp)
-        window.History:AddMessage("----- " .. label .. " -----", 0.8078, 0.4863, 0.0)
-        window.__wm_lastDayKey = dayKey
+local function GetRelativeDateLabel(timestamp)
+    local now = time()
+    local diff = now - timestamp
+    local dateStr = date("%m/%d/%y", timestamp)
+    
+    local relative = ""
+    if diff < 3600 then
+        relative = math.floor(diff / 60) .. "m ago"
+    elseif diff < 86400 then
+        relative = math.floor(diff / 3600) .. "h ago"
+    elseif diff < 604800 then
+        relative = math.floor(diff / 86400) .. "d ago"
+    elseif diff < 2592000 then
+        relative = math.floor(diff / 604800) .. "w ago"
+    else
+        relative = math.floor(diff / 2592000) .. "mo ago"
     end
+    
+    return string.format("----- (%s) %s -----", relative, dateStr)
+end
+
+local function AddDateFooter(window, timestamp)
+    if not window or not window.History or not timestamp then return end
+    local label = GetRelativeDateLabel(timestamp)
+    window.History:AddMessage(label, 0.8078, 0.4863, 0.0)
 end
 
 function addon:AddMessageToHistory(playerKey, displayName, author, message, classToken)
@@ -145,7 +160,6 @@ function addon:DisplayHistory(window, playerKey)
         addon:DebugMessage("Processing message", i, "- timestamp:", timestamp, "originalAuthor:", originalAuthor, "resolvedAuthor:", author, "message length:", message and #message or 0)
         
         if timestamp and author and message then
-            AddDateDivider(window, timestamp)
                 -- Regular message handling
             -- Timestamp with customizable color
                 local tsColor = self.settings.timestampColor or {r = 0.8078, g = 0.4863, b = 0.0}
@@ -269,6 +283,26 @@ function addon:DisplayHistory(window, playerKey)
                 addon:DebugMessage("  formattedText length:", #formattedText)
                 addon:DebugMessage("  formattedMessage length:", #formattedMessage)
                 historyFrame:AddMessage(formattedMessage)
+                
+                -- Check for divider AFTER this message
+                local nextEntry = history[i+1]
+                local showDivider = false
+                
+                if nextEntry then
+                    local nextTimestamp = nextEntry.t or nextEntry.timestamp
+                    if GetDayKey(timestamp) ~= GetDayKey(nextTimestamp) then
+                        showDivider = true
+                    end
+                else
+                    -- Last message: show divider if older than 6 hours
+                    if (time() - timestamp) > (6 * 3600) then
+                        showDivider = true
+                    end
+                end
+                
+                if showDivider then
+                    AddDateFooter(window, timestamp)
+                end
         else
             addon:DebugMessage("Skipping message", i, "- missing data. timestamp:", tostring(timestamp), "author:", tostring(author), "message:", tostring(message))
         end

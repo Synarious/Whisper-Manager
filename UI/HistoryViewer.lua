@@ -486,14 +486,33 @@ function addon:ShowHistoryDetail(playerKey, displayName)
     -- Determine if this is a BNet conversation
     local isBNet = playerKey:match("^bnet_") ~= nil
     
-    -- Track last day for date dividers
-    local lastDayKey = nil
     local function GetDayKey(timestamp)
         if not timestamp then return nil end
         return date("%Y%m%d", timestamp)
     end
+
+    local function GetRelativeDateLabel(timestamp)
+        local now = time()
+        local diff = now - timestamp
+        local dateStr = date("%m/%d/%y", timestamp)
+        
+        local relative = ""
+        if diff < 3600 then
+            relative = math.floor(diff / 60) .. "m ago"
+        elseif diff < 86400 then
+            relative = math.floor(diff / 3600) .. "h ago"
+        elseif diff < 604800 then
+            relative = math.floor(diff / 86400) .. "d ago"
+        elseif diff < 2592000 then
+            relative = math.floor(diff / 604800) .. "w ago"
+        else
+            relative = math.floor(diff / 2592000) .. "mo ago"
+        end
+        
+        return string.format("--^-- (%s) %s --^--", relative, dateStr)
+    end
     
-    for _, entry in ipairs(history) do
+    for i, entry in ipairs(history) do
         -- Support both old and new format
         local timestamp = entry.t or entry.timestamp
         local author = entry.a or entry.author
@@ -510,14 +529,6 @@ function addon:ShowHistoryDetail(playerKey, displayName)
         end
         
         if timestamp and author and message then
-            -- Add date divider if day changed
-            local dayKey = GetDayKey(timestamp)
-            if dayKey and lastDayKey ~= dayKey then
-                local label = date("%a, %b %d, %Y", timestamp)
-                detailScroll:AddMessage("----- " .. label .. " -----", 0.8078, 0.4863, 0.0)
-                lastDayKey = dayKey
-            end
-            
             -- Timestamp with customizable color
             local tsColor = self.settings.timestampColor or {r = 0.8078, g = 0.4863, b = 0.0}
             local tsColorHex = string.format("%02x%02x%02x", tsColor.r * 255, tsColor.g * 255, tsColor.b * 255)
@@ -593,6 +604,27 @@ function addon:ShowHistoryDetail(playerKey, displayName)
             -- Simple concatenation preserves all escape sequences
             local formattedMessage = timeString .. " " .. coloredAuthor .. " " .. messageColor .. formattedText .. "|r"
             detailScroll:AddMessage(formattedMessage)
+
+            -- Check for divider AFTER this message
+            local nextEntry = history[i+1]
+            local showDivider = false
+            
+            if nextEntry then
+                local nextTimestamp = nextEntry.t or nextEntry.timestamp
+                if GetDayKey(timestamp) ~= GetDayKey(nextTimestamp) then
+                    showDivider = true
+                end
+            else
+                -- Last message: show divider if older than 6 hours
+                if (time() - timestamp) > (6 * 3600) then
+                    showDivider = true
+                end
+            end
+            
+            if showDivider then
+                local label = GetRelativeDateLabel(timestamp)
+                detailScroll:AddMessage(label, 0.8078, 0.4863, 0.0)
+            end
         end
     end
     
