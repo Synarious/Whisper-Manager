@@ -1,12 +1,5 @@
--- ============================================================================
--- HistoryViewer.lua - History viewer and search UI
--- ============================================================================
-
+-- History viewer and search UI
 local addon = WhisperManager;
-
--- ============================================================================
--- History Frame Creation
--- ============================================================================
 
 function addon:CreateHistoryFrame()
     local frame = CreateFrame("Frame", "WhisperManager_History", UIParent, "BackdropTemplate")

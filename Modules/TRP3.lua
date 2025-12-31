@@ -1,22 +1,5 @@
--- ============================================================================
--- TRP3.lua - Total RP 3 Integration
--- ============================================================================
--- This module handles integration with Total RP 3 addon for displaying
--- roleplay names and custom colors in whisper windows.
---
--- This module runs in WhisperManager's context and has access to TRP3_API
--- passed from the TRP3 module loader.
--- ============================================================================
-
 local addon = WhisperManager;
 
--- ============================================================================
--- TRP3 Integration
--- ============================================================================
-
---- Setup TRP3 integration with the provided API
--- This is called by the TRP3 module loader in TRP3_Module/WhisperManager.lua
--- @param TRP3_API table The Total RP 3 API object
 function addon:SetupTRP3Integration(TRP3_API)
     if not TRP3_API then
         self:DebugMessage("TRP3 API not provided to SetupTRP3Integration")

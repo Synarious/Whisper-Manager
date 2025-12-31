@@ -1,12 +1,7 @@
--- Chat window implementation (formerly Modules/chat.lua)
-
+-- Chat window implementation
 local addon = WhisperManager
 
 -- Uses combatQueue from Core.lua for combat-safe operations
-
--- ============================================================================
--- Local Helper Functions
--- ============================================================================
 
 local function UpdateWindowFrameLevels(win, baseLevel)
     addon:EnsureFrameOverlay(win)
@@ -170,10 +165,6 @@ local function FormatMessageForDisplay(win, author, message, timestamp, classTok
 
     return timeString .. " " .. coloredAuthor .. " " .. messageColor .. formattedText .. "|r"
 end
-
--- ============================================================================
--- Window Component Creation
--- ============================================================================
 
 local function CreateTitleBar(win, displayName, baseLevel)
     win.titleBar = CreateFrame("Frame", nil, win, "BackdropTemplate")
@@ -471,10 +462,6 @@ local function CreateInputFrame(win, frameName)
         addon:DebugMessage("Misspelled integration enabled for EditBox")
     end
 end
-
--- ============================================================================
--- Main Addon Functions
--- ============================================================================
 
 function addon:FocusWindow(window)
     if not window then return end
@@ -866,4 +853,356 @@ function addon:CloseAllWindows()
         end
     end
     return closed > 0
+end
+
+-- Chat Utilities
+function addon:ExtractWhisperTarget(text)
+    if type(text) ~= "string" then return nil end
+    local trimmed = self:TrimWhitespace(text)
+    if not trimmed or trimmed == "" then return nil end
+    local _, target = trimmed:match("^/([Ww][Hh][Ii][Ss][Pp][Ee][Rr])%s+([^%s]+)")
+    if not target then
+        _, target = trimmed:match("^/([Ww])%s+([^%s]+)")
+    end
+    return target and target:gsub("[,.;:]+$", "") or nil
+end
+
+function addon:FormatEmotesAndSpeech(message)
+    if not message or message == "" then return message end
+    local emoteColor = ChatTypeInfo["EMOTE"]
+    local emoteHex = string.format("|cff%02x%02x%02x", emoteColor.r * 255, emoteColor.g * 255, emoteColor.b * 255)
+    local sayColor = ChatTypeInfo["SAY"]
+    local sayHex = string.format("|cff%02x%02x%02x", sayColor.r * 255, sayColor.g * 255, sayColor.b * 255)
+    local oocHex = "|cff888888"
+    message = message:gsub("(%*[^%*|]+%*)", function(emote) return emoteHex .. emote .. "|r" end)
+    message = message:gsub('("[^"|]+")' , function(speech) return sayHex .. speech .. "|r" end)
+    message = message:gsub("(%(%(.-%)%))", function(ooc) return oocHex .. ooc .. "|r" end)
+    message = message:gsub("(%(.-%))", function(ooc) return oocHex .. ooc .. "|r" end)
+    return message
+end
+
+function addon:TriggerTaskbarAlert()
+    FlashClientIcon()
+end
+
+function addon:StopTaskbarAlert()
+    -- FlashClientIcon stops automatically when the client is focused
+end
+
+-- Chat Event Handlers
+local function ChatMessageEventFilter(self, event, msg, ...)
+    -- Don't filter our own frames (History display)
+    if self and self._WhisperManager then
+        return false
+    end
+    
+    if event == "CHAT_MSG_WHISPER" then
+        -- Incoming whisper
+        local message, author = msg, (...)
+        local playerKey = addon:ResolvePlayerIdentifiers(author)
+        if playerKey then
+            local window = addon.windows[playerKey]
+            -- Suppress if we have a window for this conversation and setting is enabled
+            if window and addon:GetSetting("suppressDefaultChat") ~= false then
+                return true  -- Suppress from default chat
+            end
+        end
+    elseif event == "CHAT_MSG_WHISPER_INFORM" then
+        -- Outgoing whisper
+        local message, target = msg, (...)
+        local playerKey = addon:ResolvePlayerIdentifiers(target)
+        if playerKey then
+            local window = addon.windows[playerKey]
+            -- Suppress if we have a window for this conversation and setting is enabled
+            if window and addon:GetSetting("suppressDefaultChat") ~= false then
+                return true  -- Suppress from default chat
+            end
+        end
+    elseif event == "CHAT_MSG_BN_WHISPER" then
+        -- Incoming BNet whisper
+        local message, author, _, _, _, _, _, _, _, _, _, _, bnSenderID = msg, ...
+        if bnSenderID then
+            local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
+            if accountInfo and accountInfo.battleTag then
+                local playerKey = "bnet_" .. accountInfo.battleTag
+                local window = addon.windows[playerKey]
+                -- Suppress if we have a window for this conversation and setting is enabled
+                if window and addon:GetSetting("suppressDefaultChat") ~= false then
+                    return true  -- Suppress from default chat
+                end
+            end
+        end
+    elseif event == "CHAT_MSG_BN_WHISPER_INFORM" then
+        -- Outgoing BNet whisper
+        local message, _, _, _, _, _, _, _, _, _, _, _, bnSenderID = msg, ...
+        if bnSenderID then
+            local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
+            if accountInfo and accountInfo.battleTag then
+                local playerKey = "bnet_" .. accountInfo.battleTag
+                local window = addon.windows[playerKey]
+                -- Suppress if we have a window for this conversation and setting is enabled
+                if window and addon:GetSetting("suppressDefaultChat") ~= false then
+                    return true  -- Suppress from default chat
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+function addon:RegisterChatEvents()
+    -- Register chat message filters to suppress whispers handled by our windows
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", ChatMessageEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", ChatMessageEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER", ChatMessageEventFilter)
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER_INFORM", ChatMessageEventFilter)
+    
+    local eventFrame = CreateFrame("Frame")
+    
+    eventFrame:RegisterEvent("CHAT_MSG_WHISPER")
+    eventFrame:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
+    eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER")
+    eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER_INFORM")
+    eventFrame:RegisterEvent("PLAYER_STARTED_MOVING")
+
+    eventFrame:SetScript("OnEvent", function(self, event, ...)
+        if event == "PLAYER_STARTED_MOVING" then
+            -- Player moved = window is focused, stop taskbar alert
+            if addon.isFlashing then
+                addon:StopTaskbarAlert()
+            end
+        elseif event == "CHAT_MSG_WHISPER" then
+            local message, author, _, _, _, _, _, _, _, _, _, guid = ...
+            local playerKey, _, displayName = addon:ResolvePlayerIdentifiers(author)
+            if not playerKey then return end
+
+            -- Try to extract class from GUID if available
+            local classToken = nil
+            if guid and guid ~= "" then
+                local _, class = GetPlayerInfoByGUID(guid)
+                if class then
+                    classToken = class
+                end
+            end
+
+            addon:AddMessageToHistory(playerKey, displayName or author, author, message, classToken)
+            addon:UpdateRecentChat(playerKey, displayName or author, false)
+            
+            -- Play notification sound if enabled
+            addon:PlayNotificationSound()
+            
+            -- Trigger Windows taskbar alert if enabled
+            if addon:GetSetting("enableTaskbarAlert") then
+                addon:TriggerTaskbarAlert()
+            end
+            
+            addon:OpenConversation(author)
+            local window = addon.windows[playerKey]
+            if window then
+                addon:DisplayHistory(window, playerKey)
+            end
+        elseif event == "CHAT_MSG_WHISPER_INFORM" then
+            local message, target, _, _, _, _, _, _, _, _, _, guid = ...
+            local playerKey, resolvedTarget, displayName = addon:ResolvePlayerIdentifiers(target)
+            if not playerKey then return end
+
+            -- Try to extract class from GUID if available
+            local classToken = nil
+            if guid and guid ~= "" then
+                local _, class = GetPlayerInfoByGUID(guid)
+                if class then
+                    classToken = class
+                end
+            end
+
+            -- Use actual player character name with realm instead of "Me"
+            local playerName, playerRealm = UnitName("player")
+            local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
+            local fullPlayerName = playerName .. "-" .. realm
+            local _, playerClass = UnitClass("player")
+            
+            -- Track this character as belonging to the player's account
+            if not WhisperManager_CharacterDB then WhisperManager_CharacterDB = {} end
+            WhisperManager_CharacterDB[fullPlayerName] = true
+            
+            addon:AddMessageToHistory(playerKey, displayName or resolvedTarget, fullPlayerName, message, playerClass)
+            addon:UpdateRecentChat(playerKey, displayName or resolvedTarget, false)
+            
+            addon:OpenConversation(resolvedTarget)
+            local window = addon.windows[playerKey]
+            if window then
+                addon:DisplayHistory(window, playerKey)
+            end
+        elseif event == "CHAT_MSG_BN_WHISPER" then
+            local message, author, _, _, _, _, _, _, _, _, _, _, bnSenderID = ...
+            
+            -- Get BattleTag for permanent identification
+            local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
+            if not accountInfo or not accountInfo.battleTag then
+                addon:DebugMessage("|cffff0000ERROR: Could not get BattleTag for incoming BNet whisper|r")
+                return
+            end
+            
+            local playerKey = "bnet_" .. accountInfo.battleTag
+            local displayName = accountInfo.accountName or author or accountInfo.battleTag
+            
+            -- Use displayName for history so it's consistent, not the session-based author
+            -- BNet whispers don't have class info
+            addon:AddMessageToHistory(playerKey, displayName, displayName, message, nil)
+            addon:UpdateRecentChat(playerKey, displayName, true)
+            
+            -- Play notification sound if enabled
+            addon:PlayNotificationSound()
+            
+            -- Trigger Windows taskbar alert if enabled
+            if addon:GetSetting("enableTaskbarAlert") then
+                addon:TriggerTaskbarAlert()
+            end
+            
+            addon:OpenBNetConversation(bnSenderID, displayName)
+            local window = addon.windows[playerKey]
+            if window then
+                addon:DisplayHistory(window, playerKey)
+            end
+        elseif event == "CHAT_MSG_BN_WHISPER_INFORM" then
+            local message, _, _, _, _, _, _, _, _, _, _, _, bnSenderID = ...
+            
+            -- Get BattleTag for permanent identification
+            local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
+            if not accountInfo or not accountInfo.battleTag then
+                addon:DebugMessage("|cffff0000ERROR: Could not get BattleTag for outgoing BNet whisper|r")
+                return
+            end
+            
+            local playerKey = "bnet_" .. accountInfo.battleTag
+            local displayName = accountInfo.accountName or accountInfo.battleTag
+            
+            -- Use actual player character name with realm instead of "Me"
+            local playerName, playerRealm = UnitName("player")
+            local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
+            local fullPlayerName = playerName .. "-" .. realm
+            local _, playerClass = UnitClass("player")
+            
+            -- Track this character as belonging to the player's account
+            if not WhisperManager_CharacterDB then WhisperManager_CharacterDB = {} end
+            WhisperManager_CharacterDB[fullPlayerName] = true
+            
+            addon:AddMessageToHistory(playerKey, displayName, fullPlayerName, message, playerClass)
+            addon:UpdateRecentChat(playerKey, displayName, true)
+            addon:OpenBNetConversation(bnSenderID, displayName)
+            local window = addon.windows[playerKey]
+            if window then
+                addon:DisplayHistory(window, playerKey)
+            end
+        end
+    end)
+end
+
+-- URL Handling
+local URL_PATTERNS = {
+    -- X://Y url
+    "^(%a[%w+.-]+://%S+)",
+    "%f[%S](%a[%w+.-]+://%S+)",
+    -- www.X.Y url
+    "^(www%.[-%w_%%]+%.(%a%a+))",
+    "%f[%S](www%.[-%w_%%]+%.(%a%a+))",
+    -- X@Y.Z email
+    "(%S+@[%w_.-%%]+%.(%a%a+))",
+    -- XXX.YYY.ZZZ.WWW:VVVV/UUUUU IPv4 with port and path
+    "^([0-2]?%d?%d%.[0-2]?%d?%d%.[0-2]?%d?%d%.[0-2]?%d?%d:[0-6]?%d?%d?%d?%d/%S+)",
+    "%f[%S]([0-2]?%d?%d%.[0-2]?%d?%d%.[0-2]?%d?%d%.[0-2]?%d?%d:[0-6]?%d?%d?%d?%d/%S+)",
+    -- XXX.YYY.ZZZ.WWW:VVVV IPv4 with port
+    "^([0-2]?%d?%d%.[0-2]?%d?%d%.[0-2]?%d?%d%.[0-2]?%d?%d:[0-6]?%d?%d?%d?%d)%f[%D]",
+    "%f[%S]([0-2]?%d?%d%.[0-2]?%d?%d%.[0-2]?%d?%d%.[0-2]?%d?%d:[0-6]?%d?%d?%d?%d)%f[%D]",
+    -- X.Y.Z:WWWW/VVVVV url with port and path
+    "^([%w_.-%%]+[%w_-%%]%.(%a%a+):[0-6]?%d?%d?%d?%d/%S+)",
+    "%f[%S]([%w_.-%%]+[%w_-%%]%.(%a%a+):[0-6]?%d?%d?%d?%d/%S+)",
+    -- X.Y.Z/WWWWW url with path
+    "^([%w_.-%%]+[%w_-%%]%.(%a%a+)/%S+)",
+    "%f[%S]([%w_.-%%]+[%w_-%%]%.(%a%a+)/%S+)",
+    -- X.Y.Z url
+    "^([-%w_%%]+%.[-%w_%%]+%.(%a%a+))",
+    "%f[%S]([-%w_%%]+%.[-%w_%%]+%.(%a%a+))",
+}
+
+--- Format a URL as a clickable hyperlink
+-- @param url string The URL to format
+-- @return string Formatted hyperlink with cyan color
+local function FormatURLAsLink(url)
+    if not url or url == "" then return "" end
+    -- Escape % characters
+    url = url:gsub('%%', '%%%%')
+    -- Create a clickable link with custom prefix
+    return "|cff00ffff|Hwm_url:" .. url .. "|h[" .. url .. "]|h|r"
+end
+
+--- Convert URLs in text to clickable links
+-- @param text string Text to process
+-- @return string Text with URLs converted to hyperlinks
+function addon:ConvertURLsToLinks(text)
+    if not text or text == "" then return text end
+    
+    local result = text
+    
+    -- Process each pattern
+    for _, pattern in ipairs(URL_PATTERNS) do
+        result = result:gsub(pattern, FormatURLAsLink)
+    end
+    
+    return result
+end
+
+--- Extract plain URL from hyperlink
+-- @param link string Hyperlink string (e.g., "wm_url:http://example.com")
+-- @return string|nil Plain URL or nil if extraction fails
+local function ExtractURL(link)
+    if type(link) ~= "string" then return nil end
+    
+    if link:match("^wm_url:(.+)") then
+        return link:match("^wm_url:(.+)")
+    end
+    
+    return nil
+end
+
+--- Handle URL hyperlink clicks
+-- @param link string The hyperlink that was clicked
+-- @param text string Link text (optional)
+-- @param button string Mouse button used (optional)
+-- @return boolean True if handled, false otherwise
+function addon:HandleURLClick(link, text, button)
+    addon:Print("HandleURLClick called with link: " .. tostring(link))
+    
+    local url = ExtractURL(link)
+    addon:Print("Extracted URL: " .. tostring(url))
+    
+    if url then
+        self:ShowURLCopyDialog(url)
+        return true
+    else
+        addon:Print("|cffff0000Failed to extract URL from link|r")
+    end
+    return false
+end
+
+-- Hook into hyperlink system
+local originalSetHyperlink = ItemRefTooltip.SetHyperlink
+ItemRefTooltip.SetHyperlink = function(self, link, ...)
+    if link and link:match("^wm_url:") then
+        addon:Print("SetHyperlink intercepted wm_url link")
+        addon:HandleURLClick(link)
+        return
+    end
+    return originalSetHyperlink(self, link, ...)
+end
+
+-- Register custom hyperlink handler
+if SetItemRef then
+    hooksecurefunc("SetItemRef", function(link, text, button, chatFrame)
+        if link and link:match("^wm_url:") then
+            addon:Print("SetItemRef intercepted wm_url link")
+            addon:HandleURLClick(link, text, button)
+        end
+    end)
 end

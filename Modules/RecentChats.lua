@@ -1,7 +1,4 @@
--- ============================================================================
 -- RecentChats.lua - Recent chats UI frame
--- ============================================================================
-
 local addon = WhisperManager;
 
 function addon:CreateRecentChatsFrame()

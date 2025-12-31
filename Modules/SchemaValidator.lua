@@ -1,7 +1,3 @@
--- ============================================================================
--- SchemaValidator.lua - Simple schema version validation
--- ============================================================================
-
 local addon = WhisperManager;
 
 -- Current expected schema version
@@ -10,8 +6,6 @@ addon.EXPECTED_SCHEMA_VERSION = 1
 -- Schema validation state
 addon.schemaValidationPassed = false
 
---- Validate schema version before addon loads
--- @return boolean True if schema is valid and addon can load
 function addon:ValidateSchema()
     addon:DebugMessage("=== Schema Validation START ===")
     

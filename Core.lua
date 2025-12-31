@@ -1,18 +1,12 @@
 -- Configuration
 local DEFAULT_DEBUG_MODE = false
 
--- Create the main addon table (global namespace)
--- Use the standard addon entry pattern so an internal toc name or folder rename doesn't break references.
 local ADDON_NAME, addonFromTOC = ...
--- Ensure a global table named 'WhisperManager' exists. Keep it as the canonical table used throughout the codebase.
 _G["WhisperManager"] = _G["WhisperManager"] or {}
 local addon = _G["WhisperManager"]
 addon._tocName = ADDON_NAME
 
--- ============================================================================
--- Addon State (runtime data structures)
--- ============================================================================
-
+-- Addon State
 addon.windows = {};              -- Active whisper window frames
 addon.playerDisplayNames = {};   -- Cached display names
 addon.recentChats = {};          -- Recent conversation tracking
@@ -20,21 +14,14 @@ addon.nextFrameLevel = 1;        -- Z-order tracking for windows
 addon.cascadeCounter = 0;        -- Counter for alternating window positioning
 addon.combatQueue = {};          -- Queue for operations during combat lockdown
 
--- ============================================================================
 -- Constants
--- ============================================================================
-
 addon.MAX_HISTORY_LINES = 1000;
 addon.CHAT_MAX_LETTERS = 245;
 addon.RECENT_CHAT_EXPIRY = 72 * 60 * 60;  -- 72 hours in seconds
 addon.FOCUSED_ALPHA = 1.0;
 addon.UNFOCUSED_ALPHA = 0.65;
 
--- ============================================================================
 -- Overlay Helpers (keep frames visible over major Blizzard scenes like Housing)
--- ============================================================================
-
---- Return the safest parent that remains visible when UIParent is hidden
 function addon:GetOverlayParent()
     if UIParent and UIParent:IsShown() then
         return UIParent
@@ -49,7 +36,6 @@ function addon:GetOverlayParent()
 end
 
 --- Apply overlay settings (parent only, keep DIALOG strata for dropdown compatibility)
--- @param frame table Frame to adjust
 function addon:EnsureFrameOverlay(frame)
     if not frame then return end
 
@@ -58,7 +44,6 @@ function addon:EnsureFrameOverlay(frame)
         frame:SetParent(parent)
     end
 
-    -- Always use DIALOG strata for dropdown menu compatibility
     frame:SetFrameStrata("DIALOG")
 
     if frame.SetToplevel then
@@ -85,7 +70,6 @@ function addon:RefreshOverlayAnchors()
     apply(self.settingsFrame)
     apply(self.chatExportFrame)
 
-    -- Active whisper windows and their input containers
     for _, win in pairs(self.windows) do
         if win then
             apply(win)
@@ -94,8 +78,7 @@ function addon:RefreshOverlayAnchors()
     end
 end
 
--- Class ID to Class Token mapping (for compact storage)
--- Numeric IDs are stored in database, converted to tokens for color lookup
+-- Class ID to Class Token mapping
 addon.CLASS_ID_TO_TOKEN = {
     [1] = "WARRIOR",
     [2] = "PALADIN",
@@ -129,12 +112,7 @@ addon.CLASS_TOKEN_TO_ID = {
     ["EVOKER"] = 13,
 }
 
-
-
--- ============================================================================
 -- Debug System
--- ============================================================================
-
 addon.debugEnabled = DEFAULT_DEBUG_MODE;
 
 --- Output debug message (only if debug enabled)
@@ -164,13 +142,7 @@ function addon:SetDebugEnabled(enabled)
     end
 end
 
-
-
--- ============================================================================
 -- Initialization
--- ============================================================================
-
---- Initialize the addon (called from Events.lua after all modules load)
 function addon:Initialize()
     self:DebugMessage("=== WhisperManager Initializing ===")
     
@@ -198,19 +170,13 @@ function addon:Initialize()
     WhisperManager_CharacterDB[fullPlayerName] = true
     
     -- Scan existing BNet conversation history to find all our character names
-    -- In BNet conversations, our own messages will have character names while received messages have BNet IDs
     if WhisperManager_HistoryDB then
         local charactersFound = 0
         for playerKey, history in pairs(WhisperManager_HistoryDB) do
-            -- Only scan BNet conversations
             if playerKey ~= "__schema" and playerKey:match("^bnet_") and type(history) == "table" then
                 for _, entry in ipairs(history) do
                     local author = entry.a or entry.author
-                    -- In BNet conversations:
-                    -- - Received messages have BNet session IDs like |Kp123|k
-                    -- - Our sent messages have character names like Character-Realm
                     if author and author:match("^[^|]+%-[^|]+$") and not author:match("|K") then
-                        -- This is a character name format (Name-Realm), likely one of our characters
                         if not WhisperManager_CharacterDB[author] then
                             WhisperManager_CharacterDB[author] = true
                             charactersFound = charactersFound + 1
@@ -229,15 +195,14 @@ function addon:Initialize()
         WhisperManager_Config = {}
     end
     
-    -- CRITICAL: Validate schema version BEFORE any data operations
+    -- Validate schema version
     self:DebugMessage("Running schema validation...")
     if not self:ValidateSchema() then
         self:Print("|cffff0000WhisperManager has been disabled due to version mismatch!|r")
         self:Print("|cffff8800Your saved data is safe and has not been modified.|r")
-        return -- ABORT initialization
+        return
     end
     
-    -- Set schema version for new installations
     if WhisperManager_HistoryDB and not WhisperManager_HistoryDB.__schema then
         WhisperManager_HistoryDB.__schema = self.EXPECTED_SCHEMA_VERSION
     end
@@ -264,7 +229,6 @@ function addon:Initialize()
     self:DebugMessage("  WhisperManager_Config.settings reference: " .. tostring(WhisperManager_Config.settings))
     self:DebugMessage("  Are they the same table? " .. tostring(self.settings == WhisperManager_Config.settings))
     
-    -- Force them to be the same if they're not
     if self.settings ~= WhisperManager_Config.settings then
         self:DebugMessage("WARNING: Table references are different! Forcing addon.settings to point to WhisperManager_Config.settings")
         self.settings = WhisperManager_Config.settings
@@ -284,12 +248,10 @@ function addon:Initialize()
     end
     addon.debugEnabled = not not WhisperManager_Config.debug
 
-    -- Register slash commands (defined in Commands.lua)
     if addon.RegisterSlashCommands then
         addon:RegisterSlashCommands()
     end
 
-    -- Load settings (defined in Settings.lua)
     if addon.LoadSettings then
         addon.settings = addon:LoadSettings()
         self:DebugMessage("Settings loaded in Initialize():")
@@ -309,12 +271,6 @@ function addon:Initialize()
         end
     end
 
-    -- Register events (defined in Events.lua)
-    if addon.RegisterEvents then
-        addon:RegisterEvents()
-    end
-
-    -- Keep key frames visible when the Housing editor or other fullscreen UIs hide UIParent
     self:RefreshOverlayAnchors()
     if UIParent and not UIParent.__wmOverlayHookedForWhisperManager then
         UIParent.__wmOverlayHookedForWhisperManager = true
@@ -335,13 +291,7 @@ function addon:Initialize()
     self:DebugMessage("WhisperManager initialized.");
 end
 
--- Note: Initialize() is called from Events.lua after all modules are loaded
-
--- ============================================================================
--- Embedded: Commands.lua (merged)
--- ============================================================================
-
---- Register slash commands
+-- Slash Commands
 function addon:RegisterSlashCommands()
     self:DebugMessage("Registering slash commands...")
     
@@ -355,11 +305,7 @@ function addon:RegisterSlashCommands()
     self:DebugMessage("Slash commands registered: /wmgr and /whispermanager")
 end
 
--- ============================================================================
 -- Slash Command Handling
--- ============================================================================
-
---- Reset all saved window positions (whisper windows, floating button, recent chats, history viewer, settings)
 function addon:ResetWindowPositions()
     if not WhisperManager_Config then
         self:Print("No window positions to reset.")
@@ -465,11 +411,7 @@ function addon:HandleSlashCommand(message)
     end
 end
 
--- ============================================================================
--- Embedded: Hooks.lua (merged)
--- ============================================================================
-
--- Track which EditBox currently has focus
+-- Hooks
 addon.EditBoxInFocus = nil
 
 local Hooked_ChatFrameEditBoxes = {}
@@ -571,3 +513,169 @@ end
 C_Timer.After(0, function()
     addon:SetupChatHooks()
 end)
+
+-- Utility Functions
+function addon:TrimWhitespace(value)
+    if type(value) ~= "string" then return nil end
+    return value:gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function StripRealmFromName(name)
+    if type(name) ~= "string" then return nil end
+    return name:match("^[^%-]+")
+end
+addon.StripRealmFromName = StripRealmFromName
+
+-- Hook Setup
+function addon:SetupHooks()
+    -- Prevent duplicate hooks
+    if addon.__hooksInstalled then
+        addon:DebugMessage("Hooks already installed, skipping.")
+        return
+    end
+    addon.__hooksInstalled = true
+    
+    -- Hook whisper command extraction - use editbox mixin method
+    local function OnExtractTellTarget(editBox, text)
+        local target = addon:ExtractWhisperTarget(text)
+        if not target then return end
+        addon:DebugMessage("Hooked /w via ExtractTellTarget. Target:", target)
+        
+        if addon:OpenConversation(target) then
+            ChatFrameUtil.DeactivateChat(editBox)
+        end
+    end
+    
+    -- Hook the mixin method on ChatFrameEditBox
+    hooksecurefunc(ChatFrameEditBoxMixin, "ExtractTellTarget", OnExtractTellTarget)
+
+    -- Hook chat frame opening
+    hooksecurefunc(ChatFrameUtil, "OpenChat", function(text, chatFrame, desiredCursorPosition)
+        -- Don't trigger if we're closing a window
+        if addon.__closingWindow then
+            addon:DebugMessage("OpenChat ignored - window closing")
+            return
+        end
+        
+        local editBox = ChatFrameUtil.ChooseBoxForSend(chatFrame)
+        if not editBox then return end
+
+        local chatType = editBox:GetAttribute("chatType")
+        if chatType ~= "WHISPER" then
+            return
+        end
+
+        -- Only intercept if text contains /w or /whisper command
+        if not text or not text:match("^/[Ww]") then
+            addon:DebugMessage("OpenChat ignored - no /w command in text")
+            return
+        end
+
+        local target = editBox:GetAttribute("tellTarget")
+        if not target or target == "" then return end
+
+        if editBox.__WhisperManagerHandled then return end
+        editBox.__WhisperManagerHandled = true
+
+        addon:DebugMessage("OpenChat captured whisper target:", target)
+
+        if addon:OpenConversation(target) then
+            ChatFrameUtil.DeactivateChat(editBox)
+        end
+        
+        C_Timer.After(0.1, function()
+            editBox.__WhisperManagerHandled = nil
+        end)
+    end)
+
+    -- Hook reply tell
+    hooksecurefunc(ChatFrameUtil, "ReplyTell", function(chatFrame)
+        local target = ChatFrameUtil.GetLastTellTarget()
+        if target and addon:OpenConversation(target) then
+            local activeEditBox = ChatFrameUtil.ChooseBoxForSend()
+            if activeEditBox then
+                ChatFrameUtil.DeactivateChat(activeEditBox)
+            end
+        end
+    end)
+
+    -- Hook the default Whisper menu action so it opens WhisperManager windows
+    hooksecurefunc(ChatFrameUtil, "SendTell", function(name, chatFrame)
+        if not name or name == "" then return end
+        -- Open conversation. If successful, close any opened chat editbox to avoid duplicate UI
+        local ok = false
+        pcall(function() ok = addon:OpenConversation(name) end)
+        if ok then
+            local editBox = ChatFrameUtil.ChooseBoxForSend()
+            if editBox and editBox:IsShown() then
+                ChatFrameUtil.DeactivateChat(editBox)
+            end
+        end
+    end)
+
+    -- Hook BNet whisper default action similarly
+    hooksecurefunc(ChatFrameUtil, "SendBNetTell", function(tokenizedName)
+        if not tokenizedName or tokenizedName == "" then return end
+        local ok = false
+        -- SendBNetTell may pass a BattleTag or name; try to open by BattleTag when possible
+        pcall(function() ok = addon:OpenBNetConversation(tokenizedName) end)
+        if ok then
+            local editBox = ChatFrameUtil.ChooseBoxForSend()
+            if editBox and editBox:IsShown() then
+                ChatFrameUtil.DeactivateChat(editBox)
+            end
+        end
+    end)
+
+    -- Setup context menu integration
+    addon:SetupContextMenu()
+end
+
+function addon:SetupContextMenu()
+    if addon.__contextMenuInstalled then
+        addon:DebugMessage("Context menu already installed, skipping.")
+        return
+    end
+    addon.__contextMenuInstalled = true
+    addon:DebugMessage("Context menu modification disabled: relying on default Whisper action.")
+end
+
+-- Core Event Handling
+function addon:RegisterCoreEvents()
+    local eventFrame = CreateFrame("Frame")
+    eventFrame:RegisterEvent("ADDON_LOADED")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    
+    eventFrame:SetScript("OnEvent", function(self, event, ...)
+        if event == "ADDON_LOADED" then
+            local addonName = ...
+            if addonName == addon._tocName or addonName == "WhisperManager" then
+                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Loaded successfully!")
+                addon:Initialize()
+            elseif addonName == "totalRP3" or addonName == "TotalRP3" then
+                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r TotalRP3 detected, setting up integration...")
+                addon:InitializeTRP3Integration()
+            end
+        elseif event == "PLAYER_ENTERING_WORLD" then
+            addon:DebugMessage("PLAYER_ENTERING_WORLD fired. Setting up hooks.");
+            addon:SetupHooks()
+            self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+            addon:DebugMessage("Hooks installed.");
+            
+            addon:CreateFloatingButton()
+            addon:RunHistoryRetentionCleanup()
+            
+            C_Timer.NewTicker(86400, function()
+                addon:RunHistoryRetentionCleanup()
+            end)
+            
+            -- Register Chat Events (now in Chat.lua)
+            if addon.RegisterChatEvents then
+                addon:RegisterChatEvents()
+            end
+        end
+    end)
+end
+
+-- Start core event registration
+addon:RegisterCoreEvents()

@@ -1,17 +1,3 @@
--- Copyright The Total RP 3 Authors
--- SPDX-License-Identifier: Apache-2.0
--- ============================================================================
--- TRP3 Module Loader for WhisperManager
--- ============================================================================
--- This file should be installed in the Total RP 3 addon directory at:
--- <WoW Install>\Interface\AddOns\totalRP3\Modules\ChatFrame\WhisperManager.lua
---
--- This is a minimal loader that registers WhisperManager as a TRP3 module
--- and calls back to WhisperManager to set up the integration.
--- The actual integration logic lives in WhisperManager's TRP3.lua module
--- where it has access to all player data.
--- ============================================================================
-
 local TRP3_API = _G.TRP3_API;
 if not TRP3_API then return end
 

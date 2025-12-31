@@ -1,12 +1,5 @@
--- ============================================================================
--- FloatingButton.lua - Floating button UI
--- ============================================================================
-
+-- Floating button UI
 local addon = WhisperManager;
-
--- ============================================================================
--- Floating Button Functions
--- ============================================================================
 
 function addon:CreateFloatingButton()
     -- Don't create if it already exists

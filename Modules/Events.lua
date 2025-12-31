@@ -1,12 +1,4 @@
--- ============================================================================
--- Events.lua - Event handlers and hooks
--- ============================================================================
-
 local addon = WhisperManager;
-
--- ============================================================================
--- Event Registration and Handlers
--- ============================================================================
 
 -- Chat message filter to suppress whispers that are handled by WhisperManager windows
 local function ChatMessageEventFilter(self, event, msg, ...)
@@ -263,10 +255,6 @@ function addon:RegisterEvents()
     eventFrame:RegisterEvent("PLAYER_STARTED_MOVING")
 end
 
--- ============================================================================
--- Hook Setup
--- ============================================================================
-
 function addon:SetupHooks()
     -- Prevent duplicate hooks
     if addon.__hooksInstalled then
@@ -371,10 +359,6 @@ function addon:SetupHooks()
     addon:SetupContextMenu()
 end
 
--- ============================================================================
--- Context Menu Integration
--- ============================================================================
-
 function addon:SetupContextMenu()
     -- Intentionally disable context-menu modifications.
     -- The addon will rely on the default "Whisper" action (which already opens
@@ -388,10 +372,6 @@ function addon:SetupContextMenu()
     addon.__contextMenuInstalled = true
     addon:DebugMessage("Context menu modification disabled: relying on default Whisper action.")
 end
-
--- ============================================================================
--- Initialize Addon (called after saved variables are loaded)
--- ============================================================================
 
 -- Initialize() is now called from the ADDON_LOADED event handler above
 -- This ensures saved variables are loaded before we try to read settings

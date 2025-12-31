@@ -1,7 +1,3 @@
--- ============================================================================
--- Utils.lua - General utility functions (moved to Modules)
--- ============================================================================
-
 local addon = WhisperManager;
 
 function addon:Print(message)

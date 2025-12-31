@@ -1,14 +1,7 @@
--- ============================================================================
--- Window.lua - Individual whisper window creation and management
--- ============================================================================
-
+-- Individual whisper window creation and management
 local addon = WhisperManager;
 
--- ============================================================================
 -- Combat Lockdown Handler
--- ============================================================================
-
--- Create combat event handler to process queued operations
 local combatFrame = CreateFrame("Frame");
 combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED"); -- Entering combat
 combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED");  -- Leaving combat
@@ -32,12 +25,7 @@ combatFrame:SetScript("OnEvent", function(self, event)
     end
 end)
 
--- ============================================================================
 -- Window Focus Management
--- ============================================================================
-
--- Helper function to update all child frame levels relative to parent
--- Keeps all windows on same strata but uses frame levels for proper layering
 local function UpdateWindowFrameLevels(win, baseLevel)
     addon:EnsureFrameOverlay(win)
     if win.InputContainer then
@@ -104,10 +92,6 @@ function addon:FocusWindow(window)
     window:Raise()
 end
 
--- ============================================================================
--- Window Closing
--- ============================================================================
-
 --- Close all open whisper windows
 function addon:CloseAllWindows()
     local windowsClosed = 0
@@ -124,10 +108,6 @@ function addon:CloseAllWindows()
     
     return windowsClosed > 0
 end
-
--- ============================================================================
--- Helper Functions
--- ============================================================================
 
 -- Helper function to update input container height dynamically
 local function UpdateInputHeight(inputBox)
@@ -211,10 +191,7 @@ local function UpdateInputHeight(inputBox)
     end)
 end
 
--- ============================================================================
 -- Conversation Opening
--- ============================================================================
-
 function addon:OpenConversation(playerName)
     -- Don't open conversations if we're closing windows
     if self.__closingWindow then
@@ -328,10 +305,7 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     return true
 end
 
--- ============================================================================
 -- Backward Compatibility
--- ============================================================================
-
 -- ShowWindow is deprecated - use OpenConversation instead
 function addon:ShowWindow(playerKey, displayName)
     if playerKey:match("^bnet_") then
@@ -352,10 +326,7 @@ function addon:ShowWindow(playerKey, displayName)
     return false
 end
 
--- ============================================================================
--- Window Creation (Mirroring HistoryViewer.lua)
--- ============================================================================
-
+-- Window Creation
 function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Return existing window if it exists
     if self.windows[playerKey] then
@@ -899,10 +870,6 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     return win
 end
 
--- ============================================================================
--- Window History Management
--- ============================================================================
-
 function addon:LoadWindowHistory(win)
     if not win or not win.History then return end
     
@@ -1164,14 +1131,6 @@ function addon:AddMessageToWindow(playerKey, author, message, timestamp)
         end
     end)
 end
-
--- ============================================================================
--- Window Position Management
--- ============================================================================
-
--- ============================================================================
--- Window Show/Hide Management
--- ============================================================================
 
 function addon:CloseWindow(playerKey)
     if InCombatLockdown() then

@@ -3,10 +3,6 @@
     <!-- CORE: Minimal core - namespace and state only -->
     <Script file="Core.lua"/>
     
-    <!-- UTILITIES: Helper functions (moved into Modules) -->
-    <Script file="Modules\Utils.lua"/>            <!-- String utils, formatting, notifications -->
-    <Script file="Modules\PlayerUtils.lua"/>      <!-- Player name parsing -->
-    
     <!-- MODULES: Feature modules -->
     <Script file="Modules\SchemaValidator.lua"/> <!-- Schema validation (MUST load first) -->
     <Script file="Modules\TRP3.lua"/>           <!-- Total RP 3 integration -->
@@ -21,7 +17,7 @@
     <Script file="UI\FloatingButton.lua"/>      <!-- Floating action button -->
     <Script file="UI\Settings.lua"/>            <!-- Settings panel -->
     
-    <!-- EVENTS: Event handlers and initialization trigger -->
-    <Script file="Modules\Events.lua"/>         <!-- Whisper events + calls Initialize() -->
 <!-- End of WhisperManager XML -->
 </Ui>
+
+--^-- (2d ago) | 1/24/26 --^--

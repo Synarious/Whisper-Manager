@@ -1,12 +1,5 @@
--- ============================================================================
--- Settings.lua - Settings UI and configuration
--- ============================================================================
-
+-- Settings UI and configuration
 local addon = WhisperManager;
-
--- ============================================================================
--- Default Settings
--- ============================================================================
 
 local DEFAULT_SETTINGS = {
     messageFontSize = 14,
@@ -84,10 +77,6 @@ local RETENTION_OPTIONS = {
     {name = "(Unsafe) Keep 10 recent (24 mo), delete after 2 mo", value = "mode4", keepCount = 10, keepMonths = 24, deleteMonths = 2},
     {name = "(Unsafe!!) Keep 25 recent (forever), delete after 1 mo", value = "mode5", keepCount = 25, keepMonths = nil, deleteMonths = 1},
 }
-
--- ============================================================================
--- Settings Management
--- ============================================================================
 
 function addon:LoadSettings()
     self:DebugMessage("[LoadSettings] Starting...")
@@ -179,10 +168,7 @@ function addon:SetSetting(key, value)
     self:DebugMessage("[SetSetting] Same table reference? " .. tostring(self.settings == WhisperManager_Config.settings))
 end
 
--- ============================================================================
 -- Apply Settings to Existing Windows
--- ============================================================================
-
 function addon:ApplyFontSettings()
     local fontPath = self:GetSetting("fontFamily") or "Fonts\\FRIZQT__.TTF"
     local messageSize = self:GetSetting("messageFontSize") or 14
@@ -247,10 +233,7 @@ function addon:ApplyAppearanceSettings()
     end
 end
 
--- ============================================================================
 -- Sound Notification Functions
--- ============================================================================
-
 function addon:PlayNotificationSound()
     local soundKitID = self:GetSetting("notificationSound")
     
@@ -283,11 +266,7 @@ function addon:PreviewNotificationSound()
     self:PlayNotificationSound()
 end
 
--- ============================================================================
 -- Settings Frame Creation
--- ============================================================================
-
--- Helper function to create a color picker button
 local function CreateColorPicker(parent, label, settingKey, x, y)
     local labelText = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     labelText:SetPoint("TOPLEFT", x, y)
