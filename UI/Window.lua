@@ -795,7 +795,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
 
         if win.isBNet then
             if win.bnSenderID then
-                BNSendWhisper(win.bnSenderID, message)
+                C_BattleNet.SendWhisper(win.bnSenderID, message)
                 sent = true
             else
                 addon:Print("|cffff8800Unable to determine Battle.net target for this whisper.|r")

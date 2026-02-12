@@ -443,7 +443,7 @@ local function CreateInputFrame(win, frameName)
         local message = self:GetText()
         if message and message ~= "" then
             if win.isBNet then
-                BNSendWhisper(win.bnSenderID, message)
+                C_BattleNet.SendWhisper(win.bnSenderID, message)
             else
                 C_ChatInfo.SendChatMessage(message, "WHISPER", nil, win.playerTarget)
             end
@@ -1009,10 +1009,10 @@ end
 
 function addon:RegisterChatEvents()
     -- Register chat message filters to suppress whispers handled by our windows
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER", ChatMessageEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", ChatMessageEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER", ChatMessageEventFilter)
-    ChatFrame_AddMessageEventFilter("CHAT_MSG_BN_WHISPER_INFORM", ChatMessageEventFilter)
+    ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_WHISPER", ChatMessageEventFilter)
+    ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", ChatMessageEventFilter)
+    ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_BN_WHISPER", ChatMessageEventFilter)
+    ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_BN_WHISPER_INFORM", ChatMessageEventFilter)
     
     local eventFrame = CreateFrame("Frame")
     
