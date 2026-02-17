@@ -351,22 +351,7 @@ function addon:LoadHistoryPosition()
 end
 
 function addon:ToggleHistoryFrame()
-    if not self.historyFrame then
-        self:CreateHistoryFrame()
-        self:LoadHistoryPosition()
-    end
-    
-    if self.historyFrame:IsShown() then
-        self.historyFrame:Hide()
-    else
-        -- Close recent chats frame if it's open
-        if self.recentChatsFrame and self.recentChatsFrame:IsShown() then
-            self.recentChatsFrame:Hide()
-        end
-        
-        self:RefreshHistoryList()
-        self.historyFrame:Show()
-    end
+    self:ToggleRecentChatsFrame()
 end
 
 function addon:RefreshHistoryList(filterText)

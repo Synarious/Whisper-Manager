@@ -46,6 +46,22 @@ function addon:CreateRecentChatsFrame()
     frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.title:SetPoint("TOP", 0, -10)
     frame.title:SetText("Recent Chats")
+
+    -- Search box for player name filtering
+    frame.searchBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
+    frame.searchBox:SetSize(200, 24)
+    frame.searchBox:SetPoint("TOPLEFT", 10, -52)
+    frame.searchBox:SetAutoFocus(false)
+    frame.searchBox:SetScript("OnTextChanged", function()
+        addon:RefreshRecentChats()
+    end)
+    frame.searchBox:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+    end)
+
+    frame.searchLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.searchLabel:SetPoint("LEFT", frame.searchBox, "RIGHT", 8, 0)
+    frame.searchLabel:SetText("Search")
     
     -- Combat status indicator
     frame.combatWarning = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -74,7 +90,7 @@ function addon:CreateRecentChatsFrame()
     
     -- Scroll frame for chat list (adjust top to account for combat warning)
     frame.scrollFrame = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    frame.scrollFrame:SetPoint("TOPLEFT", 10, -50)
+    frame.scrollFrame:SetPoint("TOPLEFT", 10, -80)
     frame.scrollFrame:SetPoint("BOTTOMRIGHT", -30, 10)
     
     frame.scrollChild = CreateFrame("Frame", nil, frame.scrollFrame)
@@ -117,18 +133,59 @@ function addon:RefreshRecentChats()
         WhisperManager_RecentChats = {}
     end
     
-    -- Convert to sorted array
-    local chats = {}
+    -- Convert to sorted array using both recent chat data and history data
+    local chatsByKey = {}
+
     for playerKey, data in pairs(WhisperManager_RecentChats) do
         if playerKey and data and data.lastMessageTime then
             local displayName = self:GetDisplayNameFromKey(playerKey) or "Unknown"
-            table.insert(chats, {
+            chatsByKey[playerKey] = {
                 playerKey = playerKey,
                 displayName = displayName,
                 lastMessageTime = data.lastMessageTime,
                 isRead = data.isRead, -- Can be nil, false, or true
                 isBNet = data.isBNet or false,
-            })
+                autoHideWindow = data.autoHideWindow == true,
+            }
+        end
+    end
+
+    if WhisperManager_HistoryDB then
+        for playerKey, history in pairs(WhisperManager_HistoryDB) do
+            if playerKey ~= "__schema" and type(history) == "table" and #history > 0 then
+                local existing = chatsByKey[playerKey]
+                local lastEntry = history[#history]
+                local lastMessageTime = (lastEntry and (lastEntry.t or lastEntry.timestamp)) or 0
+
+                if existing then
+                    if existing.lastMessageTime == nil or existing.lastMessageTime < lastMessageTime then
+                        existing.lastMessageTime = lastMessageTime
+                    end
+                else
+                    chatsByKey[playerKey] = {
+                        playerKey = playerKey,
+                        displayName = self:GetDisplayNameFromKey(playerKey) or "Unknown",
+                        lastMessageTime = lastMessageTime,
+                        isRead = true,
+                        isBNet = playerKey:match("^bnet_") ~= nil,
+                        autoHideWindow = false,
+                    }
+                end
+            end
+        end
+    end
+
+    local filterText = ""
+    if addon.recentChatsFrame and addon.recentChatsFrame.searchBox then
+        filterText = addon.recentChatsFrame.searchBox:GetText() or ""
+    end
+    filterText = filterText:lower()
+
+    local chats = {}
+    for _, chat in pairs(chatsByKey) do
+        local name = (chat.displayName or ""):lower()
+        if filterText == "" or name:find(filterText, 1, true) then
+            table.insert(chats, chat)
         end
     end
     
@@ -143,11 +200,16 @@ function addon:RefreshRecentChats()
         local btn = CreateFrame("Button", nil, scrollChild)
         btn:SetSize(260, 40)
         btn:SetPoint("TOPLEFT", 0, -yOffset)
+        btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         
         -- Background
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
-        btn.bg:SetColorTexture(0.2, 0.2, 0.2, 0.5)
+        if chat.autoHideWindow then
+            btn.bg:SetColorTexture(0.45, 0.4, 0.1, 0.55)
+        else
+            btn.bg:SetColorTexture(0.2, 0.2, 0.2, 0.5)
+        end
         
         -- Highlight
         btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
@@ -155,7 +217,7 @@ function addon:RefreshRecentChats()
         btn.highlight:SetColorTexture(0.3, 0.3, 0.3, 0.5)
         
         -- Unread Indicator (Left border strip)
-        if chat.isRead == false then
+        if chat.isRead == false and not chat.autoHideWindow then
             btn.unreadIndicator = btn:CreateTexture(nil, "OVERLAY")
             btn.unreadIndicator:SetPoint("LEFT", 0, 0)
             btn.unreadIndicator:SetSize(4, 40)
@@ -171,8 +233,9 @@ function addon:RefreshRecentChats()
         btn.nameText:SetText(chat.displayName or "Unknown")
         btn.nameText:SetJustifyH("LEFT")
         
-        -- Desaturate if read
-        if chat.isRead ~= false then
+        if chat.autoHideWindow then
+            btn.nameText:SetTextColor(1.0, 0.9, 0.2)
+        elseif chat.isRead ~= false then
             btn.nameText:SetTextColor(0.6, 0.6, 0.6)
         else
             btn.nameText:SetTextColor(1, 1, 1)
@@ -185,7 +248,18 @@ function addon:RefreshRecentChats()
         btn.timeText:SetTextColor(0.7, 0.7, 0.7)
         
         -- Click to open
-        btn:SetScript("OnClick", function()
+        btn:SetScript("OnClick", function(_, button)
+            if button == "RightButton" then
+                local newState = not addon:IsChatAutoHidden(chat.playerKey)
+                addon:SetChatAutoHidden(chat.playerKey, newState)
+                if newState then
+                    addon:Print("|cffffff00Auto-hide enabled|r for " .. (chat.displayName or "Unknown") .. ".")
+                else
+                    addon:Print("|cff00ff00Auto-hide disabled|r for " .. (chat.displayName or "Unknown") .. ".")
+                end
+                return
+            end
+
             addon:DebugMessage("[RecentChats] Click handler called for playerKey:", chat.playerKey)
             
             -- Mark as read immediately on click
@@ -260,6 +334,8 @@ function addon:LoadRecentChatsPosition()
 end
 
 function addon:ToggleRecentChatsFrame()
+    self:CloseAllWindows()
+
     if not self.recentChatsFrame then
         self:CreateRecentChatsFrame()
         self:LoadRecentChatsPosition()
@@ -268,11 +344,6 @@ function addon:ToggleRecentChatsFrame()
     if self.recentChatsFrame:IsShown() then
         self.recentChatsFrame:Hide()
     else
-        -- Close history frame if it's open
-        if self.historyFrame and self.historyFrame:IsShown() then
-            self.historyFrame:Hide()
-        end
-        
         self:RefreshRecentChats()
         self.recentChatsFrame:Show()
     end

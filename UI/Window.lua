@@ -22,6 +22,12 @@ combatFrame:SetScript("OnEvent", function(self, event)
         end
     elseif event == "PLAYER_REGEN_DISABLED" then
         addon:DebugMessage("Entered combat - queueing frame operations")
+        if addon.CloseAllWindows then
+            addon:CloseAllWindows()
+        end
+        if addon.combatQueue then
+            wipe(addon.combatQueue)
+        end
     end
 end)
 

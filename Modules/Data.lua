@@ -37,6 +37,10 @@ end
 function addon:AddMessageToHistory(playerKey, displayName, author, message, classToken)
     -- SCHEMA PROTECTION: Block if validation failed
     if not addon:IsSafeToOperate() then return end
+    if InCombatLockdown() then
+        addon:DebugMessage("In combat - skipping AddMessageToHistory write")
+        return
+    end
     
     if not playerKey then return end
     if not WhisperManager_HistoryDB then WhisperManager_HistoryDB = {} end
@@ -320,6 +324,10 @@ end
 function addon:UpdateRecentChat(playerKey, displayName, isBNet, author)
     -- SCHEMA PROTECTION: Block if validation failed
     if not addon:IsSafeToOperate() then return end
+    if InCombatLockdown() then
+        addon:DebugMessage("In combat - skipping UpdateRecentChat write")
+        return
+    end
     
     if not playerKey then return end
     
@@ -347,7 +355,7 @@ function addon:UpdateRecentChat(playerKey, displayName, isBNet, author)
     else
         -- Check if window is focused
         local win = addon.windows[playerKey]
-        if win and win:IsShown() and win.Input and win.Input:HasFocus() then
+        if win and win:IsShown() then
             isRead = true
         end
     end
@@ -381,6 +389,41 @@ function addon:MarkChatAsRead(playerKey)
         if addon.recentChatsFrame and addon.recentChatsFrame:IsShown() then
             addon:RefreshRecentChats()
         end
+    end
+end
+
+function addon:IsChatAutoHidden(playerKey)
+    if not playerKey or not WhisperManager_RecentChats then
+        return false
+    end
+
+    local chatData = WhisperManager_RecentChats[playerKey]
+    return chatData and chatData.autoHideWindow == true or false
+end
+
+function addon:SetChatAutoHidden(playerKey, shouldHide)
+    if not playerKey then return end
+
+    if not WhisperManager_RecentChats then
+        WhisperManager_RecentChats = {}
+    end
+
+    if not WhisperManager_RecentChats[playerKey] then
+        WhisperManager_RecentChats[playerKey] = {
+            lastMessageTime = time(),
+            isRead = true,
+            isBNet = playerKey:match("^bnet_") ~= nil,
+        }
+    end
+
+    WhisperManager_RecentChats[playerKey].autoHideWindow = shouldHide == true
+
+    if shouldHide then
+        addon:CloseWindow(playerKey)
+    end
+
+    if addon.recentChatsFrame and addon.recentChatsFrame:IsShown() then
+        addon:RefreshRecentChats()
     end
 end
 

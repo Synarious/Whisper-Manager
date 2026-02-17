@@ -563,96 +563,38 @@ function addon:SetupHooks()
     end
     addon.__hooksInstalled = true
     
-    -- Hook whisper command extraction - use editbox mixin method
-    local function OnExtractTellTarget(editBox, text)
-        local target = addon:ExtractWhisperTarget(text)
-        if not target then return end
-        addon:DebugMessage("Hooked /w via ExtractTellTarget. Target:", target)
-        
-        if addon:OpenConversation(target) then
-            ChatFrameUtil.DeactivateChat(editBox)
-        end
-    end
-    
-    -- Hook the mixin method on ChatFrameEditBox
-    hooksecurefunc(ChatFrameEditBoxMixin, "ExtractTellTarget", OnExtractTellTarget)
-
-    -- Hook chat frame opening
-    hooksecurefunc(ChatFrameUtil, "OpenChat", function(text, chatFrame, desiredCursorPosition)
-        -- Don't trigger if we're closing a window
-        if addon.__closingWindow then
-            addon:DebugMessage("OpenChat ignored - window closing")
-            return
-        end
-        
-        local editBox = ChatFrameUtil.ChooseBoxForSend(chatFrame)
-        if not editBox then return end
-
-        local chatType = editBox:GetAttribute("chatType")
-        if chatType ~= "WHISPER" then
-            return
-        end
-
-        -- Only intercept if text contains /w or /whisper command
-        if not text or not text:match("^/[Ww]") then
-            addon:DebugMessage("OpenChat ignored - no /w command in text")
-            return
-        end
-
-        local target = editBox:GetAttribute("tellTarget")
-        if not target or target == "" then return end
-
-        if editBox.__WhisperManagerHandled then return end
-        editBox.__WhisperManagerHandled = true
-
-        addon:DebugMessage("OpenChat captured whisper target:", target)
-
-        if addon:OpenConversation(target) then
-            ChatFrameUtil.DeactivateChat(editBox)
-        end
-        
-        C_Timer.After(0.1, function()
-            editBox.__WhisperManagerHandled = nil
-        end)
-    end)
-
-    -- Hook reply tell
-    hooksecurefunc(ChatFrameUtil, "ReplyTell", function(chatFrame)
-        local target = ChatFrameUtil.GetLastTellTarget()
-        if target and addon:OpenConversation(target) then
-            local activeEditBox = ChatFrameUtil.ChooseBoxForSend()
-            if activeEditBox then
-                ChatFrameUtil.DeactivateChat(activeEditBox)
-            end
-        end
-    end)
-
     -- Hook the default Whisper menu action so it opens WhisperManager windows
     hooksecurefunc(ChatFrameUtil, "SendTell", function(name, chatFrame)
         if not name or name == "" then return end
-        -- Open conversation. If successful, close any opened chat editbox to avoid duplicate UI
-        local ok = false
-        pcall(function() ok = addon:OpenConversation(name) end)
-        if ok then
-            local editBox = ChatFrameUtil.ChooseBoxForSend()
-            if editBox and editBox:IsShown() then
-                ChatFrameUtil.DeactivateChat(editBox)
-            end
+        local playerKey = addon:ResolvePlayerIdentifiers(name)
+        if playerKey and addon:IsChatAutoHidden(playerKey) then
+            return
         end
+        pcall(function() addon:OpenConversation(name) end)
     end)
 
     -- Hook BNet whisper default action similarly
     hooksecurefunc(ChatFrameUtil, "SendBNetTell", function(tokenizedName)
         if not tokenizedName or tokenizedName == "" then return end
-        local ok = false
-        -- SendBNetTell may pass a BattleTag or name; try to open by BattleTag when possible
-        pcall(function() ok = addon:OpenBNetConversation(tokenizedName) end)
-        if ok then
-            local editBox = ChatFrameUtil.ChooseBoxForSend()
-            if editBox and editBox:IsShown() then
-                ChatFrameUtil.DeactivateChat(editBox)
+        local playerKey = nil
+
+        if type(tokenizedName) == "number" then
+            local accountInfo = C_BattleNet.GetAccountInfoByID(tokenizedName)
+            if accountInfo and accountInfo.battleTag then
+                playerKey = "bnet_" .. accountInfo.battleTag
+            end
+        elseif type(tokenizedName) == "string" then
+            local battleTag = tokenizedName:match("^bnet_(.+)$") or tokenizedName
+            if battleTag and battleTag:find("#", 1, true) then
+                playerKey = "bnet_" .. battleTag
             end
         end
+
+        if playerKey and addon:IsChatAutoHidden(playerKey) then
+            return
+        end
+        -- SendBNetTell may pass a BattleTag or name; try to open by BattleTag when possible
+        pcall(function() addon:OpenBNetConversation(tokenizedName) end)
     end)
 
     -- Setup context menu integration
@@ -666,6 +608,36 @@ function addon:SetupContextMenu()
     end
     addon.__contextMenuInstalled = true
     addon:DebugMessage("Context menu modification disabled: relying on default Whisper action.")
+end
+
+function addon:EnsureWhisperVisibleInDefaultTab()
+    if self.GetSetting and self:GetSetting("suppressDefaultChat") then
+        return
+    end
+
+    local chatFrame = DEFAULT_CHAT_FRAME
+    if not chatFrame then
+        return
+    end
+
+    local whisperGroups = {
+        "WHISPER",
+        "WHISPER_INFORM",
+        "BN_WHISPER",
+        "BN_WHISPER_INFORM",
+    }
+
+    for _, group in ipairs(whisperGroups) do
+        local hasGroup = false
+        if ChatFrame_ContainsMessageGroup then
+            hasGroup = ChatFrame_ContainsMessageGroup(chatFrame, group) == true
+        end
+
+        if not hasGroup and ChatFrame_AddMessageGroup then
+            ChatFrame_AddMessageGroup(chatFrame, group)
+            self:DebugMessage("Enabled chat group on default tab:", group)
+        end
+    end
 end
 
 -- Core Event Handling
@@ -703,6 +675,11 @@ function addon:RegisterCoreEvents()
             if addon.RegisterChatEvents then
                 addon:RegisterChatEvents()
             end
+
+            addon:EnsureWhisperVisibleInDefaultTab()
+            C_Timer.After(1, function()
+                addon:EnsureWhisperVisibleInDefaultTab()
+            end)
         end
     end)
 end

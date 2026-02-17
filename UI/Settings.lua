@@ -12,7 +12,7 @@ local DEFAULT_SETTINGS = {
     enableTaskbarAlert = true, -- Enable Windows taskbar alert on whisper
     
     -- Chat suppression 
-    suppressDefaultChat = true, -- Suppress whispers from default chat when handled by WhisperManager
+    suppressDefaultChat = false, -- Do not suppress whispers from default chat
     
     -- Window spawn settings
     spawnAnchorX = 450, -- X offset from center (default: screen center)
@@ -394,6 +394,153 @@ local function CreateColorAlphaPicker(parent, label, colorKey, alphaKey, x, y, a
     return colorSwatch
 end
 
+local function GetCenterOffsets(frame, parent)
+    if not frame then return 0, 0 end
+    parent = parent or UIParent
+
+    local centerX, centerY = frame:GetCenter()
+    local parentCenterX, parentCenterY = parent:GetCenter()
+    if not centerX or not centerY or not parentCenterX or not parentCenterY then
+        return 0, 0
+    end
+
+    return math.floor(centerX - parentCenterX + 0.5), math.floor(centerY - parentCenterY + 0.5)
+end
+
+function addon:UpdateSpawnPreviewStatus()
+    if not self.settingsFrame or not self.settingsFrame.spawnPreviewStatus then return end
+
+    local preview = self.spawnPreviewWindow
+    if not preview or not preview:IsShown() then
+        self.settingsFrame.spawnPreviewStatus:SetText("Example window is hidden.")
+        return
+    end
+
+    local width, height = preview:GetSize()
+    local x, y = GetCenterOffsets(preview, addon:GetOverlayParent())
+    self.settingsFrame.spawnPreviewStatus:SetText(
+        string.format("Preview X:%d  Y:%d  W:%d  H:%d", x, y, math.floor(width + 0.5), math.floor(height + 0.5))
+    )
+end
+
+function addon:CreateSpawnPreviewWindow()
+    if self.spawnPreviewWindow then
+        local x = self:GetSetting("spawnAnchorX") or 0
+        local y = self:GetSetting("spawnAnchorY") or 200
+        local w = self:GetSetting("defaultWindowWidth") or 340
+        local h = self:GetSetting("defaultWindowHeight") or 200
+        self.spawnPreviewWindow:ClearAllPoints()
+        self.spawnPreviewWindow:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER", x, y)
+        self.spawnPreviewWindow:SetSize(w, h)
+        self.spawnPreviewWindow:Show()
+        self:UpdateSpawnPreviewStatus()
+        return self.spawnPreviewWindow
+    end
+
+    local preview = CreateFrame("Frame", "WhisperManager_SpawnPreview", addon:GetOverlayParent(), "BackdropTemplate")
+    preview:SetFrameStrata("DIALOG")
+    preview:SetToplevel(true)
+    preview:SetMovable(true)
+    preview:SetResizable(true)
+    preview:SetResizeBounds(250, 100, 800, 600)
+    preview:EnableMouse(true)
+    preview:RegisterForDrag("LeftButton")
+    preview:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 }
+    })
+    preview:SetBackdropColor(0, 0, 0, 0.9)
+    preview:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+
+    preview.titleBar = CreateFrame("Frame", nil, preview, "BackdropTemplate")
+    preview.titleBar:SetPoint("TOPLEFT", 3, -3)
+    preview.titleBar:SetPoint("TOPRIGHT", -3, -3)
+    preview.titleBar:SetHeight(24)
+    preview.titleBar:SetBackdrop({ bgFile = "Interface\\ChatFrame\\ChatFrameBackground", tile = false })
+    preview.titleBar:SetBackdropColor(0, 0, 0, 0.8)
+
+    preview.title = preview.titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    preview.title:SetPoint("CENTER", 0, 0)
+    preview.title:SetText("Example Whisper Window")
+
+    preview.closeBtn = CreateFrame("Button", nil, preview, "UIPanelCloseButton")
+    preview.closeBtn:SetPoint("TOPRIGHT", -2, -2)
+    preview.closeBtn:SetSize(24, 24)
+    preview.closeBtn:SetScript("OnClick", function()
+        preview:Hide()
+    end)
+
+    preview.resizeBtn = CreateFrame("Button", nil, preview)
+    preview.resizeBtn:SetSize(16, 16)
+    preview.resizeBtn:SetPoint("BOTTOMRIGHT")
+    preview.resizeBtn:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    preview.resizeBtn:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    preview.resizeBtn:SetScript("OnMouseDown", function()
+        preview:StartSizing("BOTTOMRIGHT")
+    end)
+    preview.resizeBtn:SetScript("OnMouseUp", function()
+        preview:StopMovingOrSizing()
+        addon:UpdateSpawnPreviewStatus()
+    end)
+
+    preview:SetScript("OnDragStart", function(self)
+        self:StartMoving()
+    end)
+    preview:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        addon:UpdateSpawnPreviewStatus()
+    end)
+    preview:SetScript("OnSizeChanged", function()
+        addon:UpdateSpawnPreviewStatus()
+    end)
+    preview:SetScript("OnShow", function()
+        addon:UpdateSpawnPreviewStatus()
+    end)
+    preview:SetScript("OnHide", function()
+        addon:UpdateSpawnPreviewStatus()
+    end)
+
+    self.spawnPreviewWindow = preview
+    return self:CreateSpawnPreviewWindow()
+end
+
+function addon:SaveSpawnSettingsFromPreview()
+    if not self.spawnPreviewWindow then
+        self:CreateSpawnPreviewWindow()
+    end
+
+    local preview = self.spawnPreviewWindow
+    if not preview then return end
+
+    local width, height = preview:GetSize()
+    local x, y = GetCenterOffsets(preview, addon:GetOverlayParent())
+
+    self:SetSetting("spawnAnchorX", x)
+    self:SetSetting("spawnAnchorY", y)
+    self:SetSetting("defaultWindowWidth", math.floor(width + 0.5))
+    self:SetSetting("defaultWindowHeight", math.floor(height + 0.5))
+
+    if not WhisperManager_Config then
+        WhisperManager_Config = {}
+    end
+    WhisperManager_Config.windowPositions = {}
+    addon.sessionWindowSizes = {}
+
+    for _, win in pairs(self.windows) do
+        if win then
+            win:ClearAllPoints()
+            win:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER", x, y)
+            win:SetSize(math.floor(width + 0.5), math.floor(height + 0.5))
+        end
+    end
+
+    self:SaveSettings()
+    self:UpdateSpawnPreviewStatus()
+    self:Print("Saved example window as default whisper window size and spawn position. Previous per-chat position overrides were cleared.")
+end
+
 function addon:CreateSettingsFrame()
     local frame = CreateFrame("Frame", "WhisperManager_Settings", UIParent, "BackdropTemplate")
     frame:SetSize(500, 700)
@@ -418,6 +565,11 @@ function addon:CreateSettingsFrame()
     frame:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
             self:Hide()
+        end
+    end)
+    frame:SetScript("OnHide", function()
+        if addon.spawnPreviewWindow and addon.spawnPreviewWindow:IsShown() then
+            addon.spawnPreviewWindow:Hide()
         end
     end)
     frame:SetPropagateKeyboardInput(true)
@@ -731,125 +883,42 @@ function addon:CreateSettingsFrame()
     spawnHeader:SetText("Window Size / Postion")
     spawnHeader:SetTextColor(1, 0.82, 0)
     yOffset = yOffset - 35
-    
-    -- Spawn Anchor X
-    local spawnXLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    spawnXLabel:SetPoint("TOPLEFT", 10, yOffset)
-    spawnXLabel:SetText("Horizontal Position (X):")
-    
-    local spawnXSlider = CreateFrame("Slider", nil, scrollChild, "OptionsSliderTemplate")
-    spawnXSlider:SetPoint("TOPLEFT", 20, yOffset - 20)
-    spawnXSlider:SetWidth(400)
-    spawnXSlider:SetMinMaxValues(-960, 960)
-    spawnXSlider:SetValueStep(10)
-    spawnXSlider:SetObeyStepOnDrag(true)
-    
-    -- Set the initial value first
-    spawnXSlider:SetValue(addon:GetSetting("spawnAnchorX") or 0)
-    -- Ensure a Text FontString exists (OptionsSliderTemplate expects a named slider to create it)
-    if not spawnXSlider.Text then
-        spawnXSlider.Text = spawnXSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        spawnXSlider.Text:SetPoint("BOTTOMLEFT", spawnXSlider, "TOPLEFT", 0, 0)
-    end
-    spawnXSlider.Text:SetText("X Offset: " .. (addon:GetSetting("spawnAnchorX") or 0))
-    
-    -- Set up the callback
-    spawnXSlider:SetScript("OnValueChanged", function(self, value)
-        self.Text:SetText("X Offset: " .. math.floor(value))
-        addon:SetSetting("spawnAnchorX", math.floor(value))
+
+    local spawnInfo = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    spawnInfo:SetPoint("TOPLEFT", 10, yOffset)
+    spawnInfo:SetPoint("TOPRIGHT", -10, yOffset)
+    spawnInfo:SetJustifyH("LEFT")
+    spawnInfo:SetText("Open an example window, move and resize it, then click Save Example. Its final position and size become your default whisper window spawn settings.")
+    spawnInfo:SetTextColor(0.7, 0.7, 0.7)
+    yOffset = yOffset - 42
+
+    local openExampleBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
+    openExampleBtn:SetSize(140, 24)
+    openExampleBtn:SetPoint("TOPLEFT", 10, yOffset)
+    openExampleBtn:SetText("Open Example")
+    openExampleBtn:SetScript("OnClick", function()
+        addon:CreateSpawnPreviewWindow()
     end)
-    
-    yOffset = yOffset - 60
-    
-    -- Spawn Anchor Y
-    local spawnYLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    spawnYLabel:SetPoint("TOPLEFT", 10, yOffset)
-    spawnYLabel:SetText("Vertical Position (Y):")
-    
-    local spawnYSlider = CreateFrame("Slider", nil, scrollChild, "OptionsSliderTemplate")
-    spawnYSlider:SetPoint("TOPLEFT", 20, yOffset - 20)
-    spawnYSlider:SetWidth(400)
-    spawnYSlider:SetMinMaxValues(-540, 540)
-    spawnYSlider:SetValueStep(10)
-    spawnYSlider:SetObeyStepOnDrag(true)
-    
-    -- Set up the callback first
-    -- Set the initial value first
-    spawnYSlider:SetValue(addon:GetSetting("spawnAnchorY") or 200)
-    if not spawnYSlider.Text then
-        spawnYSlider.Text = spawnYSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        spawnYSlider.Text:SetPoint("BOTTOMLEFT", spawnYSlider, "TOPLEFT", 0, 0)
-    end
-    spawnYSlider.Text:SetText("Y Offset: " .. (addon:GetSetting("spawnAnchorY") or 200))
-    
-    -- Set up the callback
-    spawnYSlider:SetScript("OnValueChanged", function(self, value)
-        self.Text:SetText("Y Offset: " .. math.floor(value))
-        addon:SetSetting("spawnAnchorY", math.floor(value))
+
+    local saveExampleBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
+    saveExampleBtn:SetSize(140, 24)
+    saveExampleBtn:SetPoint("LEFT", openExampleBtn, "RIGHT", 12, 0)
+    saveExampleBtn:SetText("Save Example")
+    saveExampleBtn:SetScript("OnClick", function()
+        addon:SaveSpawnSettingsFromPreview()
     end)
-    
-    yOffset = yOffset - 60
-    
-    -- Window Spacing
-    -- REMOVED per user request
-    -- yOffset = yOffset - 60
-    
-    -- Default Window Width
-    local widthLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    widthLabel:SetPoint("TOPLEFT", 10, yOffset)
-    widthLabel:SetText("Default Window Width:")
-    
-    local widthSlider = CreateFrame("Slider", nil, scrollChild, "OptionsSliderTemplate")
-    widthSlider:SetPoint("TOPLEFT", 20, yOffset - 20)
-    widthSlider:SetWidth(400)
-    widthSlider:SetMinMaxValues(250, 800)
-    widthSlider:SetValueStep(10)
-    widthSlider:SetObeyStepOnDrag(true)
-    
-    -- Set up the callback first
-    -- Set the initial value first
-    widthSlider:SetValue(addon:GetSetting("defaultWindowWidth") or 340)
-    if not widthSlider.Text then
-        widthSlider.Text = widthSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        widthSlider.Text:SetPoint("BOTTOMLEFT", widthSlider, "TOPLEFT", 0, 0)
-    end
-    widthSlider.Text:SetText("Width: " .. (addon:GetSetting("defaultWindowWidth") or 340) .. " pixels")
-    
-    -- Set up the callback
-    widthSlider:SetScript("OnValueChanged", function(self, value)
-        self.Text:SetText("Width: " .. math.floor(value) .. " pixels")
-        addon:SetSetting("defaultWindowWidth", math.floor(value))
-    end)
-    
-    yOffset = yOffset - 60
-    
-    -- Default Window Height
-    local heightLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    heightLabel:SetPoint("TOPLEFT", 10, yOffset)
-    heightLabel:SetText("Default Window Height:")
-    
-    local heightSlider = CreateFrame("Slider", nil, scrollChild, "OptionsSliderTemplate")
-    heightSlider:SetPoint("TOPLEFT", 20, yOffset - 20)
-    heightSlider:SetWidth(400)
-    heightSlider:SetMinMaxValues(100, 600)
-    heightSlider:SetValueStep(10)
-    heightSlider:SetObeyStepOnDrag(true)
-    
-    -- Set the initial value first
-    heightSlider:SetValue(addon:GetSetting("defaultWindowHeight") or 200)
-    if not heightSlider.Text then
-        heightSlider.Text = heightSlider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        heightSlider.Text:SetPoint("BOTTOMLEFT", heightSlider, "TOPLEFT", 0, 0)
-    end
-    heightSlider.Text:SetText("Height: " .. (addon:GetSetting("defaultWindowHeight") or 200) .. " pixels")
-    
-    -- Set up the callback
-    heightSlider:SetScript("OnValueChanged", function(self, value)
-        self.Text:SetText("Height: " .. math.floor(value) .. " pixels")
-        addon:SetSetting("defaultWindowHeight", math.floor(value))
-    end)
-    
-    yOffset = yOffset - 70
+
+    yOffset = yOffset - 30
+
+    frame.spawnPreviewStatus = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.spawnPreviewStatus:SetPoint("TOPLEFT", 10, yOffset)
+    frame.spawnPreviewStatus:SetPoint("TOPRIGHT", -10, yOffset)
+    frame.spawnPreviewStatus:SetJustifyH("LEFT")
+    frame.spawnPreviewStatus:SetTextColor(0.8, 0.8, 0.8)
+    frame.spawnPreviewStatus:SetText("Example window is hidden.")
+    addon:UpdateSpawnPreviewStatus()
+
+    yOffset = yOffset - 40
     
     -- Appearance Settings Header
     local appearanceHeader = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -878,13 +947,6 @@ function addon:CreateSettingsFrame()
         "recentChatBackgroundAlpha", 10, yOffset, function() addon:ApplyAppearanceSettings() end)
     yOffset = yOffset - 60
     
-    -- Info text
-    local spawnInfo = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    spawnInfo:SetPoint("TOPLEFT", 10, yOffset)
-    spawnInfo:SetPoint("TOPRIGHT", -10, yOffset)
-    spawnInfo:SetJustifyH("LEFT")
-    spawnInfo:SetText("New windows spawn at the configured anchor position and cascade downward with spacing between them. Anchor offsets are saved in settings.")
-    spawnInfo:SetTextColor(0.7, 0.7, 0.7)
     yOffset = yOffset - 12
     
     -- Update scroll child height
@@ -912,27 +974,13 @@ function addon:CreateSettingsFrame()
         taskbarCheckbox:SetChecked(DEFAULT_SETTINGS.enableTaskbarAlert)
         UIDropDownMenu_SetSelectedValue(retentionDropdown, DEFAULT_SETTINGS.historyRetentionMode)
         UIDropDownMenu_Initialize(retentionDropdown, retentionDropdown.initialize)
-        spawnXSlider:SetValue(DEFAULT_SETTINGS.spawnAnchorX)
-        spawnYSlider:SetValue(DEFAULT_SETTINGS.spawnAnchorY)
-        spacingSlider:SetValue(DEFAULT_SETTINGS.windowSpacing)
-        widthSlider:SetValue(DEFAULT_SETTINGS.defaultWindowWidth)
-        heightSlider:SetValue(DEFAULT_SETTINGS.defaultWindowHeight)
-        
-        -- Update color swatches
-        local whisperReceive = DEFAULT_SETTINGS.whisperReceiveColor
-        frame.whisperReceiveColor:SetBackdropColor(whisperReceive.r, whisperReceive.g, whisperReceive.b, 1)
-        
-        local whisperSend = DEFAULT_SETTINGS.whisperSendColor
-        frame.whisperSendColor:SetBackdropColor(whisperSend.r, whisperSend.g, whisperSend.b, 1)
-        
-        local bnetReceive = DEFAULT_SETTINGS.bnetReceiveColor
-        frame.bnetReceiveColor:SetBackdropColor(bnetReceive.r, bnetReceive.g, bnetReceive.b, 1)
-        
-        local bnetSend = DEFAULT_SETTINGS.bnetSendColor
-        frame.bnetSendColor:SetBackdropColor(bnetSend.r, bnetSend.g, bnetSend.b, 1)
-        
-        local timestamp = DEFAULT_SETTINGS.timestampColor
-        frame.timestampColor:SetBackdropColor(timestamp.r, timestamp.g, timestamp.b, 1)
+
+        if addon.spawnPreviewWindow then
+            addon.spawnPreviewWindow:ClearAllPoints()
+            addon.spawnPreviewWindow:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER", DEFAULT_SETTINGS.spawnAnchorX, DEFAULT_SETTINGS.spawnAnchorY)
+            addon.spawnPreviewWindow:SetSize(DEFAULT_SETTINGS.defaultWindowWidth, DEFAULT_SETTINGS.defaultWindowHeight)
+        end
+        addon:UpdateSpawnPreviewStatus()
         
         -- Update appearance color swatches
         if frame.windowBg then
@@ -977,6 +1025,7 @@ function addon:ToggleSettingsFrame()
         self.settingsFrame:Hide()
     else
         self.settingsFrame:Show()
+        self:UpdateSpawnPreviewStatus()
         -- Refresh all window buttons when settings frame is shown
         for _, win in pairs(addon.windows) do
             if win.trp3Btn then

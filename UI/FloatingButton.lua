@@ -27,7 +27,6 @@ function addon:CreateFloatingButton()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("WhisperManager", 1, 0.82, 0)
         GameTooltip:AddLine("Left Click: Recent Chats", 1, 1, 1)
-        GameTooltip:AddLine("Right Click: History/Search", 1, 1, 1)
         GameTooltip:AddLine("SHIFT+Right Click: Settings", 0.7, 0.7, 1)
         GameTooltip:AddLine("ALT+Left Click: Move", 0.5, 0.5, 0.5)
         GameTooltip:Show()
@@ -59,8 +58,6 @@ function addon:CreateFloatingButton()
         elseif button == "RightButton" then
             if IsShiftKeyDown() then
                 addon:ToggleSettingsFrame()
-            else
-                addon:ToggleHistoryFrame()
             end
         end
     end)

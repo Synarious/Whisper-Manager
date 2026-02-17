@@ -6,59 +6,8 @@ local function ChatMessageEventFilter(self, event, msg, ...)
     if self and self._WhisperManager then
         return false
     end
-    
-    if event == "CHAT_MSG_WHISPER" then
-        -- Incoming whisper
-        local message, author = msg, (...)
-        local playerKey = addon:ResolvePlayerIdentifiers(author)
-        if playerKey then
-            local window = addon.windows[playerKey]
-            -- Suppress if we have a window for this conversation and setting is enabled
-            if window and addon:GetSetting("suppressDefaultChat") ~= false then
-                return true  -- Suppress from default chat
-            end
-        end
-    elseif event == "CHAT_MSG_WHISPER_INFORM" then
-        -- Outgoing whisper
-        local message, target = msg, (...)
-        local playerKey = addon:ResolvePlayerIdentifiers(target)
-        if playerKey then
-            local window = addon.windows[playerKey]
-            -- Suppress if we have a window for this conversation and setting is enabled
-            if window and addon:GetSetting("suppressDefaultChat") ~= false then
-                return true  -- Suppress from default chat
-            end
-        end
-    elseif event == "CHAT_MSG_BN_WHISPER" then
-        -- Incoming BNet whisper
-        local message, author, _, _, _, _, _, _, _, _, _, _, bnSenderID = msg, ...
-        if bnSenderID then
-            local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
-            if accountInfo and accountInfo.battleTag then
-                local playerKey = "bnet_" .. accountInfo.battleTag
-                local window = addon.windows[playerKey]
-                -- Suppress if we have a window for this conversation and setting is enabled
-                if window and addon:GetSetting("suppressDefaultChat") ~= false then
-                    return true  -- Suppress from default chat
-                end
-            end
-        end
-    elseif event == "CHAT_MSG_BN_WHISPER_INFORM" then
-        -- Outgoing BNet whisper
-        local message, _, _, _, _, _, _, _, _, _, _, _, bnSenderID = msg, ...
-        if bnSenderID then
-            local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
-            if accountInfo and accountInfo.battleTag then
-                local playerKey = "bnet_" .. accountInfo.battleTag
-                local window = addon.windows[playerKey]
-                -- Suppress if we have a window for this conversation and setting is enabled
-                if window and addon:GetSetting("suppressDefaultChat") ~= false then
-                    return true  -- Suppress from default chat
-                end
-            end
-        end
-    end
-    
+    -- We no longer suppress messages from the default chat frame.
+    -- Always allow messages through.
     return false
 end
 
@@ -72,13 +21,12 @@ function addon:RegisterEvents()
     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Creating event frame and registering events...")
     
 
-    -- Might be broken, as it may be ChatFrameUtils_AddMessageEventFilter
-    -- Register chat message filters to suppress whispers handled by our windows
-    ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_WHISPER", ChatMessageEventFilter)
-    ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", ChatMessageEventFilter)
-    ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_BN_WHISPER", ChatMessageEventFilter)
-    ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_BN_WHISPER_INFORM", ChatMessageEventFilter)
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Registered chat message filters")
+    -- Filtering of default chat is disabled per user request; do not register filters here.
+    -- ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_WHISPER", ChatMessageEventFilter)
+    -- ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_WHISPER_INFORM", ChatMessageEventFilter)
+    -- ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_BN_WHISPER", ChatMessageEventFilter)
+    -- ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_BN_WHISPER_INFORM", ChatMessageEventFilter)
+    -- DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Registered chat message filters")
     
     local eventFrame = CreateFrame("Frame")
     addon.__eventFrame = eventFrame
