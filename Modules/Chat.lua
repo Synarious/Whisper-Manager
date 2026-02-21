@@ -1198,7 +1198,9 @@ function addon:RegisterChatEvents()
                 addon:TriggerTaskbarAlert()
             end
 
-            if not addon:IsChatAutoHidden(playerKey) then
+            if addon:IsSilentModeEnabled() then
+                addon:DebugMessage("Silent Mode active; suppressing auto-open for incoming whisper:", tostring(author))
+            elseif not addon:IsChatAutoHidden(playerKey) then
                 addon:OpenConversation(author)
             end
             local window = addon.windows[playerKey]
@@ -1232,7 +1234,9 @@ function addon:RegisterChatEvents()
             addon:AddMessageToHistory(playerKey, displayName or resolvedTarget, fullPlayerName, message, playerClass)
             addon:UpdateRecentChat(playerKey, displayName or resolvedTarget, false)
 
-            if not addon:IsChatAutoHidden(playerKey) then
+            if addon:IsSilentModeEnabled() then
+                addon:DebugMessage("Silent Mode active; suppressing auto-open for outgoing whisper:", tostring(resolvedTarget))
+            elseif not addon:IsChatAutoHidden(playerKey) then
                 addon:OpenConversation(resolvedTarget)
             end
             local window = addon.windows[playerKey]
@@ -1265,7 +1269,9 @@ function addon:RegisterChatEvents()
                 addon:TriggerTaskbarAlert()
             end
 
-            if not addon:IsChatAutoHidden(playerKey) then
+            if addon:IsSilentModeEnabled() then
+                addon:DebugMessage("Silent Mode active; suppressing auto-open for incoming BNet whisper:", tostring(displayName))
+            elseif not addon:IsChatAutoHidden(playerKey) then
                 addon:OpenBNetConversation(bnSenderID, displayName)
             end
             local window = addon.windows[playerKey]
@@ -1297,7 +1303,9 @@ function addon:RegisterChatEvents()
             
             addon:AddMessageToHistory(playerKey, displayName, fullPlayerName, message, playerClass)
             addon:UpdateRecentChat(playerKey, displayName, true)
-            if not addon:IsChatAutoHidden(playerKey) then
+            if addon:IsSilentModeEnabled() then
+                addon:DebugMessage("Silent Mode active; suppressing auto-open for outgoing BNet whisper:", tostring(displayName))
+            elseif not addon:IsChatAutoHidden(playerKey) then
                 addon:OpenBNetConversation(bnSenderID, displayName)
             end
             local window = addon.windows[playerKey]

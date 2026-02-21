@@ -17,7 +17,11 @@ local DEFAULT_SETTINGS = {
     -- Chat mode
     chatModeEnabled = false, -- Enables in-window reply editbox and multi-window mode
 
-    -- Silent Mode settings
+    -- Startup behavior settings
+    defaultBehavior = "silent_off_chat_off", -- Startup preset for Silent/Chat mode
+    settingBehavior = "preferRemembering", -- preferRemembering | preferLoadingDefault
+
+    -- Silent Mode settings (legacy compatibility)
     silentModeEnabled = false, -- Current Silent Mode state (used when persistence is enabled)
     rememberSilentModeAcrossSessions = false, -- Persist Silent Mode state across sessions
     silentModeDefaultEnabled = false, -- Session default when persistence is disabled
@@ -83,6 +87,17 @@ local RETENTION_OPTIONS = {
     {name = "(Safe) Keep 20 recent (6 mo), delete rest 4 mo", value = "mode2", keepCount = 20, keepMonths = 6, deleteMonths = 4},
     {name = "(!Recruiter) Keep 5 recent (6 mo), delete rest 6 mo", value = "mode3", keepCount = 5, keepMonths = 6, deleteMonths = 6},
     {name = "(!Unsafe) Keep 30 recent (12 mo), delete rest 6 mo", value = "mode4", keepCount = 30, keepMonths = 12, deleteMonths = 6},
+}
+
+local DEFAULT_BEHAVIOR_OPTIONS = {
+    {name = "Silent Mode Enabled | Chat Mode Enabled", value = "silent_on_chat_on"},
+    {name = "Silent Mode Disabled | Chat Mode Disabled", value = "silent_off_chat_off"},
+    {name = "Silent Mode Enabled | Chat Mode Disabled", value = "silent_on_chat_off"},
+}
+
+local SETTING_BEHAVIOR_OPTIONS = {
+    {name = "Prefer Remembering", value = "preferRemembering"},
+    {name = "Prefer Loading Default", value = "preferLoadingDefault"},
 }
 
 function addon:LoadSettings()
@@ -795,39 +810,53 @@ function addon:CreateSettingsFrame()
 
     yOffset = yOffset - 34
 
-    -- Remember Silent Mode across sessions
-    local rememberSilentModeCheckbox = CreateFrame("CheckButton", nil, scrollChild, "UICheckButtonTemplate")
-    rememberSilentModeCheckbox:SetPoint("TOPLEFT", 25, yOffset)
-    rememberSilentModeCheckbox:SetSize(24, 24)
-    rememberSilentModeCheckbox:SetChecked(addon:GetSetting("rememberSilentModeAcrossSessions"))
+    -- Default Behavior dropdown
+    local defaultBehaviorLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    defaultBehaviorLabel:SetPoint("TOPLEFT", 10, yOffset)
+    defaultBehaviorLabel:SetText("Default Behavior:")
 
-    local rememberSilentModeLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    rememberSilentModeLabel:SetPoint("LEFT", rememberSilentModeCheckbox, "RIGHT", 5, 0)
-    rememberSilentModeLabel:SetText("Remember Silent Mode across sessions (toggle mode with ALT+Right Click on floating button)")
-
-    rememberSilentModeCheckbox:SetScript("OnClick", function(self)
-        local shouldRemember = self:GetChecked() == true
-        addon:SetSetting("rememberSilentModeAcrossSessions", shouldRemember)
-        if shouldRemember then
-            addon:SetSetting("silentModeEnabled", addon:IsSilentModeEnabled())
+    local defaultBehaviorDropdown = CreateFrame("Frame", "WhisperManager_DefaultBehaviorDropdown", scrollChild, "UIDropDownMenuTemplate")
+    defaultBehaviorDropdown:SetPoint("LEFT", defaultBehaviorLabel, "RIGHT", 6, 0)
+    UIDropDownMenu_SetWidth(defaultBehaviorDropdown, 280)
+    UIDropDownMenu_Initialize(defaultBehaviorDropdown, function(self, level)
+        for _, option in ipairs(DEFAULT_BEHAVIOR_OPTIONS) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = option.name
+            info.value = option.value
+            info.func = function(self)
+                addon:SetSetting("defaultBehavior", self.value)
+                UIDropDownMenu_SetSelectedValue(defaultBehaviorDropdown, self.value)
+            end
+            info.checked = (addon:GetSetting("defaultBehavior") == option.value)
+            UIDropDownMenu_AddButton(info, level)
         end
     end)
+    UIDropDownMenu_SetSelectedValue(defaultBehaviorDropdown, addon:GetSetting("defaultBehavior"))
 
     yOffset = yOffset - 34
 
-    -- Default Silent Mode when not remembered
-    local silentModeDefaultCheckbox = CreateFrame("CheckButton", nil, scrollChild, "UICheckButtonTemplate")
-    silentModeDefaultCheckbox:SetPoint("TOPLEFT", 25, yOffset)
-    silentModeDefaultCheckbox:SetSize(24, 24)
-    silentModeDefaultCheckbox:SetChecked(addon:GetSetting("silentModeDefaultEnabled"))
+    -- Setting Behavior dropdown
+    local settingBehaviorLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    settingBehaviorLabel:SetPoint("TOPLEFT", 10, yOffset)
+    settingBehaviorLabel:SetText("Setting Behavior:")
 
-    local silentModeDefaultLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    silentModeDefaultLabel:SetPoint("LEFT", silentModeDefaultCheckbox, "RIGHT", 5, 0)
-    silentModeDefaultLabel:SetText("Default Silent Mode for new sessions")
-
-    silentModeDefaultCheckbox:SetScript("OnClick", function(self)
-        addon:SetSetting("silentModeDefaultEnabled", self:GetChecked() == true)
+    local settingBehaviorDropdown = CreateFrame("Frame", "WhisperManager_SettingBehaviorDropdown", scrollChild, "UIDropDownMenuTemplate")
+    settingBehaviorDropdown:SetPoint("LEFT", settingBehaviorLabel, "RIGHT", 12, 0)
+    UIDropDownMenu_SetWidth(settingBehaviorDropdown, 220)
+    UIDropDownMenu_Initialize(settingBehaviorDropdown, function(self, level)
+        for _, option in ipairs(SETTING_BEHAVIOR_OPTIONS) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = option.name
+            info.value = option.value
+            info.func = function(self)
+                addon:SetSetting("settingBehavior", self.value)
+                UIDropDownMenu_SetSelectedValue(settingBehaviorDropdown, self.value)
+            end
+            info.checked = (addon:GetSetting("settingBehavior") == option.value)
+            UIDropDownMenu_AddButton(info, level)
+        end
     end)
+    UIDropDownMenu_SetSelectedValue(settingBehaviorDropdown, addon:GetSetting("settingBehavior"))
 
     yOffset = yOffset - 34
 
@@ -1019,8 +1048,10 @@ function addon:CreateSettingsFrame()
         UIDropDownMenu_Initialize(channelDropdown, channelDropdown.initialize)
         taskbarCheckbox:SetChecked(DEFAULT_SETTINGS.enableTaskbarAlert)
         addon:InitializeSilentModeState()
-        rememberSilentModeCheckbox:SetChecked(DEFAULT_SETTINGS.rememberSilentModeAcrossSessions)
-        silentModeDefaultCheckbox:SetChecked(DEFAULT_SETTINGS.silentModeDefaultEnabled)
+        UIDropDownMenu_SetSelectedValue(defaultBehaviorDropdown, DEFAULT_SETTINGS.defaultBehavior)
+        UIDropDownMenu_Initialize(defaultBehaviorDropdown, defaultBehaviorDropdown.initialize)
+        UIDropDownMenu_SetSelectedValue(settingBehaviorDropdown, DEFAULT_SETTINGS.settingBehavior)
+        UIDropDownMenu_Initialize(settingBehaviorDropdown, settingBehaviorDropdown.initialize)
         UIDropDownMenu_SetSelectedValue(retentionDropdown, DEFAULT_SETTINGS.historyRetentionMode)
         UIDropDownMenu_Initialize(retentionDropdown, retentionDropdown.initialize)
 

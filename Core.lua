@@ -561,17 +561,107 @@ function addon:TrimWhitespace(value)
     return trimmed
 end
 
-function addon:InitializeSilentModeState()
-    local rememberAcrossSessions = self:GetSetting("rememberSilentModeAcrossSessions") == true
-    local defaultEnabled = self:GetSetting("silentModeDefaultEnabled") == true
-
-    if rememberAcrossSessions then
-        self.__silentModeEnabled = self:GetSetting("silentModeEnabled") == true
-    else
-        self.__silentModeEnabled = defaultEnabled
+function addon:ResolveDefaultBehaviorPreset(preset)
+    if preset == "silent_on_chat_on" then
+        return true, true
+    elseif preset == "silent_off_chat_off" then
+        return false, false
+    elseif preset == "silent_on_chat_off" then
+        return true, false
     end
 
-    self:DebugMessage("Silent Mode initialized. remember=", tostring(rememberAcrossSessions), "default=", tostring(defaultEnabled), "active=", tostring(self.__silentModeEnabled))
+    -- Backward compatibility for previously saved values.
+    if preset == "silent_off_chat_on" then
+        return false, true
+    elseif preset == "silent_on_keep_chat" then
+        return true, self:GetSetting("chatModeEnabled") == true
+    end
+
+    return false, false
+end
+
+function addon:GetDefaultBehaviorLabel(preset)
+    local key = preset or self:GetSetting("defaultBehavior") or "silent_off_chat_off"
+    if key == "silent_on_chat_on" then
+        return "Silent ON | Chat ON"
+    elseif key == "silent_off_chat_off" then
+        return "Silent OFF | Chat OFF"
+    elseif key == "silent_on_chat_off" then
+        return "Silent ON | Chat OFF"
+    end
+    return "Silent OFF | Chat OFF"
+end
+
+function addon:ApplyDefaultBehaviorPreset(preset, suppressOutput)
+    local targetPreset = preset or self:GetSetting("defaultBehavior") or "silent_off_chat_off"
+    local silentEnabled, chatEnabled = self:ResolveDefaultBehaviorPreset(targetPreset)
+
+    self:SetSetting("defaultBehavior", targetPreset)
+    self.__silentModeEnabled = silentEnabled == true
+    self:SetSetting("silentModeEnabled", self.__silentModeEnabled)
+    self:SetSetting("chatModeEnabled", chatEnabled == true)
+
+    if self.EnforceChatModeRestrictions then
+        self:EnforceChatModeRestrictions(true)
+    end
+    if self.ApplyChatModeToWindows then
+        self:ApplyChatModeToWindows()
+    end
+
+    if not suppressOutput then
+        self:Print("Default Behavior set to " .. self:GetDefaultBehaviorLabel(targetPreset) .. ".")
+    end
+end
+
+function addon:CycleDefaultBehaviorPreset()
+    local order = {
+        "silent_on_chat_on",
+        "silent_off_chat_off",
+        "silent_on_chat_off",
+    }
+
+    local current = self:GetSetting("defaultBehavior")
+    local currentIndex = 0
+    for index, value in ipairs(order) do
+        if value == current then
+            currentIndex = index
+            break
+        end
+    end
+
+    local nextIndex = (currentIndex % #order) + 1
+    local nextPreset = order[nextIndex]
+    self:ApplyDefaultBehaviorPreset(nextPreset, false)
+end
+
+function addon:InitializeSilentModeState()
+    local settingBehavior = self:GetSetting("settingBehavior") or "preferRemembering"
+    local defaultBehavior = self:GetSetting("defaultBehavior") or "silent_off_chat_off"
+
+    local silentEnabled
+    local chatEnabled
+
+    if settingBehavior == "preferLoadingDefault" then
+        silentEnabled, chatEnabled = self:ResolveDefaultBehaviorPreset(defaultBehavior)
+    else
+        silentEnabled = self:GetSetting("silentModeEnabled") == true
+        chatEnabled = self:GetSetting("chatModeEnabled") == true
+    end
+
+    self.__silentModeEnabled = silentEnabled == true
+    self:SetSetting("silentModeEnabled", self.__silentModeEnabled)
+    self:SetSetting("chatModeEnabled", chatEnabled == true)
+
+    if self.ApplyChatModeToWindows then
+        self:ApplyChatModeToWindows()
+    end
+
+    self:DebugMessage(
+        "Mode init. behavior=", tostring(settingBehavior),
+        "defaultPreset=", tostring(defaultBehavior),
+        "silent=", tostring(self.__silentModeEnabled),
+        "chat=", tostring(self:GetSetting("chatModeEnabled") == true)
+    )
 end
 
 function addon:IsSilentModeEnabled()
@@ -581,10 +671,7 @@ end
 function addon:SetSilentModeEnabled(enabled, suppressOutput)
     local isEnabled = enabled == true
     self.__silentModeEnabled = isEnabled
-
-    if self:GetSetting("rememberSilentModeAcrossSessions") then
-        self:SetSetting("silentModeEnabled", isEnabled)
-    end
+    self:SetSetting("silentModeEnabled", isEnabled)
 
     if not suppressOutput then
         if isEnabled then

@@ -28,16 +28,9 @@ function addon:CreateFloatingButton()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("WhisperManager", 1, 0.82, 0)
         GameTooltip:AddLine("Left Click: Recent Chats", 1, 1, 1)
-        if addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
-            GameTooltip:AddLine("SHIFT+Left Click: Chat Mode (ON)", 0.4, 1, 0.4)
-        else
-            GameTooltip:AddLine("SHIFT+Left Click: Chat Mode (OFF)", 1, 0.4, 0.4)
-        end
-        if addon.IsSilentModeEnabled and addon:IsSilentModeEnabled() then
-            GameTooltip:AddLine("SHIFT+Right Click: Silent Mode (ON)", 0.4, 1, 0.4)
-        else
-            GameTooltip:AddLine("SHIFT+Right Click: Silent Mode (OFF)", 1, 0.4, 0.4)
-        end
+        local modeLabel = addon.GetDefaultBehaviorLabel and addon:GetDefaultBehaviorLabel() or "Silent OFF | Chat OFF"
+        GameTooltip:AddLine("SHIFT+Left Click: Rotate Default Behavior", 0.7, 0.9, 1)
+        GameTooltip:AddLine("Current: " .. modeLabel, 0.8, 0.8, 0.8)
         GameTooltip:AddLine("ALT+Right Click: Settings", 0.7, 0.7, 1)
         GameTooltip:AddLine("ALT+Left Click: Move", 0.5, 0.5, 0.5)
         GameTooltip:Show()
@@ -60,8 +53,10 @@ function addon:CreateFloatingButton()
     
     -- Click handlers
     btn:SetScript("OnClick", function(self, button)
-        if IsShiftKeyDown() and button == "RightButton" then
-            addon:SetSilentModeEnabled(not addon:IsSilentModeEnabled())
+        if IsShiftKeyDown() and button == "LeftButton" then
+            if addon.CycleDefaultBehaviorPreset then
+                addon:CycleDefaultBehaviorPreset()
+            end
             return
         end
 
@@ -75,13 +70,7 @@ function addon:CreateFloatingButton()
         end
         
         if button == "LeftButton" then
-            if IsShiftKeyDown() then
-                if addon.ToggleChatMode then
-                    addon:ToggleChatMode()
-                end
-            else
-                addon:ToggleRecentChatsFrame()
-            end
+            addon:ToggleRecentChatsFrame()
         end
     end)
     
