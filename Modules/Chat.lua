@@ -1,21 +1,93 @@
 -- Chat window implementation
 local addon = WhisperManager
 
+local WINDOW_HISTORY_RENDER_LIMIT = 50
+
 -- Uses combatQueue from Core.lua for combat-safe operations
 
 local function UpdateWindowFrameLevels(win, baseLevel)
     addon:EnsureFrameOverlay(win)
+    if win.InputContainer then
+        addon:EnsureFrameOverlay(win.InputContainer)
+    end
 
     addon:DebugMessage("UpdateWindowFrameLevels fired for window: " .. tostring(win:GetName() or "<unnamed>") .. " baseLevel=" .. tostring(baseLevel))
     win:SetFrameLevel(baseLevel)
     
     if win.titleBar then win.titleBar:SetFrameLevel(baseLevel + 1) end
     if win.History then win.History:SetFrameLevel(baseLevel + 10) end
+    if win.InputContainer then win.InputContainer:SetFrameLevel(baseLevel + 30) end
+    if win.Input then win.Input:SetFrameLevel(baseLevel + 31) end
     if win.closeBtn then win.closeBtn:SetFrameLevel(baseLevel + 50) end
     if win.copyBtn then win.copyBtn:SetFrameLevel(baseLevel + 49) end
     if win.resizeBtn then win.resizeBtn:SetFrameLevel(baseLevel + 48) end
     if win.trp3Btn then win.trp3Btn:SetFrameLevel(baseLevel + 49) end
     if win.ginviteBtn then win.ginviteBtn:SetFrameLevel(baseLevel + 49) end
+end
+
+local function UpdateInputHeight(inputBox)
+    if not inputBox or not inputBox:IsVisible() then return end
+
+    local container = inputBox:GetParent()
+    if not container then return end
+
+    C_Timer.After(0, function()
+        if not inputBox:IsVisible() then return end
+
+        local text = inputBox:GetText() or ""
+        local font, fontSize, flags = inputBox:GetFont()
+        fontSize = fontSize or 14
+
+        local topBottomPadding = math.max(7, math.floor(fontSize / 2))
+        local minInputHeight = math.ceil(fontSize) + 4
+        local minContainerHeight = minInputHeight + (2 * topBottomPadding)
+
+        if text == "" then
+            container:SetHeight(minContainerHeight)
+            inputBox.__wm_topBottomPadding = topBottomPadding
+            inputBox:ClearAllPoints()
+            inputBox:SetPoint("TOPLEFT", container, "TOPLEFT", 8, -topBottomPadding)
+            inputBox:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, topBottomPadding)
+            return
+        end
+
+        if not inputBox.measureString then
+            inputBox.measureString = inputBox:CreateFontString(nil, "OVERLAY")
+            inputBox.measureString:Hide()
+        end
+
+        local left, right = inputBox:GetTextInsets()
+        local usableWidth = inputBox:GetWidth()
+        if left and right then
+            usableWidth = usableWidth - left - right
+        end
+        if usableWidth <= 0 then
+            usableWidth = 100
+        end
+
+        inputBox.measureString:SetFont(font, fontSize, flags)
+        inputBox.measureString:SetWidth(usableWidth)
+        inputBox.measureString:SetText(text)
+
+        local measuredLineHeight = inputBox.measureString:GetLineHeight()
+        local lineHeight = math.max(measuredLineHeight or 0, fontSize)
+        local numLines = inputBox.measureString:GetNumLines() or 1
+        if numLines < 1 then numLines = 1 end
+
+        local textHeight = math.ceil(numLines * lineHeight)
+        local maxTextHeight = 20 * lineHeight
+        if textHeight > maxTextHeight then textHeight = maxTextHeight end
+        if textHeight < minInputHeight then textHeight = minInputHeight end
+
+        local containerHeight = textHeight + (2 * topBottomPadding)
+        if containerHeight < minContainerHeight then containerHeight = minContainerHeight end
+
+        container:SetHeight(containerHeight)
+        inputBox.__wm_topBottomPadding = topBottomPadding
+        inputBox:ClearAllPoints()
+        inputBox:SetPoint("TOPLEFT", container, "TOPLEFT", 8, -topBottomPadding)
+        inputBox:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, topBottomPadding)
+    end)
 end
 
 local function GetDayKey(timestamp)
@@ -256,7 +328,27 @@ local function CreateHistoryFrame(win)
     win.History:EnableMouseWheel(true)
     
     win.History:SetScript("OnMouseWheel", function(self, delta)
-        if delta > 0 then self:ScrollUp() else self:ScrollDown() end
+        if delta > 0 then
+            self:ScrollUp()
+
+            if self.AtTop and self:AtTop() and win.playerKey and WhisperManager_HistoryDB and WhisperManager_HistoryDB[win.playerKey] then
+                local totalMessages = #WhisperManager_HistoryDB[win.playerKey]
+                local currentLimit = win.__wm_historyRenderLimit or 50
+
+                if currentLimit < totalMessages and not win.__wm_loadingOlderHistory then
+                    win.__wm_loadingOlderHistory = true
+                    win.__wm_historyRenderLimit = math.min(totalMessages, currentLimit + 50)
+                    addon:DisplayHistory(win, win.playerKey)
+                    self:ScrollToTop()
+
+                    C_Timer.After(0, function()
+                        win.__wm_loadingOlderHistory = nil
+                    end)
+                end
+            end
+        else
+            self:ScrollDown()
+        end
     end)
     
     win.History:SetScript("OnHyperlinkClick", function(self, link, text, button)
@@ -341,6 +433,101 @@ function addon:FocusWindow(window)
     window:Raise()
 end
 
+function addon:IsRestrictedChatModeInstance()
+    local inInstance, instanceType = IsInInstance()
+    if not inInstance then
+        return false
+    end
+
+    return instanceType == "party"
+        or instanceType == "raid"
+        or instanceType == "arena"
+        or instanceType == "pvp"
+end
+
+function addon:IsChatModeEnabled()
+    return self:GetSetting("chatModeEnabled") == true
+end
+
+function addon:ApplyChatModeToWindows()
+    local modeEnabled = self:IsChatModeEnabled()
+
+    for _, win in pairs(self.windows) do
+        if win and win.InputContainer then
+            if modeEnabled and win:IsShown() then
+                win.InputContainer:Show()
+                win.InputContainer:ClearAllPoints()
+                win.InputContainer:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, 1)
+                win.InputContainer:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, 1)
+                if win.Input then
+                    UpdateInputHeight(win.Input)
+                end
+            else
+                if win.Input and win.Input.HasFocus and win.Input:HasFocus() then
+                    win.Input:ClearFocus()
+                end
+                win.InputContainer:Hide()
+            end
+        end
+    end
+end
+
+function addon:EnforceChatModeRestrictions(silent)
+    local isRestricted = self:IsRestrictedChatModeInstance()
+
+    if isRestricted then
+        self:CloseAllWindows()
+    end
+
+    if self:IsChatModeEnabled() and isRestricted then
+        -- Remember that Chat Mode was enabled so we can restore it after leaving.
+        self.__chatModeRestoreRequested = true
+        self:SetSetting("chatModeEnabled", false)
+        self:SaveSettings()
+        self:ApplyChatModeToWindows()
+        if not silent then
+            self:Print("|cffff8800Chat Mode disabled in this instance type (dungeon/raid/arena/battleground).|r")
+        end
+        return false
+    end
+
+    if not isRestricted and self.__chatModeRestoreRequested then
+        self.__chatModeRestoreRequested = nil
+        self:SetSetting("chatModeEnabled", true)
+        self:SaveSettings()
+        self:ApplyChatModeToWindows()
+        if not silent then
+            self:Print("|cff00ff00Chat Mode re-enabled after leaving restricted instance content.|r")
+        end
+    end
+
+    return true
+end
+
+function addon:ToggleChatMode()
+    if self:IsChatModeEnabled() then
+        -- Explicit user disable should cancel any pending auto-restore.
+        self.__chatModeRestoreRequested = nil
+        self:SetSetting("chatModeEnabled", false)
+        self:SaveSettings()
+        self:ApplyChatModeToWindows()
+        self:Print("|cffff8800Chat Mode disabled.|r |cffffff00Monitor Mode is now active.|r")
+        return false
+    end
+
+    if self:IsRestrictedChatModeInstance() then
+        self:Print("|cffff8800Chat Mode is not available in dungeons, raids, arenas, or battlegrounds.|r")
+        return false
+    end
+
+    self:SetSetting("chatModeEnabled", true)
+    self.__chatModeRestoreRequested = nil
+    self:SaveSettings()
+    self:ApplyChatModeToWindows()
+    self:Print("|cff00ff00Chat Mode enabled.|r")
+    return true
+end
+
 function addon:OpenConversation(playerName)
     if self.__closingWindow then return false end
     
@@ -353,31 +540,39 @@ function addon:OpenConversation(playerName)
 
     displayName = self:GetDisplayNameFromKey(playerKey)
     local win = self.windows[playerKey]
+
+    self:EnforceChatModeRestrictions(true)
     
     if InCombatLockdown() then
         self:DebugMessage("In combat - blocking whisper window open")
         return false
     end
     
+    local isNewWindow = false
     if not win then
         win = self:CreateWindow(playerKey, playerTarget, displayName, false)
         if not win then return false end
         self.windows[playerKey] = win
+        isNewWindow = true
     else
         win.playerTarget = playerTarget
         win.displayName = displayName
         win.playerKey = playerKey
     end
 
-    for _, otherWin in pairs(self.windows) do
-        if otherWin and otherWin ~= win and otherWin:IsShown() then
-            otherWin:Hide()
+    if not self:IsChatModeEnabled() then
+        for _, otherWin in pairs(self.windows) do
+            if otherWin and otherWin ~= win and otherWin:IsShown() then
+                otherWin:Hide()
+            end
         end
     end
 
     self:DisplayHistory(win, playerKey)
     if win.title then win.title:SetText("Whisper: " .. (displayName or playerTarget)) end
-    self:LoadWindowPosition(win)
+    if isNewWindow then
+        self:LoadWindowPosition(win)
+    end
     win:Show()
 
     self:FocusWindow(win)
@@ -397,31 +592,39 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     local playerKey = "bnet_" .. accountInfo.battleTag
     displayName = accountInfo.accountName or displayName or accountInfo.battleTag
     local win = self.windows[playerKey]
+
+    self:EnforceChatModeRestrictions(true)
     
     if InCombatLockdown() then
         self:DebugMessage("In combat - blocking BNet whisper window open")
         return false
     end
     
+    local isNewWindow = false
     if not win then
         win = self:CreateWindow(playerKey, bnSenderID, displayName, true)
         if not win then return false end
         self.windows[playerKey] = win
+        isNewWindow = true
     else
         win.bnSenderID = bnSenderID
         win.displayName = displayName
         win.playerKey = playerKey
     end
 
-    for _, otherWin in pairs(self.windows) do
-        if otherWin and otherWin ~= win and otherWin:IsShown() then
-            otherWin:Hide()
+    if not self:IsChatModeEnabled() then
+        for _, otherWin in pairs(self.windows) do
+            if otherWin and otherWin ~= win and otherWin:IsShown() then
+                otherWin:Hide()
+            end
         end
     end
     
     self:DisplayHistory(win, playerKey)
     if win.title then win.title:SetText("BNet: " .. displayName) end
-    self:LoadWindowPosition(win)
+    if isNewWindow then
+        self:LoadWindowPosition(win)
+    end
     win:Show()
     self:FocusWindow(win)
     self:UpdateRecentChat(playerKey, displayName, true)
@@ -489,6 +692,9 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     win:SetScript("OnHide", function(self)
         addon:SaveWindowPosition(self, false)
+        if self.InputContainer then
+            self.InputContainer:Hide()
+        end
         if not InCombatLockdown() then
             for _, w in pairs(addon.windows) do
                 if w:IsShown() and w ~= self then
@@ -501,9 +707,21 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     win:SetScript("OnShow", function(self)
         addon:EnsureFrameOverlay(self)
-        addon:LoadWindowPosition(self)
         addon:FocusWindow(self)
         if self.playerKey then addon:MarkChatAsRead(self.playerKey) end
+        if self.InputContainer then
+            if addon:IsChatModeEnabled() then
+                self.InputContainer:Show()
+                self.InputContainer:ClearAllPoints()
+                self.InputContainer:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, 1)
+                self.InputContainer:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, 1)
+                if self.Input then
+                    UpdateInputHeight(self.Input)
+                end
+            else
+                self.InputContainer:Hide()
+            end
+        end
         UpdateWindowFrameLevels(self, addon.nextFrameLevel)
     end)
     
@@ -535,6 +753,146 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     CreateTitleBar(win, displayName, baseLevel)
     CreateButtons(win, baseLevel)
     CreateHistoryFrame(win)
+
+    local containerName = frameName .. "InputContainer"
+    win.InputContainer = CreateFrame("Frame", containerName, addon:GetOverlayParent(), "BackdropTemplate")
+    win.InputContainer:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, 1)
+    win.InputContainer:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, 1)
+    win.InputContainer:SetFrameStrata("DIALOG")
+    win.InputContainer:SetFrameLevel(baseLevel + 30)
+    win.InputContainer:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = false,
+        edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 }
+    })
+    local inputColor = addon:GetSetting("inputBoxColor") or {r = 0, g = 0, b = 0}
+    local inputAlpha = addon:GetSetting("inputBoxAlpha") or 0.9
+    win.InputContainer:SetBackdropColor(inputColor.r, inputColor.g, inputColor.b, inputAlpha)
+    win.InputContainer:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+    win.InputContainer:SetToplevel(true)
+
+    local inputName = frameName .. "Input"
+    win.Input = CreateFrame("EditBox", inputName, win.InputContainer)
+    win.Input:SetFrameLevel(baseLevel + 31)
+    win.Input:SetPoint("TOPLEFT", win.InputContainer, "TOPLEFT", 8, 0)
+    win.Input:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -8, 0)
+    win.Input:SetMultiLine(true)
+    win.Input:SetAutoFocus(false)
+    win.Input:SetHistoryLines(32)
+    win.Input:SetMaxLetters(addon.CHAT_MAX_LETTERS)
+    win.Input:SetAltArrowKeyMode(true)
+
+    local inputFontPath = addon:GetSetting("fontFamily") or "Fonts\\FRIZQT__.TTF"
+    local inputSize = addon:GetSetting("inputFontSize") or 14
+    local _, _, inputFlags = ChatFontNormal:GetFont()
+    win.Input:SetFont(inputFontPath, inputSize, inputFlags or "")
+    win.Input:SetTextColor(1, 1, 1, 1)
+
+    local _, fontHeight = win.Input:GetFont()
+    fontHeight = fontHeight or 14
+    local topBottomPadding = math.max(7, math.floor(fontHeight / 2))
+    local initialInputHeight = math.ceil(fontHeight) + 4
+    local initialContainerHeight = initialInputHeight + (2 * topBottomPadding)
+    win.Input:SetHeight(initialInputHeight)
+    win.InputContainer:SetHeight(initialContainerHeight)
+    win.Input.__wm_topBottomPadding = topBottomPadding
+    win.Input:ClearAllPoints()
+    win.Input:SetPoint("TOPLEFT", win.InputContainer, "TOPLEFT", 8, -topBottomPadding)
+    win.Input:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -8, -topBottomPadding)
+
+    win.Input:SetScript("OnHyperlinkLeave", function(self)
+        GameTooltip:Hide()
+    end)
+
+    win.Input:SetScript("OnMouseDown", function(self)
+        addon:FocusWindow(win)
+    end)
+    win.Input:SetScript("OnEditFocusGained", function(self)
+        addon:SetEditBoxFocus(self)
+        if win.playerKey then
+            addon:MarkChatAsRead(win.playerKey)
+        end
+    end)
+    win.Input:SetScript("OnEditFocusLost", function(self)
+        addon:SetEditBoxFocus(nil)
+    end)
+
+    local inputCount = win.InputContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local countYOffset = -math.max(4, math.floor((win.Input.__wm_topBottomPadding or 7) / 2))
+    inputCount:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -8, countYOffset)
+    inputCount:SetTextColor(0.6, 0.6, 0.6)
+    inputCount:SetText("0/" .. addon.CHAT_MAX_LETTERS)
+
+    win.Input:SetScript("OnEnterPressed", function(self)
+        local message = self:GetText()
+        if not message or message == "" then
+            return
+        end
+
+        local sent = false
+        if win.isBNet then
+            if win.bnSenderID then
+                C_BattleNet.SendWhisper(win.bnSenderID, message)
+                sent = true
+            else
+                addon:Print("|cffff8800Unable to determine Battle.net target for this whisper.|r")
+            end
+        else
+            local target = win.playerTarget
+            if not target or target == "" then
+                if win.playerKey and win.playerKey:match("^c_.+") then
+                    target = win.playerKey:sub(3)
+                elseif win.displayName and win.displayName ~= "" then
+                    target = win.displayName
+                end
+            end
+
+            if not target or target == "" then
+                addon:Print("|cffff8800Unable to determine whisper target for this window.|r")
+            else
+                win.playerTarget = target
+                C_ChatInfo.SendChatMessage(message, "WHISPER", nil, target)
+                sent = true
+            end
+        end
+
+        if sent then
+            self:SetText("")
+            UpdateInputHeight(self)
+        end
+    end)
+
+    win.Input:SetScript("OnTextChanged", function(self)
+        local len = self:GetNumLetters()
+        inputCount:SetText(len .. "/" .. addon.CHAT_MAX_LETTERS)
+        if len >= addon.CHAT_MAX_LETTERS - 15 then
+            inputCount:SetTextColor(1.0, 0.3, 0.3)
+        elseif len >= addon.CHAT_MAX_LETTERS - 50 then
+            inputCount:SetTextColor(1.0, 0.82, 0)
+        else
+            inputCount:SetTextColor(0.6, 0.6, 0.6)
+        end
+        UpdateInputHeight(self)
+    end)
+
+    win.Input:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+        if not InCombatLockdown() then
+            win:Hide()
+        else
+            addon:Print("|cffff8800Cannot close window during combat. Please try again after combat ends.|r")
+        end
+    end)
+
+    win.Input:SetScript("OnSizeChanged", function(self)
+        UpdateInputHeight(self)
+    end)
+
+    if _G.Misspelled and _G.Misspelled.WireUpEditBox then
+        _G.Misspelled:WireUpEditBox(win.Input)
+    end
     
     -- Hook up button visibility updates on show
     local function UpdateLevelsOnShow() UpdateWindowFrameLevels(win, addon.nextFrameLevel) end
@@ -545,6 +903,10 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     self.windows[playerKey] = win
     addon:LoadWindowPosition(win)
     addon:LoadWindowHistory(win)
+
+    if not addon:IsChatModeEnabled() then
+        win.InputContainer:Hide()
+    end
     
     UpdateWindowFrameLevels(win, baseLevel)
     
@@ -565,8 +927,14 @@ function addon:LoadWindowHistory(win)
     end
     
     local history = WhisperManager_HistoryDB[playerKey]
+    local historyCount = #history
+    local startIndex = 1
+    if historyCount > WINDOW_HISTORY_RENDER_LIMIT then
+        startIndex = historyCount - WINDOW_HISTORY_RENDER_LIMIT + 1
+    end
     
-    for i, entry in ipairs(history) do
+    for i = startIndex, historyCount do
+        local entry = history[i]
         local timestamp = entry.t or entry.timestamp
         local author = entry.a or entry.author
         local message = entry.m or entry.message
@@ -654,9 +1022,21 @@ function addon:SaveWindowPosition(window, saveSize)
     
     -- Initialize session storage if needed
     if not addon.sessionWindowSizes then addon.sessionWindowSizes = {} end
+    if not addon.sessionWindowPositions then addon.sessionWindowPositions = {} end
 
     local playerKey = window.playerKey
     local width, height = window:GetSize()
+
+    -- Save current position to session storage
+    local parent = addon:GetOverlayParent()
+    local centerX, centerY = window:GetCenter()
+    local parentCenterX, parentCenterY = parent and parent:GetCenter()
+    if centerX and centerY and parentCenterX and parentCenterY and playerKey then
+        addon.sessionWindowPositions[playerKey] = {
+            x = centerX - parentCenterX,
+            y = centerY - parentCenterY,
+        }
+    end
 
     -- Save size to session storage only if explicitly requested
     if saveSize then
@@ -673,8 +1053,16 @@ function addon:LoadWindowPosition(window)
     local playerKey = window.playerKey
     local spawnX = addon:GetSetting("spawnAnchorX") or 0
     local spawnY = addon:GetSetting("spawnAnchorY") or 200
+
+    -- Prefer session position for this window; fallback to configured spawn point
+    local posX, posY = spawnX, spawnY
+    if addon.sessionWindowPositions and addon.sessionWindowPositions[playerKey] then
+        posX = addon.sessionWindowPositions[playerKey].x or spawnX
+        posY = addon.sessionWindowPositions[playerKey].y or spawnY
+    end
+
     window:ClearAllPoints()
-    window:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER", spawnX, spawnY)
+    window:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER", posX, posY)
 
     -- 2. Restore Size (Session > Default)
     local width, height
@@ -774,6 +1162,8 @@ function addon:RegisterChatEvents()
     eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER")
     eventFrame:RegisterEvent("CHAT_MSG_BN_WHISPER_INFORM")
     eventFrame:RegisterEvent("PLAYER_STARTED_MOVING")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "PLAYER_STARTED_MOVING" then
@@ -781,6 +1171,8 @@ function addon:RegisterChatEvents()
             if addon.isFlashing then
                 addon:StopTaskbarAlert()
             end
+        elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+            addon:EnforceChatModeRestrictions(false)
         elseif event == "CHAT_MSG_WHISPER" then
             local message, author, _, _, _, _, _, _, _, _, _, guid = ...
             local playerKey, _, displayName = addon:ResolvePlayerIdentifiers(author)

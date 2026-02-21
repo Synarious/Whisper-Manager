@@ -1,6 +1,20 @@
 -- Dialogs.lua - Popup dialogs and context menus
 local addon = WhisperManager;
 
+local function FocusWindowInputIfChatMode(playerKey)
+    if not playerKey then return end
+    if not (addon.IsChatModeEnabled and addon:IsChatModeEnabled()) then return end
+
+    C_Timer.After(0, function()
+        local win = addon.windows and addon.windows[playerKey]
+        if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
+            addon:FocusWindow(win)
+            win.Input:SetFocus()
+            addon:SetEditBoxFocus(win.Input)
+        end
+    end)
+end
+
 --- Open a context menu for a player
 function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnSenderID)
     if type(owner) == "string" or owner == nil then
@@ -16,7 +30,13 @@ function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnS
         end
 
         if not isBNet and playerName and playerName ~= "" then
-            rootDescription:CreateButton(WHISPER, function() addon:OpenConversation(playerName) end)
+            rootDescription:CreateButton(WHISPER, function()
+                local opened = addon:OpenConversation(playerName)
+                if opened then
+                    local playerKey = addon:ResolvePlayerIdentifiers(playerName)
+                    FocusWindowInputIfChatMode(playerKey)
+                end
+            end)
             rootDescription:CreateButton(INVITE, function() C_PartyInfo.InviteUnit(playerName) end)
             rootDescription:CreateButton("Export Chat", function() 
                 local playerKey = addon:NormalizePlayerKey(playerName)
@@ -33,7 +53,15 @@ function addon:OpenPlayerContextMenu(owner, playerName, displayName, isBNet, bnS
                 if guid then C_ReportSystem.OpenReportPlayerDialog(guid, playerName) end
             end)
         elseif isBNet and bnSenderID then
-            rootDescription:CreateButton(WHISPER, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
+            rootDescription:CreateButton(WHISPER, function()
+                local opened = addon:OpenBNetConversation(bnSenderID, displayName)
+                if opened then
+                    local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
+                    if accountInfo and accountInfo.battleTag then
+                        FocusWindowInputIfChatMode("bnet_" .. accountInfo.battleTag)
+                    end
+                end
+            end)
             rootDescription:CreateButton("Export Chat", function() 
                 local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
                 if accountInfo and accountInfo.battleTag then

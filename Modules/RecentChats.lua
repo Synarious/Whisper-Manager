@@ -62,6 +62,34 @@ function addon:CreateRecentChatsFrame()
     frame.searchLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.searchLabel:SetPoint("LEFT", frame.searchBox, "RIGHT", 8, 0)
     frame.searchLabel:SetText("Search")
+
+    -- Session-only toggle: show all history entries (can be heavy on very large histories)
+    if addon.__recentChatsShowAll == nil then
+        addon.__recentChatsShowAll = false
+    end
+
+    frame.showAllCheckbox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+    frame.showAllCheckbox:SetSize(24, 24)
+    frame.showAllCheckbox:SetPoint("TOPRIGHT", -24, -50)
+    frame.showAllCheckbox:SetChecked(addon.__recentChatsShowAll)
+    frame.showAllCheckbox:SetScript("OnClick", function(self)
+        addon.__recentChatsShowAll = self:GetChecked() == true
+        addon:RefreshRecentChats()
+    end)
+    frame.showAllCheckbox:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Show All")
+        GameTooltip:AddLine("When unchecked: only last 7 days are shown.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("Warning: enabling this may cause lag or crashes on very large histories.", 1.0, 0.3, 0.3, true)
+        GameTooltip:Show()
+    end)
+    frame.showAllCheckbox:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+    end)
+
+    frame.showAllLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    frame.showAllLabel:SetPoint("LEFT", frame.showAllCheckbox, "RIGHT", 2, 0)
+    frame.showAllLabel:SetText("All")
     
     -- Combat status indicator
     frame.combatWarning = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -181,10 +209,14 @@ function addon:RefreshRecentChats()
     end
     filterText = filterText:lower()
 
+    local showAll = addon.__recentChatsShowAll == true
+    local cutoffTime = time() - (7 * 24 * 60 * 60)
+
     local chats = {}
     for _, chat in pairs(chatsByKey) do
         local name = (chat.displayName or ""):lower()
-        if filterText == "" or name:find(filterText, 1, true) then
+        local withinWindow = showAll or ((chat.lastMessageTime or 0) >= cutoffTime)
+        if withinWindow and (filterText == "" or name:find(filterText, 1, true)) then
             table.insert(chats, chat)
         end
     end
@@ -334,7 +366,43 @@ function addon:LoadRecentChatsPosition()
 end
 
 function addon:ToggleRecentChatsFrame()
-    self:CloseAllWindows()
+    if InCombatLockdown() then
+        if self.recentChatsFrame and self.recentChatsFrame:IsShown() then
+            self.recentChatsFrame:Hide()
+            return
+        end
+
+        if not self.__pendingRecentChatsOpen then
+            self.__pendingRecentChatsOpen = true
+            table.insert(self.combatQueue, function()
+                if not addon.__pendingRecentChatsOpen then return end
+                addon.__pendingRecentChatsOpen = nil
+                if InCombatLockdown() then return end
+
+                local chatModeEnabledAfterCombat = addon.IsChatModeEnabled and addon:IsChatModeEnabled()
+                if not chatModeEnabledAfterCombat then
+                    addon:CloseAllWindows()
+                end
+
+                if not addon.recentChatsFrame then
+                    addon:CreateRecentChatsFrame()
+                    addon:LoadRecentChatsPosition()
+                end
+
+                if addon.recentChatsFrame and not addon.recentChatsFrame:IsShown() then
+                    addon:RefreshRecentChats()
+                    addon.recentChatsFrame:Show()
+                end
+            end)
+            self:Print("|cffff8800Recent Chats cannot open during combat. It will open after combat ends.|r")
+        end
+        return
+    end
+
+    local chatModeEnabled = self.IsChatModeEnabled and self:IsChatModeEnabled()
+    if not chatModeEnabled then
+        self:CloseAllWindows()
+    end
 
     if not self.recentChatsFrame then
         self:CreateRecentChatsFrame()

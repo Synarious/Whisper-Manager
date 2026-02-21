@@ -13,6 +13,14 @@ local DEFAULT_SETTINGS = {
     
     -- Chat suppression 
     suppressDefaultChat = false, -- Do not suppress whispers from default chat
+
+    -- Chat mode
+    chatModeEnabled = false, -- Enables in-window reply editbox and multi-window mode
+
+    -- Silent Mode settings
+    silentModeEnabled = false, -- Current Silent Mode state (used when persistence is enabled)
+    rememberSilentModeAcrossSessions = false, -- Persist Silent Mode state across sessions
+    silentModeDefaultEnabled = false, -- Session default when persistence is disabled
     
     -- Window spawn settings
     spawnAnchorX = 450, -- X offset from center (default: screen center)
@@ -785,9 +793,47 @@ function addon:CreateSettingsFrame()
         addon:SetSetting("enableTaskbarAlert", self:GetChecked())
     end)
 
+    yOffset = yOffset - 34
+
+    -- Remember Silent Mode across sessions
+    local rememberSilentModeCheckbox = CreateFrame("CheckButton", nil, scrollChild, "UICheckButtonTemplate")
+    rememberSilentModeCheckbox:SetPoint("TOPLEFT", 25, yOffset)
+    rememberSilentModeCheckbox:SetSize(24, 24)
+    rememberSilentModeCheckbox:SetChecked(addon:GetSetting("rememberSilentModeAcrossSessions"))
+
+    local rememberSilentModeLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    rememberSilentModeLabel:SetPoint("LEFT", rememberSilentModeCheckbox, "RIGHT", 5, 0)
+    rememberSilentModeLabel:SetText("Remember Silent Mode across sessions (toggle mode with ALT+Right Click on floating button)")
+
+    rememberSilentModeCheckbox:SetScript("OnClick", function(self)
+        local shouldRemember = self:GetChecked() == true
+        addon:SetSetting("rememberSilentModeAcrossSessions", shouldRemember)
+        if shouldRemember then
+            addon:SetSetting("silentModeEnabled", addon:IsSilentModeEnabled())
+        end
+    end)
+
+    yOffset = yOffset - 34
+
+    -- Default Silent Mode when not remembered
+    local silentModeDefaultCheckbox = CreateFrame("CheckButton", nil, scrollChild, "UICheckButtonTemplate")
+    silentModeDefaultCheckbox:SetPoint("TOPLEFT", 25, yOffset)
+    silentModeDefaultCheckbox:SetSize(24, 24)
+    silentModeDefaultCheckbox:SetChecked(addon:GetSetting("silentModeDefaultEnabled"))
+
+    local silentModeDefaultLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    silentModeDefaultLabel:SetPoint("LEFT", silentModeDefaultCheckbox, "RIGHT", 5, 0)
+    silentModeDefaultLabel:SetText("Default Silent Mode for new sessions")
+
+    silentModeDefaultCheckbox:SetScript("OnClick", function(self)
+        addon:SetSetting("silentModeDefaultEnabled", self:GetChecked() == true)
+    end)
+
+    yOffset = yOffset - 34
+
     -- TRP3 Button Toggle Checkbox
     local trp3Checkbox = CreateFrame("CheckButton", nil, scrollChild, "UICheckButtonTemplate")
-    trp3Checkbox:SetPoint("TOPLEFT", 10, yOffset - 30)
+    trp3Checkbox:SetPoint("TOPLEFT", 10, yOffset)
     trp3Checkbox:SetSize(24, 24)
     trp3Checkbox:SetChecked(addon:GetSetting("enableTRP3Button"))
 
@@ -972,6 +1018,9 @@ function addon:CreateSettingsFrame()
         UIDropDownMenu_SetSelectedValue(channelDropdown, DEFAULT_SETTINGS.soundChannel)
         UIDropDownMenu_Initialize(channelDropdown, channelDropdown.initialize)
         taskbarCheckbox:SetChecked(DEFAULT_SETTINGS.enableTaskbarAlert)
+        addon:InitializeSilentModeState()
+        rememberSilentModeCheckbox:SetChecked(DEFAULT_SETTINGS.rememberSilentModeAcrossSessions)
+        silentModeDefaultCheckbox:SetChecked(DEFAULT_SETTINGS.silentModeDefaultEnabled)
         UIDropDownMenu_SetSelectedValue(retentionDropdown, DEFAULT_SETTINGS.historyRetentionMode)
         UIDropDownMenu_Initialize(retentionDropdown, retentionDropdown.initialize)
 

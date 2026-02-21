@@ -259,6 +259,8 @@ function addon:Initialize()
         self:DebugMessage("  addon.settings.spawnAnchorY =", addon.settings.spawnAnchorY)
         self:DebugMessage("  addon.settings.windowSpacing =", addon.settings.windowSpacing)
     end
+
+    self:InitializeSilentModeState()
     
     -- Hook shift-click item linking into our edit boxes
     local originalInsertLink = ChatFrameUtil.InsertLink
@@ -545,7 +547,52 @@ end)
 -- Utility Functions
 function addon:TrimWhitespace(value)
     if type(value) ~= "string" then return nil end
-    return value:gsub("^%s+", ""):gsub("%s+$", "")
+
+    local okLeading, noLeading = pcall(string.gsub, value, "^%s+", "")
+    if not okLeading then
+        return nil
+    end
+
+    local okTrailing, trimmed = pcall(string.gsub, noLeading, "%s+$", "")
+    if not okTrailing then
+        return nil
+    end
+
+    return trimmed
+end
+
+function addon:InitializeSilentModeState()
+    local rememberAcrossSessions = self:GetSetting("rememberSilentModeAcrossSessions") == true
+    local defaultEnabled = self:GetSetting("silentModeDefaultEnabled") == true
+
+    if rememberAcrossSessions then
+        self.__silentModeEnabled = self:GetSetting("silentModeEnabled") == true
+    else
+        self.__silentModeEnabled = defaultEnabled
+    end
+
+    self:DebugMessage("Silent Mode initialized. remember=", tostring(rememberAcrossSessions), "default=", tostring(defaultEnabled), "active=", tostring(self.__silentModeEnabled))
+end
+
+function addon:IsSilentModeEnabled()
+    return self.__silentModeEnabled == true
+end
+
+function addon:SetSilentModeEnabled(enabled, suppressOutput)
+    local isEnabled = enabled == true
+    self.__silentModeEnabled = isEnabled
+
+    if self:GetSetting("rememberSilentModeAcrossSessions") then
+        self:SetSetting("silentModeEnabled", isEnabled)
+    end
+
+    if not suppressOutput then
+        if isEnabled then
+            self:Print("|cffffff00Silent Mode enabled.|r Right-click whisper adds to Recents without opening a window.")
+        else
+            self:Print("|cff00ff00Silent Mode disabled.|r Right-click whisper opens WhisperManager windows as usual.")
+        end
+    end
 end
 
 local function StripRealmFromName(name)
@@ -562,16 +609,179 @@ function addon:SetupHooks()
         return
     end
     addon.__hooksInstalled = true
-    
-    -- Hook the default Whisper menu action so it opens WhisperManager windows
-    hooksecurefunc(ChatFrameUtil, "SendTell", function(name, chatFrame)
-        if not name or name == "" then return end
-        local playerKey = addon:ResolvePlayerIdentifiers(name)
+
+    local function NormalizeTellTarget(rawTarget)
+        local function NormalizeRealm(realm)
+            if type(realm) ~= "string" or realm == "" then return nil end
+            local cleaned = realm:gsub("%s+", "")
+            return cleaned ~= "" and cleaned or nil
+        end
+
+        local function CleanNameString(value)
+            if type(value) ~= "string" then return nil end
+            local cleaned = addon:TrimWhitespace(value)
+            if not cleaned or cleaned == "" then return nil end
+
+            local commandTarget = addon.ExtractWhisperTarget and addon:ExtractWhisperTarget(cleaned)
+            if commandTarget and commandTarget ~= "" then
+                cleaned = commandTarget
+            end
+
+            local linkedTarget = cleaned:match("|Hplayer:([^|]+)|h")
+            if linkedTarget and linkedTarget ~= "" then
+                cleaned = linkedTarget
+            end
+
+            cleaned = cleaned:gsub("|T.-|t", "")
+            cleaned = cleaned:gsub("|c%x%x%x%x%x%x%x%x", "")
+            cleaned = cleaned:gsub("|r", "")
+            cleaned = cleaned:gsub("%[[^%]]+%]", "")
+            cleaned = cleaned:gsub('^["`]+', ""):gsub('["`]+$', "")
+            cleaned = cleaned:gsub("[,.;:]+$", "")
+            cleaned = addon:TrimWhitespace(cleaned)
+
+            local parenthesizedTarget = cleaned and cleaned:match("%(([^%(%)]+%-%S+)%)")
+            if parenthesizedTarget then
+                cleaned = parenthesizedTarget
+            end
+
+            if cleaned and cleaned:find(" ", 1, true) and not cleaned:find("%-", 1, true) then
+                local firstToken = cleaned:match("^([^%s]+)")
+                cleaned = firstToken or cleaned
+            end
+
+            return (cleaned and cleaned ~= "") and cleaned or nil
+        end
+
+        if type(rawTarget) == "string" then
+            return CleanNameString(rawTarget)
+        end
+
+        if type(rawTarget) == "table" then
+            local unitToken = rawTarget.unit or rawTarget.unitToken
+            if type(unitToken) == "string" and unitToken ~= "" and UnitExists and UnitExists(unitToken) then
+                local unitName, unitRealm = UnitName(unitToken)
+                if unitName and unitName ~= "" then
+                    local realm = NormalizeRealm(unitRealm)
+                    if realm then
+                        return unitName .. "-" .. realm
+                    end
+                    return unitName
+                end
+            end
+
+            local guid = rawTarget.guid or rawTarget.playerGuid
+            if type(guid) == "string" and guid ~= "" and GetPlayerInfoByGUID then
+                local _, _, _, _, _, guidName, guidRealm = GetPlayerInfoByGUID(guid)
+                if guidName and guidName ~= "" then
+                    local realm = NormalizeRealm(guidRealm)
+                    if realm then
+                        return guidName .. "-" .. realm
+                    end
+                    return guidName
+                end
+            end
+
+            local candidateKeys = {
+                "name", "playerName", "fullName", "target", "sender", "author",
+                "toonName", "charName", "characterName", "player", "displayName"
+            }
+            for _, key in ipairs(candidateKeys) do
+                local candidate = rawTarget[key]
+                if type(candidate) == "string" and candidate ~= "" then
+                    local normalized = CleanNameString(candidate)
+                    if normalized then
+                        local realmCandidate = rawTarget.realm or rawTarget.server or rawTarget.realmName
+                        local realm = NormalizeRealm(realmCandidate)
+                        if realm and not normalized:find("%-", 1, true) then
+                            return normalized .. "-" .. realm
+                        end
+                        return normalized
+                    end
+                elseif type(candidate) == "table" then
+                    local nested = NormalizeTellTarget(candidate)
+                    if nested then
+                        return nested
+                    end
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local function HandleSendTell(name, chatFrame)
+        if addon.IsRestrictedChatModeInstance and addon:IsRestrictedChatModeInstance() then
+            return
+        end
+        if InCombatLockdown and InCombatLockdown() then
+            return
+        end
+
+        local normalizedTarget = NormalizeTellTarget(name)
+        if not normalizedTarget then
+            return
+        end
+
+        local playerKey, _, displayName = addon:ResolvePlayerIdentifiers(normalizedTarget)
+        if not playerKey then
+            addon:DebugMessage("SendTell fallback to default chat (unresolved target):", tostring(normalizedTarget))
+            return
+        end
+
+        local now = (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
+        if addon.__wmLastTellTarget == playerKey and addon.__wmLastTellTime and (now - addon.__wmLastTellTime) < 0.05 then
+            return
+        end
+        addon.__wmLastTellTarget = playerKey
+        addon.__wmLastTellTime = now
+
         if playerKey and addon:IsChatAutoHidden(playerKey) then
             return
         end
-        pcall(function() addon:OpenConversation(name) end)
+
+        local monitorModeActive = addon.IsChatModeEnabled and (not addon:IsChatModeEnabled())
+        if addon:IsSilentModeEnabled() or monitorModeActive then
+            if playerKey then
+                addon:UpdateRecentChat(playerKey, displayName or normalizedTarget, false, "Me")
+                addon:MarkChatAsRead(playerKey)
+                addon:DebugMessage("Monitor/Silent intercept for right-click whisper:", normalizedTarget)
+            end
+            return
+        end
+
+        local opened = false
+        pcall(function() opened = addon:OpenConversation(normalizedTarget) end)
+
+        if opened then
+            local editBox = ChatFrameUtil.ChooseBoxForSend(chatFrame) or ChatFrameUtil.ChooseBoxForSend()
+            if editBox and editBox:IsShown() then
+                ChatFrameUtil.DeactivateChat(editBox)
+            end
+        end
+
+        if opened and addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
+            C_Timer.After(0, function()
+                local key = addon:ResolvePlayerIdentifiers(normalizedTarget)
+                local win = key and addon.windows and addon.windows[key]
+                if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
+                    addon:FocusWindow(win)
+                    win.Input:SetFocus()
+                    addon:SetEditBoxFocus(win.Input)
+                end
+            end)
+        end
+    end
+
+    hooksecurefunc(ChatFrameUtil, "SendTell", function(name, chatFrame)
+        HandleSendTell(name, chatFrame)
     end)
+
+    if type(ChatFrame_SendTell) == "function" then
+        hooksecurefunc("ChatFrame_SendTell", function(name, chatFrame)
+            HandleSendTell(name, chatFrame)
+        end)
+    end
 
     -- Hook BNet whisper default action similarly
     hooksecurefunc(ChatFrameUtil, "SendBNetTell", function(tokenizedName)
@@ -593,8 +803,38 @@ function addon:SetupHooks()
         if playerKey and addon:IsChatAutoHidden(playerKey) then
             return
         end
-        -- SendBNetTell may pass a BattleTag or name; try to open by BattleTag when possible
-        pcall(function() addon:OpenBNetConversation(tokenizedName) end)
+
+        local opened = false
+        pcall(function() opened = addon:OpenBNetConversation(tokenizedName) end)
+
+        local editBox = ChatFrameUtil.ChooseBoxForSend()
+        if editBox and editBox:IsShown() then
+            ChatFrameUtil.DeactivateChat(editBox)
+        end
+
+        if opened and addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
+            C_Timer.After(0, function()
+                local key = nil
+                if type(tokenizedName) == "number" then
+                    local accountInfo = C_BattleNet.GetAccountInfoByID(tokenizedName)
+                    if accountInfo and accountInfo.battleTag then
+                        key = "bnet_" .. accountInfo.battleTag
+                    end
+                elseif type(tokenizedName) == "string" then
+                    local battleTag = tokenizedName:match("^bnet_(.+)$") or tokenizedName
+                    if battleTag and battleTag:find("#", 1, true) then
+                        key = "bnet_" .. battleTag
+                    end
+                end
+
+                local win = key and addon.windows and addon.windows[key]
+                if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
+                    addon:FocusWindow(win)
+                    win.Input:SetFocus()
+                    addon:SetEditBoxFocus(win.Input)
+                end
+            end)
+        end
     end)
 
     -- Setup context menu integration

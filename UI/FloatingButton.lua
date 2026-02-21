@@ -1,5 +1,6 @@
 -- Floating button UI
-local addon = WhisperManager;
+_G["WhisperManager"] = _G["WhisperManager"] or {}
+local addon = _G["WhisperManager"];
 
 function addon:CreateFloatingButton()
     -- Don't create if it already exists
@@ -27,7 +28,17 @@ function addon:CreateFloatingButton()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("WhisperManager", 1, 0.82, 0)
         GameTooltip:AddLine("Left Click: Recent Chats", 1, 1, 1)
-        GameTooltip:AddLine("SHIFT+Right Click: Settings", 0.7, 0.7, 1)
+        if addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
+            GameTooltip:AddLine("SHIFT+Left Click: Chat Mode (ON)", 0.4, 1, 0.4)
+        else
+            GameTooltip:AddLine("SHIFT+Left Click: Chat Mode (OFF)", 1, 0.4, 0.4)
+        end
+        if addon.IsSilentModeEnabled and addon:IsSilentModeEnabled() then
+            GameTooltip:AddLine("SHIFT+Right Click: Silent Mode (ON)", 0.4, 1, 0.4)
+        else
+            GameTooltip:AddLine("SHIFT+Right Click: Silent Mode (OFF)", 1, 0.4, 0.4)
+        end
+        GameTooltip:AddLine("ALT+Right Click: Settings", 0.7, 0.7, 1)
         GameTooltip:AddLine("ALT+Left Click: Move", 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
@@ -49,15 +60,27 @@ function addon:CreateFloatingButton()
     
     -- Click handlers
     btn:SetScript("OnClick", function(self, button)
+        if IsShiftKeyDown() and button == "RightButton" then
+            addon:SetSilentModeEnabled(not addon:IsSilentModeEnabled())
+            return
+        end
+
+        if IsAltKeyDown() and button == "RightButton" then
+            addon:ToggleSettingsFrame()
+            return
+        end
+
         if IsAltKeyDown() then
-            return  -- Don't trigger clicks while moving
+            return
         end
         
         if button == "LeftButton" then
-            addon:ToggleRecentChatsFrame()
-        elseif button == "RightButton" then
             if IsShiftKeyDown() then
-                addon:ToggleSettingsFrame()
+                if addon.ToggleChatMode then
+                    addon:ToggleChatMode()
+                end
+            else
+                addon:ToggleRecentChatsFrame()
             end
         end
     end)

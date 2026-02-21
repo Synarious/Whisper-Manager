@@ -1,5 +1,6 @@
 local addon = WhisperManager;
 local SCHEMA_VERSION = 1
+local WINDOW_INITIAL_HISTORY_LIMIT = 100
 
 -- Helper: insert a gray date divider line when messages cross day boundaries
 local function GetDayKey(timestamp)
@@ -148,7 +149,16 @@ function addon:DisplayHistory(window, playerKey)
         return false
     end
 
-    for i, entry in ipairs(history) do
+    -- Always render only the most recent messages for the whisper window.
+    local historyCount = #history
+    local maxLines = WINDOW_INITIAL_HISTORY_LIMIT
+    local startIndex = math.max(1, historyCount - maxLines + 1)
+
+    -- Fixed header shown at the top of history to indicate start of saved backlog
+    historyFrame:AddMessage("== Looback End: Check History ==", 1.0, 0.82, 0.0)
+
+    for i = startIndex, historyCount do
+        local entry = history[i]
         -- Support both old and new format
         local timestamp = entry.t or entry.timestamp
         local author = entry.a or entry.author
@@ -746,23 +756,57 @@ end
 function addon:ResolvePlayerIdentifiers(playerName)
     local trimmed = self:TrimWhitespace(playerName)
     if not trimmed or trimmed == "" then return nil end
-    if trimmed:match("^c_") or trimmed:match("^bnet_") then
+
+    local okPrefixed, isCharacterKey = pcall(string.match, trimmed, "^c_")
+    local okBnetPrefixed, isBnetKey = pcall(string.match, trimmed, "^bnet_")
+    if not okPrefixed or not okBnetPrefixed then
+        if self.IsRestrictedChatModeInstance and self:IsRestrictedChatModeInstance() then
+            return nil
+        end
+        return nil
+    end
+
+    if isCharacterKey or isBnetKey then
         local display = self:GetDisplayNameFromKey(trimmed)
-        local target = trimmed:match("^c_(.+)") or trimmed:match("^bnet_(.+)") or trimmed
+        local okCharTarget, charTarget = pcall(string.match, trimmed, "^c_(.+)")
+        local okBnetTarget, bnetTarget = pcall(string.match, trimmed, "^bnet_(.+)")
+        local target = (okCharTarget and charTarget) or (okBnetTarget and bnetTarget) or trimmed
         return trimmed, target, display
     end
-    local target = Ambiguate(trimmed, "none") or trimmed
-    local namePart, realmPart = target:match("^([^%-]+)%-(.+)$")
+
+    local target = trimmed
+    local okAmbiguate, ambiguatedTarget = pcall(Ambiguate, trimmed, "none")
+    if okAmbiguate and ambiguatedTarget and ambiguatedTarget ~= "" then
+        target = ambiguatedTarget
+    end
+
+    local okMatchNameRealm, namePart, realmPart = pcall(string.match, target, "^([^%-]+)%-(.+)$")
+    if not okMatchNameRealm then
+        if self.IsRestrictedChatModeInstance and self:IsRestrictedChatModeInstance() then
+            return nil
+        end
+        return nil
+    end
+
     local baseName = namePart or target
     local canonicalKey
     if realmPart and realmPart ~= "" then
-        local normalizedRealm = realmPart:gsub("%s+", "")
+        local okRealm, normalizedRealm = pcall(string.gsub, realmPart, "%s+", "")
+        if not okRealm then return nil end
         canonicalKey = "c_" .. baseName .. "-" .. normalizedRealm
     else
-        local currentRealm = GetRealmName():gsub("%s+", "")
+        local realmName = GetRealmName()
+        local okRealm, currentRealm = pcall(string.gsub, realmName, "%s+", "")
+        if not okRealm then return nil end
         canonicalKey = "c_" .. baseName .. "-" .. currentRealm
     end
-    local display = Ambiguate(trimmed, "short") or baseName
+
+    local display = baseName
+    local okDisplay, ambiguatedDisplay = pcall(Ambiguate, trimmed, "short")
+    if okDisplay and ambiguatedDisplay and ambiguatedDisplay ~= "" then
+        display = ambiguatedDisplay
+    end
+
     return canonicalKey, target, display
 end
 
