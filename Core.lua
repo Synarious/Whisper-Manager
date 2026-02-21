@@ -783,21 +783,60 @@ function addon:SetupHooks()
         end)
     end
 
+    local function ResolveBNetTellTarget(tokenizedName)
+        local function BuildResult(accountInfo)
+            if not accountInfo or not accountInfo.bnetAccountID or not accountInfo.battleTag then
+                return nil, nil, nil
+            end
+            local key = "bnet_" .. accountInfo.battleTag
+            local displayName = accountInfo.accountName or accountInfo.battleTag
+            return accountInfo.bnetAccountID, key, displayName
+        end
+
+        if type(tokenizedName) == "number" then
+            return BuildResult(C_BattleNet.GetAccountInfoByID(tokenizedName))
+        end
+
+        if type(tokenizedName) ~= "string" or tokenizedName == "" then
+            return nil, nil, nil
+        end
+
+        local requestedBattleTag = tokenizedName:match("^bnet_(.+)$")
+        if not requestedBattleTag and tokenizedName:find("#", 1, true) then
+            requestedBattleTag = tokenizedName
+        end
+
+        local tokenLower = strlower(tokenizedName)
+        local numBNetTotal = BNGetNumFriends() or 0
+        for i = 1, numBNetTotal do
+            local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
+            if accountInfo and accountInfo.bnetAccountID and accountInfo.battleTag then
+                if requestedBattleTag and accountInfo.battleTag == requestedBattleTag then
+                    return BuildResult(accountInfo)
+                end
+
+                local battleTagLower = strlower(accountInfo.battleTag)
+                local battleTagName = accountInfo.battleTag:match("^([^#]+)")
+                local battleTagNameLower = battleTagName and strlower(battleTagName) or nil
+                local accountNameLower = accountInfo.accountName and strlower(accountInfo.accountName) or nil
+
+                if tokenLower == battleTagLower or tokenLower == battleTagNameLower or tokenLower == accountNameLower then
+                    return BuildResult(accountInfo)
+                end
+            end
+        end
+
+        return nil, nil, nil
+    end
+
     -- Hook BNet whisper default action similarly
     hooksecurefunc(ChatFrameUtil, "SendBNetTell", function(tokenizedName)
         if not tokenizedName or tokenizedName == "" then return end
-        local playerKey = nil
 
-        if type(tokenizedName) == "number" then
-            local accountInfo = C_BattleNet.GetAccountInfoByID(tokenizedName)
-            if accountInfo and accountInfo.battleTag then
-                playerKey = "bnet_" .. accountInfo.battleTag
-            end
-        elseif type(tokenizedName) == "string" then
-            local battleTag = tokenizedName:match("^bnet_(.+)$") or tokenizedName
-            if battleTag and battleTag:find("#", 1, true) then
-                playerKey = "bnet_" .. battleTag
-            end
+        local bnetAccountID, playerKey, displayName = ResolveBNetTellTarget(tokenizedName)
+        if not bnetAccountID or not playerKey then
+            addon:DebugMessage("SendBNetTell fallback to default chat (unresolved target):", tostring(tokenizedName))
+            return
         end
 
         if playerKey and addon:IsChatAutoHidden(playerKey) then
@@ -805,7 +844,7 @@ function addon:SetupHooks()
         end
 
         local opened = false
-        pcall(function() opened = addon:OpenBNetConversation(tokenizedName) end)
+        pcall(function() opened = addon:OpenBNetConversation(bnetAccountID, displayName) end)
 
         local editBox = ChatFrameUtil.ChooseBoxForSend()
         if editBox and editBox:IsShown() then
@@ -814,20 +853,7 @@ function addon:SetupHooks()
 
         if opened and addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
             C_Timer.After(0, function()
-                local key = nil
-                if type(tokenizedName) == "number" then
-                    local accountInfo = C_BattleNet.GetAccountInfoByID(tokenizedName)
-                    if accountInfo and accountInfo.battleTag then
-                        key = "bnet_" .. accountInfo.battleTag
-                    end
-                elseif type(tokenizedName) == "string" then
-                    local battleTag = tokenizedName:match("^bnet_(.+)$") or tokenizedName
-                    if battleTag and battleTag:find("#", 1, true) then
-                        key = "bnet_" .. battleTag
-                    end
-                end
-
-                local win = key and addon.windows and addon.windows[key]
+                local win = playerKey and addon.windows and addon.windows[playerKey]
                 if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
                     addon:FocusWindow(win)
                     win.Input:SetFocus()
