@@ -91,6 +91,7 @@ local RETENTION_OPTIONS = {
 
 local DEFAULT_BEHAVIOR_OPTIONS = {
     {name = "Silent Mode Enabled | Chat Mode Enabled", value = "silent_on_chat_on"},
+    {name = "Silent Mode Disabled | Chat Mode Enabled", value = "silent_off_chat_on"},
     {name = "Silent Mode Disabled | Chat Mode Disabled", value = "silent_off_chat_off"},
     {name = "Silent Mode Enabled | Chat Mode Disabled", value = "silent_on_chat_off"},
 }

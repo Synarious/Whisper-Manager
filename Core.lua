@@ -445,18 +445,57 @@ end
 addon.EditBoxInFocus = nil
 
 local Hooked_ChatFrameEditBoxes = {}
+local GetKeyboardFocusFn = _G.GetCurrentKeyBoardFocus or _G.GetCurrentKeyboardFocus
+
+local function GetActiveWhisperManagerEditBox()
+    local editBox = addon.EditBoxInFocus
+    if not editBox then
+        return nil
+    end
+
+    if not editBox._WhisperManagerInput then
+        addon.EditBoxInFocus = nil
+        return nil
+    end
+
+    if type(GetKeyboardFocusFn) == "function" then
+        local keyboardFocus = GetKeyboardFocusFn()
+        if keyboardFocus ~= editBox then
+            addon.EditBoxInFocus = nil
+            return nil
+        end
+    end
+
+    if not editBox.HasFocus or not editBox:HasFocus() then
+        addon.EditBoxInFocus = nil
+        return nil
+    end
+
+    if editBox.IsVisible and not editBox:IsVisible() then
+        addon.EditBoxInFocus = nil
+        return nil
+    end
+
+    if editBox.IsShown and not editBox:IsShown() then
+        addon.EditBoxInFocus = nil
+        return nil
+    end
+
+    return editBox
+end
 
 local function hookChatFrameEditBox(editBox)
     if editBox and not Hooked_ChatFrameEditBoxes[editBox:GetName()] then
         hooksecurefunc(editBox, "Insert", function(self, theText)
-            if addon.EditBoxInFocus then
-                addon.EditBoxInFocus:Insert(theText)
+            local activeEditBox = GetActiveWhisperManagerEditBox()
+            if activeEditBox and activeEditBox ~= self then
+                activeEditBox:Insert(theText)
             end
         end)
 
         editBox.wmIsVisible = editBox.IsVisible
         editBox.IsVisible = function(self)
-            if addon.EditBoxInFocus then
+            if GetActiveWhisperManagerEditBox() then
                 return true
             else
                 return self:wmIsVisible()
@@ -465,7 +504,7 @@ local function hookChatFrameEditBox(editBox)
 
         editBox.wmIsShown = editBox.IsShown
         editBox.IsShown = function(self)
-            if addon.EditBoxInFocus then
+            if GetActiveWhisperManagerEditBox() then
                 return true
             else
                 return self:wmIsShown()
@@ -477,15 +516,17 @@ local function hookChatFrameEditBox(editBox)
             if string.len(theText) > 0 then
                 firstChar = string.sub(theText, 1, 1)
             end
-            if addon.EditBoxInFocus and firstChar ~= "/" then
-                addon.EditBoxInFocus:SetText(theText)
+            local activeEditBox = GetActiveWhisperManagerEditBox()
+            if activeEditBox and activeEditBox ~= self and firstChar ~= "/" then
+                activeEditBox:SetText(theText)
             end
         end)
 
         editBox.wmHighlightText = editBox.HighlightText
         editBox.HighlightText = function(self, theStart, theEnd)
-            if addon.EditBoxInFocus then
-                addon.EditBoxInFocus:HighlightText(theStart, theEnd)
+            local activeEditBox = GetActiveWhisperManagerEditBox()
+            if activeEditBox and activeEditBox ~= self then
+                activeEditBox:HighlightText(theStart, theEnd)
             else
                 self:wmHighlightText(theStart, theEnd)
             end
@@ -498,23 +539,35 @@ end
 
 local originalActivateChat = ChatFrameUtil.ActivateChat
 ChatFrameUtil.ActivateChat = function(editBox)
+    if editBox and editBox.GetAttribute then
+        local chatType = editBox:GetAttribute("chatType")
+        if chatType and chatType ~= "WHISPER" then
+            addon:SetEditBoxFocus(nil)
+        end
+    end
     originalActivateChat(editBox)
     hookChatFrameEditBox(editBox)
 end
 
 local originalGetActiveWindow = ChatFrameUtil.GetActiveWindow
 function ChatFrameUtil.GetActiveWindow()
-    return addon.EditBoxInFocus or originalGetActiveWindow()
+    return GetActiveWhisperManagerEditBox() or originalGetActiveWindow()
 end
 
 if ChatEdit_GetActiveWindow then
     local originalChatEdit_GetActiveWindow = ChatEdit_GetActiveWindow
     function ChatEdit_GetActiveWindow()
-        return addon.EditBoxInFocus or originalChatEdit_GetActiveWindow()
+        return GetActiveWhisperManagerEditBox() or originalChatEdit_GetActiveWindow()
     end
 end
 
 function addon:SetEditBoxFocus(editBox)
+    if editBox and not editBox._WhisperManagerInput then
+        self.EditBoxInFocus = nil
+        self:DebugMessage("Ignored non-whisper edit box focus")
+        return
+    end
+
     self.EditBoxInFocus = editBox
     if editBox then
         self:DebugMessage("EditBox focus set:", editBox:GetName())
@@ -564,6 +617,8 @@ end
 function addon:ResolveDefaultBehaviorPreset(preset)
     if preset == "silent_on_chat_on" then
         return true, true
+    elseif preset == "silent_off_chat_on" then
+        return false, true
     elseif preset == "silent_off_chat_off" then
         return false, false
     elseif preset == "silent_on_chat_off" then
@@ -571,9 +626,7 @@ function addon:ResolveDefaultBehaviorPreset(preset)
     end
 
     -- Backward compatibility for previously saved values.
-    if preset == "silent_off_chat_on" then
-        return false, true
-    elseif preset == "silent_on_keep_chat" then
+    if preset == "silent_on_keep_chat" then
         return true, self:GetSetting("chatModeEnabled") == true
     end
 
@@ -584,6 +637,8 @@ function addon:GetDefaultBehaviorLabel(preset)
     local key = preset or self:GetSetting("defaultBehavior") or "silent_off_chat_off"
     if key == "silent_on_chat_on" then
         return "Silent ON | Chat ON"
+    elseif key == "silent_off_chat_on" then
+        return "Silent OFF | Chat ON"
     elseif key == "silent_off_chat_off" then
         return "Silent OFF | Chat OFF"
     elseif key == "silent_on_chat_off" then
@@ -616,6 +671,7 @@ end
 function addon:CycleDefaultBehaviorPreset()
     local order = {
         "silent_on_chat_on",
+        "silent_off_chat_on",
         "silent_off_chat_off",
         "silent_on_chat_off",
     }
@@ -858,11 +914,96 @@ function addon:SetupHooks()
                 end
             end)
         end
+
+    end
+
+    local function HandleOpenChat(text, chatFrame)
+        if addon.__closingWindow then
+            return
+        end
+
+        local editBox = ChatFrameUtil.ChooseBoxForSend(chatFrame) or ChatFrameUtil.ChooseBoxForSend()
+        if not editBox then
+            return
+        end
+
+        local chatType = editBox:GetAttribute("chatType")
+        if chatType ~= "WHISPER" then
+            return
+        end
+
+        local tellTarget = editBox:GetAttribute("tellTarget")
+        if (not tellTarget or tellTarget == "") and type(text) == "string" and addon.ExtractWhisperTarget then
+            tellTarget = addon:ExtractWhisperTarget(text)
+        end
+        if not tellTarget or tellTarget == "" then
+            return
+        end
+
+        local playerKey, _, displayName = addon:ResolvePlayerIdentifiers(tellTarget)
+        if not playerKey then
+            return
+        end
+
+        if playerKey and addon:IsChatAutoHidden(playerKey) then
+            return
+        end
+
+        local monitorModeActive = addon.IsChatModeEnabled and (not addon:IsChatModeEnabled())
+        if addon:IsSilentModeEnabled() or monitorModeActive then
+            addon:UpdateRecentChat(playerKey, displayName or tellTarget, false, "Me")
+            addon:MarkChatAsRead(playerKey)
+            addon:DebugMessage("Monitor/Silent intercept for OpenChat whisper:", tellTarget)
+            return
+        end
+
+        if editBox.__WhisperManagerHandled then
+            return
+        end
+        editBox.__WhisperManagerHandled = true
+
+        local opened = false
+        pcall(function() opened = addon:OpenConversation(tellTarget) end)
+
+        if opened and editBox:IsShown() then
+            ChatFrameUtil.DeactivateChat(editBox)
+        end
+
+        if opened and addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
+            C_Timer.After(0, function()
+                local key = addon:ResolvePlayerIdentifiers(tellTarget)
+                local win = key and addon.windows and addon.windows[key]
+                if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
+                    addon:FocusWindow(win)
+                    win.Input:SetFocus()
+                    addon:SetEditBoxFocus(win.Input)
+                end
+            end)
+        end
+
+        C_Timer.After(0.1, function()
+            if editBox then
+                editBox.__WhisperManagerHandled = nil
+            end
+        end)
     end
 
     hooksecurefunc(ChatFrameUtil, "SendTell", function(name, chatFrame)
         HandleSendTell(name, chatFrame)
     end)
+
+    hooksecurefunc(ChatFrameUtil, "OpenChat", function(text, chatFrame, desiredCursorPosition)
+        HandleOpenChat(text, chatFrame)
+    end)
+
+    if type(ChatFrameUtil.ReplyTell) == "function" and type(ChatFrameUtil.GetLastTellTarget) == "function" then
+        hooksecurefunc(ChatFrameUtil, "ReplyTell", function(chatFrame)
+            local lastTellTarget = ChatFrameUtil.GetLastTellTarget()
+            if lastTellTarget and lastTellTarget ~= "" then
+                HandleSendTell(lastTellTarget, chatFrame)
+            end
+        end)
+    end
 
     if type(ChatFrame_SendTell) == "function" then
         hooksecurefunc("ChatFrame_SendTell", function(name, chatFrame)
@@ -930,6 +1071,14 @@ function addon:SetupHooks()
             return
         end
 
+        local monitorModeActive = addon.IsChatModeEnabled and (not addon:IsChatModeEnabled())
+        if addon:IsSilentModeEnabled() or monitorModeActive then
+            addon:UpdateRecentChat(playerKey, displayName or tokenizedName, true, "Me")
+            addon:MarkChatAsRead(playerKey)
+            addon:DebugMessage("Monitor/Silent intercept for BNet right-click whisper:", tostring(tokenizedName))
+            return
+        end
+
         local opened = false
         pcall(function() opened = addon:OpenBNetConversation(bnetAccountID, displayName) end)
 
@@ -948,6 +1097,7 @@ function addon:SetupHooks()
                 end
             end)
         end
+
     end)
 
     -- Setup context menu integration

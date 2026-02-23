@@ -692,6 +692,12 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     
     win:SetScript("OnHide", function(self)
         addon:SaveWindowPosition(self, false)
+        if self.Input then
+            self.Input:ClearFocus()
+            if addon.GetEditBoxFocus and addon:GetEditBoxFocus() == self.Input then
+                addon:SetEditBoxFocus(nil)
+            end
+        end
         if self.InputContainer then
             self.InputContainer:Hide()
         end
@@ -775,6 +781,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
 
     local inputName = frameName .. "Input"
     win.Input = CreateFrame("EditBox", inputName, win.InputContainer)
+    win.Input._WhisperManagerInput = true
     win.Input:SetFrameLevel(baseLevel + 31)
     win.Input:SetPoint("TOPLEFT", win.InputContainer, "TOPLEFT", 8, 0)
     win.Input:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -8, 0)
@@ -861,6 +868,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         if sent then
             self:SetText("")
             UpdateInputHeight(self)
+            self:ClearFocus()
+            addon:SetEditBoxFocus(nil)
         end
     end)
 

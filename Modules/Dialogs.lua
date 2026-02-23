@@ -7,10 +7,8 @@ local function FocusWindowInputIfChatMode(playerKey)
 
     C_Timer.After(0, function()
         local win = addon.windows and addon.windows[playerKey]
-        if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
+        if win and win:IsShown() then
             addon:FocusWindow(win)
-            win.Input:SetFocus()
-            addon:SetEditBoxFocus(win.Input)
         end
     end)
 end

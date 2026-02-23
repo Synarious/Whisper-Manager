@@ -125,8 +125,8 @@ function addon:CreateHistoryFrame()
     frame.searchBox:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
     end)
-    frame.searchBox:SetScript("OnEditFocusGained", function(self) addon:SetEditBoxFocus(self) end)
-    frame.searchBox:SetScript("OnEditFocusLost", function(self) addon:SetEditBoxFocus(nil) end)
+    frame.searchBox:SetScript("OnEditFocusGained", function(self) end)
+    frame.searchBox:SetScript("OnEditFocusLost", function(self) end)
     
     -- Search label
     frame.searchLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")

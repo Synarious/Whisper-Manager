@@ -460,6 +460,13 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end)
     
     win:SetScript("OnHide", function(self)
+        if self.Input then
+            self.Input:ClearFocus()
+            if addon.GetEditBoxFocus and addon:GetEditBoxFocus() == self.Input then
+                addon:SetEditBoxFocus(nil)
+            end
+        end
+
         -- Hide input container when window is hidden
         if self.InputContainer then
             self.InputContainer:Hide()
@@ -732,6 +739,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Input EditBox (inside the container)
     local inputName = frameName .. "Input"
     win.Input = CreateFrame("EditBox", inputName, win.InputContainer)
+    win.Input._WhisperManagerInput = true
     win.Input:SetFrameLevel(baseLevel + 11)
     -- We'll compute vertical offset based on dynamic padding so the editbox background scales with font
     -- Anchor will be set after font/padding is computed below; temporarily anchor to container
