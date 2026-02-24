@@ -922,6 +922,15 @@ function addon:SetupHooks()
             return
         end
 
+        -- Only handle explicit typed /w commands. When called from SendTell (right-click
+        -- whisper), text will not start with /w, so we skip here and let HandleSendTell
+        -- handle it with the correct name. Without this guard, HandleOpenChat fires mid-
+        -- SendTell and reads a stale tellTarget attribute from the previous conversation.
+        if not text or not (type(text) == "string" and text:match("^/[Ww]")) then
+            addon:DebugMessage("HandleOpenChat ignored - no /w command in text, deferring to HandleSendTell")
+            return
+        end
+
         local editBox = ChatFrameUtil.ChooseBoxForSend(chatFrame) or ChatFrameUtil.ChooseBoxForSend()
         if not editBox then
             return
@@ -933,7 +942,7 @@ function addon:SetupHooks()
         end
 
         local tellTarget = editBox:GetAttribute("tellTarget")
-        if (not tellTarget or tellTarget == "") and type(text) == "string" and addon.ExtractWhisperTarget then
+        if (not tellTarget or tellTarget == "") and addon.ExtractWhisperTarget then
             tellTarget = addon:ExtractWhisperTarget(text)
         end
         if not tellTarget or tellTarget == "" then
