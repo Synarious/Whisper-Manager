@@ -838,6 +838,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
             -- Don't manually add to history here - let the INFORM event handle it
             self:SetText("")
             UpdateInputHeight(self)  -- Reset height after sending
+            self:ClearFocus()
+            addon:SetEditBoxFocus(nil)
         end
     end)
     win.Input:SetScript("OnTextChanged", function(self)
