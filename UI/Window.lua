@@ -5,6 +5,7 @@ local addon = WhisperManager;
 local combatFrame = CreateFrame("Frame");
 combatFrame:RegisterEvent("PLAYER_REGEN_DISABLED"); -- Entering combat
 combatFrame:RegisterEvent("PLAYER_REGEN_ENABLED");  -- Leaving combat
+combatFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA");  -- Zone transitions (instance entry/exit)
 combatFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_REGEN_ENABLED" then
         -- Process queued operations after combat ends
@@ -21,12 +22,24 @@ combatFrame:SetScript("OnEvent", function(self, event)
             wipe(addon.combatQueue)
         end
     elseif event == "PLAYER_REGEN_DISABLED" then
-        addon:DebugMessage("Entered combat - queueing frame operations")
-        if addon.CloseAllWindows then
-            addon:CloseAllWindows()
-        end
+        -- Entering combat: existing non-secure windows stay open and remain fully interactive.
+        -- Only new frame *creation* is restricted (handled at call sites via InCombatLockdown()).
+        -- Clear any stale pre-combat queued operations so they don't fire unexpectedly.
+        addon:DebugMessage("Entered combat - clearing stale combat queue (windows stay open)")
         if addon.combatQueue then
             wipe(addon.combatQueue)
+        end
+    elseif event == "ZONE_CHANGED_NEW_AREA" then
+        -- Instance protection mode: close all windows when entering a dungeon/raid/pvp instance.
+        -- Whispers will appear in default chat while inside the instance.
+        if addon:IsRestrictedChatModeInstance() then
+            addon:DebugMessage("Entered instance - closing all whisper windows (instance protection mode)")
+            if addon.CloseAllWindows then
+                addon:CloseAllWindows()
+            end
+            if addon.combatQueue then
+                wipe(addon.combatQueue)
+            end
         end
     end
 end)
@@ -76,7 +89,7 @@ function addon:FocusWindow(window)
     -- Queue operation if in combat
     if InCombatLockdown() then
         self:DebugMessage("In combat - queueing FocusWindow operation")
-        table.insert(combatQueue, function() addon:FocusWindow(window) end)
+        table.insert(addon.combatQueue, function() addon:FocusWindow(window) end)
         return
     end
     
@@ -215,12 +228,20 @@ function addon:OpenConversation(playerName)
     displayName = self:GetDisplayNameFromKey(playerKey)
 
     local win = self.windows[playerKey]
-    
-    -- If window doesn't exist and we're in combat, queue the creation
+
+    -- Instance protection mode: do not open or show any windows inside dungeons/raids/instances.
+    -- Whispers are already visible in default chat; no queuing needed.
+    if self:IsRestrictedChatModeInstance() then
+        self:DebugMessage("In instance (protection mode) - skipping window open, whisper visible in chat")
+        return false
+    end
+
+    -- If window doesn't exist and we're in combat, queue the creation.
+    -- Existing windows can still be shown/interacted with during combat.
     if not win and InCombatLockdown() then
         self:DebugMessage("In combat - queueing window creation (messages will display after combat)")
         self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
-        table.insert(combatQueue, function() addon:OpenConversation(playerName) end)
+        table.insert(addon.combatQueue, function() addon:OpenConversation(playerName) end)
         return false
     end
     
@@ -272,12 +293,20 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     displayName = accountInfo.accountName or displayName or accountInfo.battleTag
     
     local win = self.windows[playerKey]
-    
-    -- If window doesn't exist and we're in combat, queue the creation
+
+    -- Instance protection mode: do not open or show any windows inside dungeons/raids/instances.
+    -- Whispers are already visible in default chat; no queuing needed.
+    if self:IsRestrictedChatModeInstance() then
+        self:DebugMessage("In instance (protection mode) - skipping BNet window open, whisper visible in chat")
+        return false
+    end
+
+    -- If window doesn't exist and we're in combat, queue the creation.
+    -- Existing windows can still be shown/interacted with during combat.
     if not win and InCombatLockdown() then
         self:DebugMessage("In combat - queueing BNet window creation (messages will display after combat)")
         self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
-        table.insert(combatQueue, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
+        table.insert(addon.combatQueue, function() addon:OpenBNetConversation(bnSenderID, displayName) end)
         return false
     end
     

@@ -542,12 +542,21 @@ function addon:OpenConversation(playerName)
     local win = self.windows[playerKey]
 
     self:EnforceChatModeRestrictions(true)
-    
-    if InCombatLockdown() then
-        self:DebugMessage("In combat - blocking whisper window open")
+
+    -- Instance protection: never open windows inside dungeons/raids/pvp/arenas.
+    if self:IsRestrictedChatModeInstance() then
+        self:DebugMessage("In instance (protection mode) - skipping window open, whisper visible in chat")
         return false
     end
-    
+
+    -- Combat lockdown: cannot CREATE new frames, but existing windows can be shown/updated.
+    if not win and InCombatLockdown() then
+        self:DebugMessage("In combat - queueing window creation (will open after combat)")
+        self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
+        table.insert(self.combatQueue, function() self:OpenConversation(playerName) end)
+        return false
+    end
+
     local isNewWindow = false
     if not win then
         win = self:CreateWindow(playerKey, playerTarget, displayName, false)
@@ -594,12 +603,21 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     local win = self.windows[playerKey]
 
     self:EnforceChatModeRestrictions(true)
-    
-    if InCombatLockdown() then
-        self:DebugMessage("In combat - blocking BNet whisper window open")
+
+    -- Instance protection: never open windows inside dungeons/raids/pvp/arenas.
+    if self:IsRestrictedChatModeInstance() then
+        self:DebugMessage("In instance (protection mode) - skipping BNet window open, whisper visible in chat")
         return false
     end
-    
+
+    -- Combat lockdown: cannot CREATE new frames, but existing windows can be shown/updated.
+    if not win and InCombatLockdown() then
+        self:DebugMessage("In combat - queueing BNet window creation (will open after combat)")
+        self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
+        table.insert(self.combatQueue, function() self:OpenBNetConversation(bnSenderID, displayName) end)
+        return false
+    end
+
     local isNewWindow = false
     if not win then
         win = self:CreateWindow(playerKey, bnSenderID, displayName, true)

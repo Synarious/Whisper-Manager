@@ -38,10 +38,8 @@ end
 function addon:AddMessageToHistory(playerKey, displayName, author, message, classToken)
     -- SCHEMA PROTECTION: Block if validation failed
     if not addon:IsSafeToOperate() then return end
-    if InCombatLockdown() then
-        addon:DebugMessage("In combat - skipping AddMessageToHistory write")
-        return
-    end
+    -- Note: InCombatLockdown() does NOT restrict SavedVariables table writes, only secure UI frame
+    -- operations. History must always be recorded outside instances so messages aren't lost in combat.
     
     if not playerKey then return end
     if not WhisperManager_HistoryDB then WhisperManager_HistoryDB = {} end
