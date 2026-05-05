@@ -183,9 +183,6 @@ function addon:SetupTRP3Integration(TRP3_API)
     self.TRP3_GetRPNameWithColor = GetRPNameWithColor
     self.TRP3_GetMyRPName = GetMyRPName
     self.TRP3_GetMyRPNameWithColor = GetMyRPNameWithColor
-
-    self:Print("Total RP 3 integration loaded! RP names will appear in whisper windows.")
-    self:DebugMessage("TRP3 integration functions registered successfully")
 end
 
 --- Legacy initialization method (for backwards compatibility)

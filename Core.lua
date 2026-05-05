@@ -1162,10 +1162,14 @@ function addon:RegisterCoreEvents()
         if event == "ADDON_LOADED" then
             local addonName = ...
             if addonName == addon._tocName or addonName == "WhisperManager" then
-                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Loaded successfully!")
+                if addon.debugEnabled then
+                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Loaded successfully!")
+                end
                 addon:Initialize()
             elseif addonName == "totalRP3" or addonName == "TotalRP3" then
-                DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r TotalRP3 detected, setting up integration...")
+                if addon.debugEnabled then
+                    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r TotalRP3 detected, setting up integration...")
+                end
                 addon:InitializeTRP3Integration()
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
