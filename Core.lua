@@ -590,7 +590,6 @@ function addon:SetupChatHooks()
             hookChatFrameEditBox(chatFrame.editBox)
         end
     end
-    DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Chat hooks installed")
 end
 
 C_Timer.After(0, function()
