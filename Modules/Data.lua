@@ -197,8 +197,10 @@ function addon:DisplayHistory(window, playerKey)
                     end
                     
                     -- Try to get RP name with color from TRP3 integration (if loaded)
+                    -- Only use TRP3 RP name if the stored author matches the current character
+                    local isCurrentCharacter = (author == playerName or author == fullPlayerName)
                     addon:DebugMessage("[Data:DisplayHistory] Checking for TRP3 integration:", addon.TRP3_GetMyRPNameWithColor ~= nil);
-                    local rpNameWithColor = addon.TRP3_GetMyRPNameWithColor and addon.TRP3_GetMyRPNameWithColor()
+                    local rpNameWithColor = isCurrentCharacter and (addon.TRP3_GetMyRPNameWithColor and addon.TRP3_GetMyRPNameWithColor())
                     addon:DebugMessage("[Data:DisplayHistory] TRP3 returned my RP name with color:", rpNameWithColor);
                     
                     if rpNameWithColor then
@@ -460,7 +462,8 @@ addon.GetTimeAgo = GetTimeAgo;
 -- History Retention Cleanup
 function addon:RunHistoryRetentionCleanup()
     local config = WhisperManager_Config or {}
-    local retentionMode = config.historyRetentionMode or "none"
+    local settings = config.settings or {}
+    local retentionMode = settings.historyRetentionMode or "none"
     
     if retentionMode == "none" then
         if addon.DebugMode then
@@ -513,16 +516,24 @@ function addon:RunHistoryRetentionCleanup()
     -- Iterate through each player's history
     for playerKey, history in pairs(historyDB) do
         if type(history) == "table" and #history > 0 then
-            -- Sort messages by timestamp (newest first)
+            -- Sort to chronological order (oldest first) to repair data reversed by legacy cleanup
             table.sort(history, function(a, b)
+                return (a.t or 0) < (b.t or 0)
+            end)
+            -- Build a sorted copy (newest first) for processing without mutating the original
+            local sorted = {}
+            for _, v in ipairs(history) do
+                table.insert(sorted, v)
+            end
+            table.sort(sorted, function(a, b)
                 return (a.t or 0) > (b.t or 0)
             end)
             
             local messagesToKeep = {}
             local protectedCount = 0
             
-            -- Process messages
-            for i, message in ipairs(history) do
+            -- Process messages from the sorted copy
+            for i, message in ipairs(sorted) do
                 local messageAge = currentTime - (message.t or 0)
                 local ageInMonths = messageAge / secondsPerMonth
                 
@@ -545,6 +556,11 @@ function addon:RunHistoryRetentionCleanup()
                     table.insert(messagesToKeep, message)
                 end
             end
+            
+            -- Sort kept messages back to chronological order (oldest first)
+            table.sort(messagesToKeep, function(a, b)
+                return (a.t or 0) < (b.t or 0)
+            end)
             
             local deletedCount = #history - #messagesToKeep
             if deletedCount > 0 then
@@ -610,8 +626,16 @@ function addon:RunDebugRetentionCleanup()
     -- Iterate through each player's history
     for playerKey, history in pairs(historyDB) do
         if type(history) == "table" and #history > 0 then
-            -- Sort messages by timestamp (newest first)
+            -- Sort to chronological order (oldest first) to repair data reversed by legacy cleanup
             table.sort(history, function(a, b)
+                return (a.t or 0) < (b.t or 0)
+            end)
+            -- Build a sorted copy (newest first) for processing without mutating the original
+            local sorted = {}
+            for _, v in ipairs(history) do
+                table.insert(sorted, v)
+            end
+            table.sort(sorted, function(a, b)
                 return (a.t or 0) > (b.t or 0)
             end)
             
@@ -619,7 +643,7 @@ function addon:RunDebugRetentionCleanup()
             local protectedCount = 0
             
             -- Process messages
-            for i, message in ipairs(history) do
+            for i, message in ipairs(sorted) do
                 local messageAge = currentTime - (message.t or 0)
                 
                 local shouldKeep = false
@@ -640,6 +664,11 @@ function addon:RunDebugRetentionCleanup()
                     table.insert(messagesToKeep, message)
                 end
             end
+            
+            -- Sort kept messages back to chronological order (oldest first)
+            table.sort(messagesToKeep, function(a, b)
+                return (a.t or 0) < (b.t or 0)
+            end)
             
             local deletedCount = #history - #messagesToKeep
             if deletedCount > 0 then

@@ -88,6 +88,7 @@ local RETENTION_OPTIONS = {
     {name = "(!Recruiter) Keep 5 recent (6 mo), delete rest 6 mo", value = "mode3", keepCount = 5, keepMonths = 6, deleteMonths = 6},
     {name = "(!Unsafe) Keep 30 recent (12 mo), delete rest 6 mo", value = "mode4", keepCount = 30, keepMonths = 12, deleteMonths = 6},
 }
+addon.RETENTION_OPTIONS = RETENTION_OPTIONS
 
 local DEFAULT_BEHAVIOR_OPTIONS = {
     {name = "Silent Mode Enabled | Chat Mode Enabled", value = "silent_on_chat_on"},

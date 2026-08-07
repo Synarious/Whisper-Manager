@@ -156,7 +156,7 @@ local function FormatChatHistoryForExport(playerKey)
     if not history or #history == 0 then
         return "No messages found for this conversation."
     end
-    
+
     local MAX_LINES = 2500
     local totalMessages = #history
     local startIndex = 1

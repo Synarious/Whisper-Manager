@@ -272,9 +272,6 @@ function addon:OpenConversation(playerName)
     self:FocusWindow(win)
     -- Don't auto-focus input - let user click to focus
     
-    -- Mark as read and update recent chats
-    self:UpdateRecentChat(playerKey, displayName, false)
-    
     return true
 end
 
@@ -334,10 +331,8 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     self:FocusWindow(win)
     -- Don't auto-focus input - let user click to focus
     
-    -- Mark as read and update recent chats
-    self:UpdateRecentChat(playerKey, displayName, true)
-    
     return true
+
 end
 
 -- Backward Compatibility

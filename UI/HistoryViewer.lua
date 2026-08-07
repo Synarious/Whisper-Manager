@@ -521,7 +521,8 @@ function addon:ShowHistoryDetail(playerKey, displayName)
             
             local coloredAuthor
             local messageColor
-            if author == "Me" or author == playerName or author == fullPlayerName then
+            if author == "Me" or author == playerName or author == fullPlayerName
+                or (WhisperManager_CharacterDB and WhisperManager_CharacterDB[author]) then
                 -- Use customizable send color for message text
                 if isBNet then
                     local color = self.settings.bnetSendColor or {r = 0.0, g = 0.66, b = 1.0}
@@ -533,17 +534,23 @@ function addon:ShowHistoryDetail(playerKey, displayName)
                     messageColor = "|cff" .. colorHex
                 end
                 
-                -- Use player's class color for name only, brackets use message color
-                local _, playerClass = UnitClass("player")
-                local classColor = playerClass and RAID_CLASS_COLORS[playerClass]
+                -- Use stored class token if available, fall back to current player class
+                local classColor = classToken and RAID_CLASS_COLORS[classToken]
+                if not classColor then
+                    local _, playerClass = UnitClass("player")
+                    classColor = playerClass and RAID_CLASS_COLORS[playerClass]
+                end
                 local classColorHex
                 if classColor then
                     classColorHex = string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255)
                 else
                     classColorHex = "ffd100"
                 end
+                -- Extract display name from stored author, fall back to current player name
+                local displayAuthor = author:match("^([^%-]+)") or playerName
+                local hyperlinkTarget = (author ~= "Me") and author or fullPlayerName
                 -- Format: brackets in message color, name in class color
-                coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", fullPlayerName, messageColor, classColorHex, playerName, messageColor)
+                coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", hyperlinkTarget, messageColor, classColorHex, displayAuthor, messageColor)
             else
                 -- Color based on whisper type (receive)
                 if isBNet then

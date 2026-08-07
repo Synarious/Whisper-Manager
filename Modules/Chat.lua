@@ -134,7 +134,8 @@ local function FormatMessageForDisplay(win, author, message, timestamp, classTok
     local coloredAuthor
     local messageColor
     
-    local isMe = (author == "Me" or author == playerName or author == fullPlayerName)
+    local isMe = (author == "Me" or author == playerName or author == fullPlayerName
+        or (WhisperManager_CharacterDB and WhisperManager_CharacterDB[author]))
     
     if isMe then
         if win.isBNet then
@@ -147,11 +148,16 @@ local function FormatMessageForDisplay(win, author, message, timestamp, classTok
             messageColor = "|cff" .. colorHex
         end
         
-        local _, playerClass = UnitClass("player")
-        local classColor = playerClass and RAID_CLASS_COLORS[playerClass]
+        local classColor = classToken and RAID_CLASS_COLORS[classToken]
+        if not classColor then
+            local _, playerClass = UnitClass("player")
+            classColor = playerClass and RAID_CLASS_COLORS[playerClass]
+        end
         local classColorHex = classColor and string.format("%02x%02x%02x", classColor.r * 255, classColor.g * 255, classColor.b * 255) or "ffd100"
         
-        coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", fullPlayerName, messageColor, classColorHex, playerName, messageColor)
+        local displayAuthor = author:match("^([^%-]+)") or playerName
+        local hyperlinkTarget = (author ~= "Me") and author or fullPlayerName
+        coloredAuthor = string.format("|Hplayer:%s|h%s[|r|cff%s%s|r%s]:|h", hyperlinkTarget, messageColor, classColorHex, displayAuthor, messageColor)
     else
         if win.isBNet then
             local bnetDisplayName = win.displayName or author
@@ -585,7 +591,6 @@ function addon:OpenConversation(playerName)
     win:Show()
 
     self:FocusWindow(win)
-    self:UpdateRecentChat(playerKey, displayName, false)
     return true
 end
 
@@ -645,7 +650,6 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     end
     win:Show()
     self:FocusWindow(win)
-    self:UpdateRecentChat(playerKey, displayName, true)
     return true
 end
 
@@ -884,6 +888,9 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
         end
 
         if sent then
+            addon.__lastWhisperTarget = win.isBNet and win.displayName or target
+            addon.__lastWhisperMessage = message
+            addon.__lastWhisperWindow = win
             self:SetText("")
             UpdateInputHeight(self)
             self:ClearFocus()
@@ -1191,6 +1198,7 @@ function addon:RegisterChatEvents()
     eventFrame:RegisterEvent("PLAYER_STARTED_MOVING")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    eventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "PLAYER_STARTED_MOVING" then
@@ -1338,6 +1346,28 @@ function addon:RegisterChatEvents()
             local window = addon.windows[playerKey]
             if window then
                 addon:DisplayHistory(window, playerKey)
+            end
+        elseif event == "CHAT_MSG_SYSTEM" then
+            local message = ...
+            if addon.__lastWhisperTarget then
+                local errorTarget = message:match("No player named '(.+)' is currently playing%.")
+                    or message:match("^(.+) is not online%.")
+                    or message:match("^(.+) is ignoring you%.")
+                if errorTarget then
+                    local normalizedError = addon.StripRealmFromName(errorTarget)
+                    local normalizedLast = addon.StripRealmFromName(addon.__lastWhisperTarget)
+                    if normalizedError == normalizedLast then
+                        addon:Print("|cffff0000Whisper not delivered: " .. errorTarget .. " is offline or unavailable.|r")
+                        local win = addon.__lastWhisperWindow
+                        if win and win.Input and addon.__lastWhisperMessage then
+                            win.Input:SetText(addon.__lastWhisperMessage)
+                            win.Input:SetFocus()
+                        end
+                        addon.__lastWhisperTarget = nil
+                        addon.__lastWhisperMessage = nil
+                        addon.__lastWhisperWindow = nil
+                    end
+                end
             end
         end
     end)
