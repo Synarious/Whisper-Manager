@@ -707,7 +707,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end)
     
     win:SetScript("OnMouseDown", function(self, button)
-        if self.History and MouseIsOver(self.History) then return end
+        if self.History and self.History:IsMouseOver() then return end
         addon:FocusWindow(self)
         if self.playerKey then addon:MarkChatAsRead(self.playerKey) end
     end)

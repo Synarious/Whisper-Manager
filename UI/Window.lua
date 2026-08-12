@@ -472,7 +472,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win:SetScript("OnMouseDown", function(self, button)
         -- Don't handle clicks when mouse is over the history frame
         -- Let the history frame handle its own mouse events (higher strata/level)
-        if self.History and MouseIsOver(self.History) then
+        if self.History and self.History:IsMouseOver() then
             return
         end
         addon:FocusWindow(self)
