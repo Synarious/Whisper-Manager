@@ -211,18 +211,47 @@ function addon:SetupHooks()
         return
     end
     addon.__hooksInstalled = true
-    
+
+    -- Defer addon work out of the protected Blizzard call path.
+    -- The UnitPopup "Whisper"/"Reply"/BNet-whisper buttons execute
+    -- ChatFrameUtil.SendTell / ReplyTell / SendBNetTell synchronously inside
+    -- the protected menu button flow; running addon code (frame creation,
+    -- ChatFrameUtil.DeactivateChat, editbox attribute writes) there taints
+    -- the menu state, which later shows up as ADDON_ACTION_FORBIDDEN when the
+    -- player clicks "Copy Name" (CopyToClipboard) in the same menu system.
+    local function Schedule(action)
+        C_Timer.After(0, action)
+    end
+
+    -- Queue one whisper action per tick so the SendTell/OpenChat pair fired by
+    -- a single menu click only opens the conversation once, and all work runs
+    -- outside the protected execution context.
+    local function QueueOpenConversation(openFn)
+        if addon.__wmPendingOpen then
+            return
+        end
+        addon.__wmPendingOpen = true
+        Schedule(function()
+            addon.__wmPendingOpen = nil
+            local ok = false
+            pcall(function() ok = openFn() end)
+            if ok then
+                local editBox = ChatFrameUtil.ChooseBoxForSend()
+                if editBox and editBox:IsShown() then
+                    ChatFrameUtil.DeactivateChat(editBox)
+                end
+            end
+        end)
+    end
+
     -- Hook whisper command extraction - use editbox mixin method
     local function OnExtractTellTarget(editBox, text)
         local target = addon:ExtractWhisperTarget(text)
         if not target then return end
         addon:DebugMessage("Hooked /w via ExtractTellTarget. Target:", target)
-        
-        if addon:OpenConversation(target) then
-            ChatFrameUtil.DeactivateChat(editBox)
-        end
+        QueueOpenConversation(function() return addon:OpenConversation(target) end)
     end
-    
+
     -- Hook the mixin method on ChatFrameEditBox
     hooksecurefunc(ChatFrameEditBoxMixin, "ExtractTellTarget", OnExtractTellTarget)
 
@@ -233,7 +262,7 @@ function addon:SetupHooks()
             addon:DebugMessage("OpenChat ignored - window closing")
             return
         end
-        
+
         local editBox = ChatFrameUtil.ChooseBoxForSend(chatFrame)
         if not editBox then return end
 
@@ -242,37 +271,19 @@ function addon:SetupHooks()
             return
         end
 
-        -- Only intercept if text contains /w or /whisper command
-        if not text or not text:match("^/[Ww]") then
-            addon:DebugMessage("OpenChat ignored - no /w command in text")
-            return
-        end
-
         local target = editBox:GetAttribute("tellTarget")
         if not target or target == "" then return end
 
-        if editBox.__WhisperManagerHandled then return end
-        editBox.__WhisperManagerHandled = true
-
         addon:DebugMessage("OpenChat captured whisper target:", target)
 
-        if addon:OpenConversation(target) then
-            ChatFrameUtil.DeactivateChat(editBox)
-        end
-        
-        C_Timer.After(0.1, function()
-            editBox.__WhisperManagerHandled = nil
-        end)
+        QueueOpenConversation(function() return addon:OpenConversation(target) end)
     end)
 
     -- Hook reply tell
     hooksecurefunc(ChatFrameUtil, "ReplyTell", function(chatFrame)
         local target = ChatFrameUtil.GetLastTellTarget()
-        if target and addon:OpenConversation(target) then
-            local activeEditBox = ChatFrameUtil.ChooseBoxForSend()
-            if activeEditBox then
-                ChatFrameUtil.DeactivateChat(activeEditBox)
-            end
+        if target then
+            QueueOpenConversation(function() return addon:OpenConversation(target) end)
         end
     end)
 
@@ -280,28 +291,14 @@ function addon:SetupHooks()
     hooksecurefunc(ChatFrameUtil, "SendTell", function(name, chatFrame)
         if not name or name == "" then return end
         -- Open conversation. If successful, close any opened chat editbox to avoid duplicate UI
-        local ok = false
-        pcall(function() ok = addon:OpenConversation(name) end)
-        if ok then
-            local editBox = ChatFrameUtil.ChooseBoxForSend()
-            if editBox and editBox:IsShown() then
-                ChatFrameUtil.DeactivateChat(editBox)
-            end
-        end
+        QueueOpenConversation(function() return addon:OpenConversation(name) end)
     end)
 
     -- Hook BNet whisper default action similarly
     hooksecurefunc(ChatFrameUtil, "SendBNetTell", function(tokenizedName)
         if not tokenizedName or tokenizedName == "" then return end
-        local ok = false
         -- SendBNetTell may pass a BattleTag or name; try to open by BattleTag when possible
-        pcall(function() ok = addon:OpenBNetConversation(tokenizedName) end)
-        if ok then
-            local editBox = ChatFrameUtil.ChooseBoxForSend()
-            if editBox and editBox:IsShown() then
-                ChatFrameUtil.DeactivateChat(editBox)
-            end
-        end
+        QueueOpenConversation(function() return addon:OpenBNetConversation(tokenizedName) end)
     end)
 
     -- Setup context menu integration

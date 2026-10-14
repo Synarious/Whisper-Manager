@@ -717,9 +717,20 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     -- Hyperlink handlers: Use SetItemRef which properly integrates with other addons
     win.History:SetScript("OnHyperlinkClick", function(self, link, text, button)
         addon:DebugMessage("Hyperlink clicked in window:", link, text, button)
+        -- Handle WM's own URL links directly; never route them through Blizzard's
+        -- hyperlink system (avoids executing inside protected/other-addon flows).
+        if link and link:match("^wm_url:") then
+            addon:HandleURLClick(link, text, button)
+            return
+        end
         -- Use SetItemRef which allows other addons to hook and modify behavior
-        -- This is the standard WoW API for handling all hyperlink clicks
-        SetItemRef(link, text, button, self)
+        -- This is the standard WoW API for handling all hyperlink clicks.
+        -- Wrapped in securecallfunction: SetItemRef synchronously opens the Blizzard
+        -- unit popup menu (right-click) or the whisper chat window (left-click);
+        -- called from this addon handler, those objects inherit Whisper-Manager's
+        -- taint hash and later protected actions on them (e.g. the menu's "Copy
+        -- Character Name" -> CopyToClipboard) fail with ADDON_ACTION_FORBIDDEN.
+        securecallfunction(SetItemRef, link, text, button, self)
     end)
     win.History:SetScript("OnHyperlinkEnter", function(self, link, text, button)
         -- Note: ShowUIPanel is protected, use GameTooltip:Show() instead

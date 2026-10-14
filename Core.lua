@@ -261,17 +261,11 @@ function addon:Initialize()
     end
 
     self:InitializeSilentModeState()
-    
-    -- Hook shift-click item linking into our edit boxes
-    local originalInsertLink = ChatFrameUtil.InsertLink
-    ChatFrameUtil.InsertLink = function(link)
-        if addon.activeEditBox and addon.activeEditBox:IsVisible() and addon.activeEditBox:HasFocus() then
-            addon.activeEditBox:Insert(link)
-            return true
-        else
-            return originalInsertLink(link)
-        end
-    end
+
+    -- NOTE: Shift-click item linking is intentionally NOT intercepted.
+    -- Replacing ChatFrameUtil.InsertLink (and the chat editbox IsVisible/IsShown
+    -- methods below) tainted Blizzard's protected frames, which caused
+    -- ADDON_ACTION_FORBIDDEN on the unit menu's "Copy Name" (CopyToClipboard).
 
     self:RefreshOverlayAnchors()
     if UIParent and not UIParent.__wmOverlayHookedForWhisperManager then
@@ -490,26 +484,17 @@ local function hookChatFrameEditBox(editBox)
             local activeEditBox = GetActiveWhisperManagerEditBox()
             if activeEditBox and activeEditBox ~= self then
                 activeEditBox:Insert(theText)
+                -- ChatFrameUtil.InsertLink moves focus to the chat editbox right
+                -- after Inserting; hand focus back to the WhisperManager input on
+                -- the next frame (after the original call completes).
+                C_Timer.After(0, function()
+                    if activeEditBox and activeEditBox:IsShown() then
+                        addon:SetEditBoxFocus(activeEditBox)
+                        activeEditBox:SetFocus()
+                    end
+                end)
             end
         end)
-
-        editBox.wmIsVisible = editBox.IsVisible
-        editBox.IsVisible = function(self)
-            if GetActiveWhisperManagerEditBox() then
-                return true
-            else
-                return self:wmIsVisible()
-            end
-        end
-
-        editBox.wmIsShown = editBox.IsShown
-        editBox.IsShown = function(self)
-            if GetActiveWhisperManagerEditBox() then
-                return true
-            else
-                return self:wmIsShown()
-            end
-        end
 
         hooksecurefunc(editBox, "SetText", function(self, theText)
             local firstChar = ""
@@ -522,44 +507,34 @@ local function hookChatFrameEditBox(editBox)
             end
         end)
 
-        editBox.wmHighlightText = editBox.HighlightText
-        editBox.HighlightText = function(self, theStart, theEnd)
+        hooksecurefunc(editBox, "HighlightText", function(self, theStart, theEnd)
             local activeEditBox = GetActiveWhisperManagerEditBox()
             if activeEditBox and activeEditBox ~= self then
                 activeEditBox:HighlightText(theStart, theEnd)
-            else
-                self:wmHighlightText(theStart, theEnd)
             end
-        end
+        end)
 
         Hooked_ChatFrameEditBoxes[editBox:GetName()] = true
         addon:DebugMessage("Hooked ChatFrame EditBox:", editBox:GetName())
     end
 end
 
-local originalActivateChat = ChatFrameUtil.ActivateChat
-ChatFrameUtil.ActivateChat = function(editBox)
+-- NOTE: The chat editbox IsVisible/IsShown methods are intentionally NOT
+-- replaced anymore. Overriding methods of Blizzard's protected chat frames ran
+-- addon code inside every protected frame execution (unit menus, dropdowns),
+-- tainting the whole path and blocking protected calls like CopyToClipboard.
+hooksecurefunc(ChatFrameUtil, "ActivateChat", function(editBox)
     if editBox and editBox.GetAttribute then
         local chatType = editBox:GetAttribute("chatType")
         if chatType and chatType ~= "WHISPER" then
             addon:SetEditBoxFocus(nil)
         end
     end
-    originalActivateChat(editBox)
     hookChatFrameEditBox(editBox)
-end
+end)
 
-local originalGetActiveWindow = ChatFrameUtil.GetActiveWindow
-function ChatFrameUtil.GetActiveWindow()
-    return GetActiveWhisperManagerEditBox() or originalGetActiveWindow()
-end
-
-if ChatEdit_GetActiveWindow then
-    local originalChatEdit_GetActiveWindow = ChatEdit_GetActiveWindow
-    function ChatEdit_GetActiveWindow()
-        return GetActiveWhisperManagerEditBox() or originalChatEdit_GetActiveWindow()
-    end
-end
+-- NOTE: ChatFrameUtil.GetActiveWindow / ChatEdit_GetActiveWindow are NOT
+-- overridden anymore (same taint reasons as above).
 
 function addon:SetEditBoxFocus(editBox)
     if editBox and not editBox._WhisperManagerInput then
@@ -752,6 +727,30 @@ function addon:SetupHooks()
     end
     addon.__hooksInstalled = true
 
+    -- Defer addon work out of the protected Blizzard call path.
+    -- The UnitPopup "Whisper"/"BNet Whisper" buttons execute the hooked
+    -- chat functions synchronously inside the protected menu flow. Running
+    -- addon code there (frame creation, ChatFrameUtil.DeactivateChat, editbox
+    -- writes) taints the shared menu state, which then blocks the menu's
+    -- "Copy Name" button (protected CopyToClipboard) with ADDON_ACTION_FORBIDDEN.
+    -- All handling is deferred one frame and coalesced per action so the
+    -- SendTell/OpenChat pair fired by a single menu click runs exactly once,
+    -- always outside the protected execution context.
+    local wmActionPending = false
+    local function QueueWhisperAction(action)
+        if wmActionPending then
+            return
+        end
+        wmActionPending = true
+        C_Timer.After(0, function()
+            wmActionPending = false
+            local ok, err = pcall(action)
+            if not ok then
+                addon:DebugMessage("Deferred whisper action error:", tostring(err))
+            end
+        end)
+    end
+
     local function NormalizeTellTarget(rawTarget)
         local function NormalizeRealm(realm)
             if type(realm) ~= "string" or realm == "" then return nil end
@@ -803,8 +802,12 @@ function addon:SetupHooks()
             local unitToken = rawTarget.unit or rawTarget.unitToken
             if type(unitToken) == "string" and unitToken ~= "" and UnitExists and UnitExists(unitToken) then
                 local unitName, unitRealm = UnitName(unitToken)
-                if unitName and unitName ~= "" then
-                    local realm = NormalizeRealm(unitRealm)
+                -- 12.x: UnitName returns secret values for secret units in protected
+                -- content; those cannot be processed by addons.
+                local unitNameSecret = issecretvalue and issecretvalue(unitName) == true
+                local unitRealmSecret = issecretvalue and issecretvalue(unitRealm) == true
+                if unitName and not unitNameSecret and unitName ~= "" then
+                    local realm = unitRealmSecret and nil or NormalizeRealm(unitRealm)
                     if realm then
                         return unitName .. "-" .. realm
                     end
@@ -815,8 +818,10 @@ function addon:SetupHooks()
             local guid = rawTarget.guid or rawTarget.playerGuid
             if type(guid) == "string" and guid ~= "" and GetPlayerInfoByGUID then
                 local _, _, _, _, _, guidName, guidRealm = GetPlayerInfoByGUID(guid)
-                if guidName and guidName ~= "" then
-                    local realm = NormalizeRealm(guidRealm)
+                local guidNameSecret = issecretvalue and issecretvalue(guidName) == true
+                if guidName and not guidNameSecret and guidName ~= "" then
+                    local guidRealmSecret = issecretvalue and issecretvalue(guidRealm) == true
+                    local realm = guidRealmSecret and nil or NormalizeRealm(guidRealm)
                     if realm then
                         return guidName .. "-" .. realm
                     end
@@ -856,9 +861,6 @@ function addon:SetupHooks()
         if addon.IsRestrictedChatModeInstance and addon:IsRestrictedChatModeInstance() then
             return
         end
-        if InCombatLockdown and InCombatLockdown() then
-            return
-        end
 
         local normalizedTarget = NormalizeTellTarget(name)
         if not normalizedTarget then
@@ -871,49 +873,59 @@ function addon:SetupHooks()
             return
         end
 
-        local now = (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
-        if addon.__wmLastTellTarget == playerKey and addon.__wmLastTellTime and (now - addon.__wmLastTellTime) < 0.05 then
-            return
-        end
-        addon.__wmLastTellTarget = playerKey
-        addon.__wmLastTellTime = now
-
         if playerKey and addon:IsChatAutoHidden(playerKey) then
             return
         end
 
-        local monitorModeActive = addon.IsChatModeEnabled and (not addon:IsChatModeEnabled())
-        if addon:IsSilentModeEnabled() or monitorModeActive then
-            if playerKey then
-                addon:UpdateRecentChat(playerKey, displayName or normalizedTarget, false, "Me")
-                addon:MarkChatAsRead(playerKey)
-                addon:DebugMessage("Monitor/Silent intercept for right-click whisper:", normalizedTarget)
+        QueueWhisperAction(function()
+            if InCombatLockdown and InCombatLockdown() then
+                return
             end
-            return
-        end
 
-        local opened = false
-        pcall(function() opened = addon:OpenConversation(normalizedTarget) end)
-
-        if opened then
-            local editBox = ChatFrameUtil.ChooseBoxForSend(chatFrame) or ChatFrameUtil.ChooseBoxForSend()
-            if editBox and editBox:IsShown() then
-                ChatFrameUtil.DeactivateChat(editBox)
+            local now = (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
+            if addon.__wmLastTellTarget == playerKey and addon.__wmLastTellTime and (now - addon.__wmLastTellTime) < 0.05 then
+                return
             end
-        end
+            addon.__wmLastTellTarget = playerKey
+            addon.__wmLastTellTime = now
 
-        if opened and addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
-            C_Timer.After(0, function()
-                local key = addon:ResolvePlayerIdentifiers(normalizedTarget)
-                local win = key and addon.windows and addon.windows[key]
-                if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
-                    addon:FocusWindow(win)
-                    win.Input:SetFocus()
-                    addon:SetEditBoxFocus(win.Input)
+            local monitorModeActive = addon.IsChatModeEnabled and (not addon:IsChatModeEnabled())
+            if addon:IsSilentModeEnabled() or monitorModeActive then
+                if playerKey then
+                    addon:UpdateRecentChat(playerKey, displayName or normalizedTarget, false, "Me")
+                    addon:MarkChatAsRead(playerKey)
+                    addon:DebugMessage("Monitor/Silent intercept for right-click whisper:", normalizedTarget)
                 end
-            end)
-        end
+                return
+            end
 
+            local opened = false
+            pcall(function() opened = addon:OpenConversation(normalizedTarget) end)
+
+            if opened then
+                local editBox = ChatFrameUtil.ChooseBoxForSend(chatFrame) or ChatFrameUtil.ChooseBoxForSend()
+                if editBox and editBox:IsShown() then
+                    -- NOTE: Use editBox:Deactivate() instead of ChatFrameUtil.DeactivateChat.
+                    -- DeactivateChat writes the global ACTIVE_CHAT_EDIT_BOX (nil), which breaks
+                    -- shift-click link insertion (ChatFrameUtil.InsertLink reads GetActiveWindow
+                    -- and silently fails when the global is nil). The editbox's own Deactivate()
+                    -- just hides/clears it without touching the global.
+                    editBox:Deactivate()
+                end
+            end
+
+            if opened and addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
+                C_Timer.After(0, function()
+                    local key = addon:ResolvePlayerIdentifiers(normalizedTarget)
+                    local win = key and addon.windows and addon.windows[key]
+                    if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
+                        addon:FocusWindow(win)
+                        win.Input:SetFocus()
+                        addon:SetEditBoxFocus(win.Input)
+                    end
+                end)
+            end
+        end)
     end
 
     local function HandleOpenChat(text, chatFrame)
@@ -957,47 +969,70 @@ function addon:SetupHooks()
             return
         end
 
-        local monitorModeActive = addon.IsChatModeEnabled and (not addon:IsChatModeEnabled())
-        if addon:IsSilentModeEnabled() or monitorModeActive then
-            addon:UpdateRecentChat(playerKey, displayName or tellTarget, false, "Me")
-            addon:MarkChatAsRead(playerKey)
-            addon:DebugMessage("Monitor/Silent intercept for OpenChat whisper:", tellTarget)
-            return
-        end
+        QueueWhisperAction(function()
+            if addon.__closingWindow then
+                return
+            end
 
-        if editBox.__WhisperManagerHandled then
-            return
-        end
-        editBox.__WhisperManagerHandled = true
+            local monitorModeActive = addon.IsChatModeEnabled and (not addon:IsChatModeEnabled())
+            if addon:IsSilentModeEnabled() or monitorModeActive then
+                addon:UpdateRecentChat(playerKey, displayName or tellTarget, false, "Me")
+                addon:MarkChatAsRead(playerKey)
+                addon:DebugMessage("Monitor/Silent intercept for OpenChat whisper:", tellTarget)
+                return
+            end
 
-        local opened = false
-        pcall(function() opened = addon:OpenConversation(tellTarget) end)
+            if editBox.__WhisperManagerHandled then
+                return
+            end
+            editBox.__WhisperManagerHandled = true
 
-        if opened and editBox:IsShown() then
-            ChatFrameUtil.DeactivateChat(editBox)
-        end
+            local opened = false
+            pcall(function() opened = addon:OpenConversation(tellTarget) end)
 
-        if opened and addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
-            C_Timer.After(0, function()
-                local key = addon:ResolvePlayerIdentifiers(tellTarget)
-                local win = key and addon.windows and addon.windows[key]
-                if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
-                    addon:FocusWindow(win)
-                    win.Input:SetFocus()
-                    addon:SetEditBoxFocus(win.Input)
+            if opened and editBox:IsShown() then
+                -- NOTE: editBox:Deactivate() (not ChatFrameUtil.DeactivateChat) so the
+                -- global ACTIVE_CHAT_EDIT_BOX stays intact for shift-click link insertion.
+                editBox:Deactivate()
+            end
+
+            if opened and addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
+                C_Timer.After(0, function()
+                    local key = addon:ResolvePlayerIdentifiers(tellTarget)
+                    local win = key and addon.windows and addon.windows[key]
+                    if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
+                        addon:FocusWindow(win)
+                        win.Input:SetFocus()
+                        addon:SetEditBoxFocus(win.Input)
+                    end
+                end)
+            end
+
+            C_Timer.After(0.1, function()
+                if editBox then
+                    editBox.__WhisperManagerHandled = nil
                 end
             end)
-        end
-
-        C_Timer.After(0.1, function()
-            if editBox then
-                editBox.__WhisperManagerHandled = nil
-            end
         end)
     end
 
     hooksecurefunc(ChatFrameUtil, "SendTell", function(name, chatFrame)
         HandleSendTell(name, chatFrame)
+    end)
+
+    -- Shift-click link insertion (items, achievements, etc.) routes through
+    -- ChatFrameUtil.InsertLink -> GetActiveWindow(). When no chat window is
+    -- active (e.g. right after login), the link would be silently dropped;
+    -- forward it into the WhisperManager input if it has focus. Post-hook only,
+    -- so no protected chat flow is tainted.
+    hooksecurefunc(ChatFrameUtil, "InsertLink", function(text)
+        if type(text) ~= "string" or text == "" then
+            return
+        end
+        local activeEditBox = GetActiveWhisperManagerEditBox()
+        if activeEditBox then
+            activeEditBox:Insert(text)
+        end
     end)
 
     hooksecurefunc(ChatFrameUtil, "OpenChat", function(text, chatFrame, desiredCursorPosition)
@@ -1079,33 +1114,36 @@ function addon:SetupHooks()
             return
         end
 
-        local monitorModeActive = addon.IsChatModeEnabled and (not addon:IsChatModeEnabled())
-        if addon:IsSilentModeEnabled() or monitorModeActive then
-            addon:UpdateRecentChat(playerKey, displayName or tokenizedName, true, "Me")
-            addon:MarkChatAsRead(playerKey)
-            addon:DebugMessage("Monitor/Silent intercept for BNet right-click whisper:", tostring(tokenizedName))
-            return
-        end
+        QueueWhisperAction(function()
+            local monitorModeActive = addon.IsChatModeEnabled and (not addon:IsChatModeEnabled())
+            if addon:IsSilentModeEnabled() or monitorModeActive then
+                addon:UpdateRecentChat(playerKey, displayName or tokenizedName, true, "Me")
+                addon:MarkChatAsRead(playerKey)
+                addon:DebugMessage("Monitor/Silent intercept for BNet right-click whisper:", tostring(tokenizedName))
+                return
+            end
 
-        local opened = false
-        pcall(function() opened = addon:OpenBNetConversation(bnetAccountID, displayName) end)
+            local opened = false
+            pcall(function() opened = addon:OpenBNetConversation(bnetAccountID, displayName) end)
 
-        local editBox = ChatFrameUtil.ChooseBoxForSend()
-        if editBox and editBox:IsShown() then
-            ChatFrameUtil.DeactivateChat(editBox)
-        end
+            local editBox = ChatFrameUtil.ChooseBoxForSend()
+            if editBox and editBox:IsShown() then
+                -- NOTE: editBox:Deactivate() (not ChatFrameUtil.DeactivateChat) so the
+                -- global ACTIVE_CHAT_EDIT_BOX stays intact for shift-click link insertion.
+                editBox:Deactivate()
+            end
 
-        if opened and addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
-            C_Timer.After(0, function()
-                local win = playerKey and addon.windows and addon.windows[playerKey]
-                if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
-                    addon:FocusWindow(win)
-                    win.Input:SetFocus()
-                    addon:SetEditBoxFocus(win.Input)
-                end
-            end)
-        end
-
+            if opened and addon.IsChatModeEnabled and addon:IsChatModeEnabled() then
+                C_Timer.After(0, function()
+                    local win = playerKey and addon.windows and addon.windows[playerKey]
+                    if win and win:IsShown() and win.Input and win.InputContainer and win.InputContainer:IsShown() then
+                        addon:FocusWindow(win)
+                        win.Input:SetFocus()
+                        addon:SetEditBoxFocus(win.Input)
+                    end
+                end)
+            end
+        end)
     end)
 
     -- Setup context menu integration

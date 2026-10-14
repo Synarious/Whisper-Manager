@@ -246,7 +246,10 @@ local function CreateButtons(win, baseLevel)
             end
             if charRealm then
                 local command = "/trp3 open " .. charRealm
-                ChatFrameUtil.OpenChat(command)
+                -- securecallfunction: OpenChat activates the protected chat frame;
+                -- called from this addon's click handler, it would taint the chat
+                -- window, breaking later protected actions on it (ADDON_ACTION_FORBIDDEN).
+                securecallfunction(ChatFrameUtil.OpenChat, command)
                 addon:Print("Press |cff00ff00Enter|r to open the TRP3 profile.")
             end
         end
@@ -274,7 +277,10 @@ local function CreateButtons(win, baseLevel)
             local charName = win.playerTarget
             if charName then
                 local command = "/ginvite " .. charName
-                ChatFrameUtil.OpenChat(command)
+                -- securecallfunction: OpenChat activates the protected chat frame;
+                -- called from this addon's click handler, it would taint the chat
+                -- window, breaking later protected actions on it (ADDON_ACTION_FORBIDDEN).
+                securecallfunction(ChatFrameUtil.OpenChat, command)
                 addon:Print("Press |cff00ff00Enter|r to send the guild invite.")
             end
         end
@@ -394,7 +400,19 @@ local function CreateHistoryFrame(win)
              end
              return
         end
-        SetItemRef(link, text, button, self)
+                -- Handle WM's own URL links directly; never route them through Blizzard's
+        -- hyperlink system (see the taint note near the bottom of this file).
+        if link and link:match("^wm_url:") then
+            addon:HandleURLClick(link, text, button)
+            return
+        end
+        -- MUST run through securecallfunction: SetItemRef synchronously opens the
+        -- Blizzard unit popup menu (right-click) or the whisper chat window (left-click)
+        -- via LinkUtil/UnitPopup. Called from this addon handler, the menu data and the
+        -- chat frame inherit Whisper-Manager's taint hash, so every later Blizzard-only
+        -- action on them (e.g. the menu's "Copy Character Name" -> protected
+        -- CopyToClipboard) fails with ADDON_ACTION_FORBIDDEN blamed on this addon.
+        securecallfunction(SetItemRef, link, text, button, self)
     end)
     
     win.History:SetScript("OnHyperlinkEnter", function(self, link, text, button)
@@ -1190,6 +1208,13 @@ function addon:RegisterChatEvents()
     -- ChatFrameUtil.AddMessageEventFilter("CHAT_MSG_BN_WHISPER_INFORM", ChatMessageEventFilter)
     
     local eventFrame = CreateFrame("Frame")
+
+    -- 12.x: in protected content (dungeons, encounters, PvP matches) Blizzard can
+    -- deliver chat payloads as secret values. Addons cannot read, compare, or
+    -- store those, so skip any event whose payload we cannot access.
+    local function IsSecretValue(value)
+        return issecretvalue and issecretvalue(value) == true
+    end
     
     eventFrame:RegisterEvent("CHAT_MSG_WHISPER")
     eventFrame:RegisterEvent("CHAT_MSG_WHISPER_INFORM")
@@ -1210,12 +1235,15 @@ function addon:RegisterChatEvents()
             addon:EnforceChatModeRestrictions(false)
         elseif event == "CHAT_MSG_WHISPER" then
             local message, author, _, _, _, _, _, _, _, _, _, guid = ...
+            if not message or IsSecretValue(message) or IsSecretValue(author) then
+                return
+            end
             local playerKey, _, displayName = addon:ResolvePlayerIdentifiers(author)
             if not playerKey then return end
 
             -- Try to extract class from GUID if available
             local classToken = nil
-            if guid and guid ~= "" then
+            if guid and not IsSecretValue(guid) then
                 local _, class = GetPlayerInfoByGUID(guid)
                 if class then
                     classToken = class
@@ -1244,12 +1272,15 @@ function addon:RegisterChatEvents()
             end
         elseif event == "CHAT_MSG_WHISPER_INFORM" then
             local message, target, _, _, _, _, _, _, _, _, _, guid = ...
+            if not message or IsSecretValue(message) or IsSecretValue(target) then
+                return
+            end
             local playerKey, resolvedTarget, displayName = addon:ResolvePlayerIdentifiers(target)
             if not playerKey then return end
 
             -- Try to extract class from GUID if available
             local classToken = nil
-            if guid and guid ~= "" then
+            if guid and not IsSecretValue(guid) then
                 local _, class = GetPlayerInfoByGUID(guid)
                 if class then
                     classToken = class
@@ -1280,10 +1311,13 @@ function addon:RegisterChatEvents()
             end
         elseif event == "CHAT_MSG_BN_WHISPER" then
             local message, author, _, _, _, _, _, _, _, _, _, _, bnSenderID = ...
+            if not message or IsSecretValue(message) or IsSecretValue(author) then
+                return
+            end
             
             -- Get BattleTag for permanent identification
             local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
-            if not accountInfo or not accountInfo.battleTag then
+            if not accountInfo or not accountInfo.battleTag or IsSecretValue(accountInfo.battleTag) then
                 addon:DebugMessage("|cffff0000ERROR: Could not get BattleTag for incoming BNet whisper|r")
                 return
             end
@@ -1315,10 +1349,13 @@ function addon:RegisterChatEvents()
             end
         elseif event == "CHAT_MSG_BN_WHISPER_INFORM" then
             local message, _, _, _, _, _, _, _, _, _, _, _, bnSenderID = ...
+            if not message or IsSecretValue(message) then
+                return
+            end
             
             -- Get BattleTag for permanent identification
             local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
-            if not accountInfo or not accountInfo.battleTag then
+            if not accountInfo or not accountInfo.battleTag or IsSecretValue(accountInfo.battleTag) then
                 addon:DebugMessage("|cffff0000ERROR: Could not get BattleTag for outgoing BNet whisper|r")
                 return
             end
@@ -1349,6 +1386,11 @@ function addon:RegisterChatEvents()
             end
         elseif event == "CHAT_MSG_SYSTEM" then
             local message = ...
+            -- System messages in protected content can be secret values; addons
+            -- cannot read them, so skip the whisper-failure detection there.
+            if not message or IsSecretValue(message) then
+                return
+            end
             if addon.__lastWhisperTarget then
                 local errorTarget = message:match("No player named '(.+)' is currently playing%.")
                     or message:match("^(.+) is not online%.")
@@ -1460,23 +1502,11 @@ function addon:HandleURLClick(link, text, button)
     return false
 end
 
--- Hook into hyperlink system
-local originalSetHyperlink = ItemRefTooltip.SetHyperlink
-ItemRefTooltip.SetHyperlink = function(self, link, ...)
-    if link and link:match("^wm_url:") then
-        addon:Print("SetHyperlink intercepted wm_url link")
-        addon:HandleURLClick(link)
-        return
-    end
-    return originalSetHyperlink(self, link, ...)
-end
-
--- Register custom hyperlink handler
-if SetItemRef then
-    hooksecurefunc("SetItemRef", function(link, text, button, chatFrame)
-        if link and link:match("^wm_url:") then
-            addon:Print("SetItemRef intercepted wm_url link")
-            addon:HandleURLClick(link, text, button)
-        end
-    end)
-end
+-- NOTE: Do NOT install global hooks on ItemRefTooltip.SetHyperlink or SetItemRef
+-- for wm_url links. Those hooks execute inside every other addon's (and Blizzard's)
+-- hyperlink processing. When another addon (e.g. WIM) opens the unit popup menu from
+-- its own tainted click handler, our post-hook becomes the last addon code in the
+-- tainted execution path, so the taint engine blames Whisper-Manager for later
+-- protected calls on that menu (ADDON_ACTION_FORBIDDEN on CopyToClipboard).
+-- wm_url links only ever exist in WhisperManager's own windows, where the
+-- OnHyperlinkClick handlers below intercept them directly.
