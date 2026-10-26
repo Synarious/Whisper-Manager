@@ -39,7 +39,7 @@ function addon:SelectTheme(id)
 end
 
 -- The same fixed-radius corner geometry as GuildHelper, using local assets.
-local function roundedShape(frame, outline)
+local function roundedShape(frame, outline, squareBottom)
     local shape = {textures = {}}
     local radius = 8
     local function texture()
@@ -52,7 +52,11 @@ local function roundedShape(frame, outline)
         {"BOTTOMLEFT", 0, 1, 1, 0}, {"BOTTOMRIGHT", 1, 0, 1, 0},
     }) do
         local t = texture()
-        t:SetTexture("Interface\\AddOns\\Whisper-Manager\\Media\\" .. (outline and "RoundedOutline8.tga" or "RoundedCorner.tga"))
+        if squareBottom and corner[1]:find("BOTTOM") then
+            t:SetTexture("Interface\\Buttons\\WHITE8X8")
+        else
+            t:SetTexture("Interface\\AddOns\\Whisper-Manager\\Media\\" .. (outline and "RoundedOutline8.tga" or "RoundedCorner.tga"))
+        end
         t:SetSize(radius, radius)
         t:SetPoint(corner[1], frame, corner[1], 0, 0)
         t:SetTexCoord(corner[2], corner[3], corner[4], corner[5])
@@ -115,9 +119,9 @@ function addon:StyleThemeControls(root)
     for _, child in ipairs({root:GetChildren()}) do
         -- Only replace labeled action buttons; preserve icon buttons and checkboxes.
         if child:GetObjectType() == "Button" and child.GetText and child:GetText() and child:GetText() ~= "" then
-            child:SetNormalTexture(nil)
-            child:SetPushedTexture(nil)
-            child:SetHighlightTexture(nil)
+            child:SetNormalTexture("")
+            child:SetPushedTexture("")
+            child:SetHighlightTexture("")
             for _, name in ipairs({"Left", "Middle", "Right"}) do
                 if child[name] then child[name]:Hide() end
             end
@@ -160,9 +164,9 @@ function addon:StyleThemeFrame(frame, role)
     if frame.title then
         frame.title:SetTextColor(unpack(t.accent))
         frame.title:ClearAllPoints()
-        frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -11)
-        frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", role == "whisper" and -66 or -32, -11)
-        frame.title:SetFontObject("GameFontNormal")
+        frame.title:SetFontObject(role == "whisper" and "GameFontNormalLarge" or "GameFontNormal")
+        frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -9)
+        frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", role == "whisper" and -62 or -32, -9)
         frame.title:SetJustifyH("LEFT")
         frame.title:SetWordWrap(false)
     end
@@ -177,8 +181,13 @@ function addon:StyleThemeFrame(frame, role)
     if role == "whisper" or role == "preview" then
         if frame.titleBar then
             local color = self:GetSetting("titleBarColor")
-            frame.titleBar:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8X8"})
-            frame.titleBar:SetBackdropColor(color.r, color.g, color.b, self:GetSetting("titleBarAlpha"))
+            frame.titleBar:SetBackdrop(nil)
+            frame.titleBar:ClearAllPoints()
+            frame.titleBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+            frame.titleBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -1, -1)
+            frame.titleBar:SetHeight(32)
+            frame.titleBar.wmRoundedFill = frame.titleBar.wmRoundedFill or roundedShape(frame.titleBar, false, true)
+            frame.titleBar.wmRoundedFill:SetColor({color.r, color.g, color.b, self:GetSetting("titleBarAlpha")})
         end
         if frame.InputContainer then
             local color = self:GetSetting("inputBoxColor")
@@ -186,16 +195,16 @@ function addon:StyleThemeFrame(frame, role)
         end
         if role == "whisper" then
             -- Put the name first and group utility icons beside the close button.
-            for _, spec in ipairs({{frame.copyBtn, -36}, {frame.trp3Btn, -62}, {frame.ginviteBtn, -88}}) do
+            for _, spec in ipairs({{frame.closeBtn, -5}, {frame.copyBtn, -31}, {frame.trp3Btn, -57}, {frame.ginviteBtn, -83}}) do
                 if spec[1] then
                     spec[1]:ClearAllPoints()
-                    spec[1]:SetPoint("TOPRIGHT", frame, "TOPRIGHT", spec[2], -8)
+                    spec[1]:SetPoint("TOPRIGHT", frame, "TOPRIGHT", spec[2], -5)
                 end
             end
             local function updateTitleInsets()
-                local rightInset = frame.ginviteBtn and frame.ginviteBtn:IsShown() and 118
-                    or (frame.trp3Btn and frame.trp3Btn:IsShown() and 92 or 66)
-                frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -rightInset, -11)
+                local rightInset = frame.ginviteBtn and frame.ginviteBtn:IsShown() and 113
+                    or (frame.trp3Btn and frame.trp3Btn:IsShown() and 87 or 61)
+                frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -rightInset, -9)
             end
             updateTitleInsets()
             if not frame.wmTitleInsetHooks then
@@ -205,17 +214,52 @@ function addon:StyleThemeFrame(frame, role)
                     button:HookScript("OnHide", updateTitleInsets)
                 end
             end
-            frame.wmDivider:Show()
-            if not frame.wmHistoryPanel then
-                frame.wmHistoryPanel = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-                frame.wmHistoryPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -43)
-                frame.wmHistoryPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 10)
-            end
-            frame.wmHistoryPanel:SetFrameLevel(frame:GetFrameLevel() + 2)
-            panel(frame.wmHistoryPanel, {t.raised[1], t.raised[2], t.raised[3], 0.18}, {t.border[1], t.border[2], t.border[3], 0.35})
+            frame.wmDivider:Hide()
+            if frame.wmHistoryPanel then frame.wmHistoryPanel:Hide() end
             frame.History:ClearAllPoints()
-            frame.History:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -51)
-            frame.History:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 18)
+            frame.History:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -34)
+            frame.History:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 8)
+            for name, button in pairs({Copy = frame.copyBtn, Profile = frame.trp3Btn, Invite = frame.ginviteBtn, Close = frame.closeBtn}) do
+                button:SetSize(22, 22)
+                button:SetNormalTexture("")
+                button:SetPushedTexture("")
+                button:SetHighlightTexture("")
+                -- Native button states can re-show their regions on click. Clear the
+                -- region itself and make it transparent, rather than only hiding it.
+                for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture", "GetHighlightTexture", "GetDisabledTexture"}) do
+                    local texture = button[getter] and button[getter](button)
+                    if texture then
+                        texture:SetTexture("")
+                        texture:SetAlpha(0)
+                        texture:Hide()
+                    end
+                end
+                button:SetBackdrop(nil)
+                if not button.wmIcon then
+                    button.wmIcon = button:CreateTexture(nil, "ARTWORK")
+                    button.wmIcon:SetSize(18, 18)
+                    button.wmIcon:SetPoint("CENTER", button, "CENTER", 0, 0)
+                    button.wmHover = button:CreateTexture(nil, "BACKGROUND")
+                    button.wmHover:SetAllPoints(button)
+                    button.wmHover:Hide()
+                    button:HookScript("OnEnter", function(b)
+                        local color = addon:GetTheme().accent
+                        b.wmHover:SetColorTexture(color[1], color[2], color[3], 0.14)
+                        b.wmHover:Show()
+                        if b == frame.closeBtn then b.wmIcon:SetVertexColor(1, 0.35, 0.3, 1)
+                        else b.wmIcon:SetVertexColor(1, 1, 1, 1) end
+                    end)
+                    button:HookScript("OnLeave", function(b)
+                        b.wmHover:Hide()
+                        b.wmIcon:SetPoint("CENTER", b, "CENTER", 0, 0)
+                        b.wmIcon:SetVertexColor(unpack(addon:GetTheme().accent))
+                    end)
+                    button:HookScript("OnMouseDown", function(b) b.wmIcon:SetPoint("CENTER", b, "CENTER", 1, -1) end)
+                    button:HookScript("OnMouseUp", function(b) b.wmIcon:SetPoint("CENTER", b, "CENTER", 0, 0) end)
+                end
+                button.wmIcon:SetTexture("Interface\\AddOns\\Whisper-Manager\\Media\\Icon" .. name .. ".tga")
+                button.wmIcon:SetVertexColor(unpack(t.accent))
+            end
         end
     end
     if frame.detailFrame then panel(frame.detailFrame, t.raised, t.border) end

@@ -9,7 +9,8 @@ function addon:CreateFloatingButton()
     end
     
     local btn = CreateFrame("Button", "WhisperManager_FloatingButton", addon:GetOverlayParent())
-    btn:SetSize(64, 64)
+    local size = addon:GetSetting("floatingButtonSize") or 64
+    btn:SetSize(size, size)
     btn:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER", 0, 0)
     btn:SetFrameStrata("DIALOG")
     btn:SetToplevel(true)
@@ -133,7 +134,8 @@ function addon:UpdateFloatingButtonUnreadStatus()
             self.floatingButton.glow:SetBlendMode("ADD")
             self.floatingButton.glow:SetAlpha(0.8)
             self.floatingButton.glow:SetPoint("CENTER", 0, 0)
-            self.floatingButton.glow:SetSize(70, 70)
+            local size = self:GetSetting("floatingButtonSize") or 64
+            self.floatingButton.glow:SetSize(size * 70 / 64, size * 70 / 64)
             self.floatingButton.glow:SetVertexColor(0, 1, 0) -- Green glow
             
             -- Animation group
@@ -165,4 +167,16 @@ function addon:UpdateFloatingButtonUnreadStatus()
             self.floatingButton.glow.animGroup:Stop()
         end
     end
+end
+
+function addon:ApplyFloatingButtonSize()
+    local button = self.floatingButton
+    if not button then return end
+    if not self:CanChangeAddonFrame(button) then
+        self:QueueWindowAction("floating-button-size", function() self:ApplyFloatingButtonSize() end)
+        return
+    end
+    local size = math.max(24, math.min(96, tonumber(self:GetSetting("floatingButtonSize")) or 64))
+    button:SetSize(size, size)
+    if button.glow then button.glow:SetSize(size * 70 / 64, size * 70 / 64) end
 end

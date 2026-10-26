@@ -48,6 +48,8 @@ local DEFAULT_SETTINGS = {
     recentChatBackgroundColor = {r = 0, g = 0, b = 0},
     recentChatBackgroundAlpha = 0.9,
     
+    floatingButtonSize = 64,
+
     -- Button settings
     enableTRP3Button = false, -- Show TRP3 button (disabled by default)
     enableGinviteButton = false, -- Show ginvite button (disabled by default)
@@ -238,6 +240,7 @@ function addon:ApplyFontSettings()
 end
 
 function addon:ApplyAppearanceSettings()
+    if self.ApplyFloatingButtonSize then self:ApplyFloatingButtonSize() end
     self:RefreshTheme()
 end
 
@@ -1051,6 +1054,43 @@ function addon:CreateSettingsFrame()
     appearanceHeader:SetTextColor(1, 0.82, 0)
     yOffset = yOffset - 35
     
+    frame.appearanceSliders = {}
+    for _, spec in ipairs({
+        {"windowBackgroundAlpha", "Chat background transparency", 0, 100},
+        {"titleBarAlpha", "Title bar transparency", 0, 100},
+        {"inputBoxAlpha", "Edit box transparency", 0, 100},
+        {"recentChatBackgroundAlpha", "Recent chats transparency", 0, 100},
+        {"floatingButtonSize", "Launcher button size", 24, 96},
+    }) do
+        local key, label, minimum, maximum = unpack(spec)
+        local isAlpha = key ~= "floatingButtonSize"
+        local slider = CreateFrame("Slider", "WhisperManager_Appearance_" .. key, scrollChild, "OptionsSliderTemplate")
+        slider:SetPoint("TOPLEFT", 10, yOffset - 18)
+        slider:SetWidth(280)
+        slider:SetMinMaxValues(minimum, maximum)
+        slider:SetValueStep(1)
+        slider:SetObeyStepOnDrag(true)
+        _G[slider:GetName() .. "Low"]:SetText(isAlpha and "Opaque" or "24")
+        _G[slider:GetName() .. "High"]:SetText(isAlpha and "Transparent" or "96")
+        function slider:RefreshSetting()
+            local setting = addon:GetSetting(key)
+            local value = math.floor((isAlpha and (1 - setting) * 100 or setting) + 0.5)
+            self.syncingSetting = true
+            self:SetValue(value)
+            self.syncingSetting = false
+            _G[self:GetName() .. "Text"]:SetText(label .. ": " .. value .. (isAlpha and "%" or " px"))
+        end
+        slider:SetScript("OnValueChanged", function(self, value)
+            if self.syncingSetting then return end
+            value = math.floor(value + 0.5)
+            addon:SetSetting(key, isAlpha and (1 - value / 100) or value)
+            addon:ApplyAppearanceSettings()
+        end)
+        slider:RefreshSetting()
+        frame.appearanceSliders[#frame.appearanceSliders + 1] = slider
+        yOffset = yOffset - 64
+    end
+
     -- Window Background
     frame.windowBg = CreateColorAlphaPicker(scrollChild, "Window Background:", "windowBackgroundColor", 
         "windowBackgroundAlpha", 10, yOffset, function() addon:ApplyAppearanceSettings() end)
@@ -1142,6 +1182,7 @@ function addon:CreateSettingsFrame()
     end)
     
     function frame:RefreshThemeSwatches()
+        for _, slider in ipairs(self.appearanceSliders or {}) do slider:RefreshSetting() end
         for _, spec in ipairs({{self.windowBg, "windowBackground"}, {self.titleBar, "titleBar"}, {self.inputBox, "inputBox"}, {self.recentChat, "recentChatBackground"}}) do
             local c = addon:GetSetting(spec[2] .. "Color")
             spec[1]:SetBackdropColor(c.r, c.g, c.b, addon:GetSetting(spec[2] .. "Alpha"))

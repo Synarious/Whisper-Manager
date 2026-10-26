@@ -1140,7 +1140,12 @@ function addon:SetupHooks()
             end
 
             local opened = false
-            pcall(function() opened = addon:OpenBNetConversation(bnetAccountID, displayName) end)
+            local ok, err = pcall(function() opened = addon:OpenBNetConversation(bnetAccountID, displayName) end)
+            if not ok then
+                geterrorhandler()(err)
+                return
+            end
+            if not opened then return end
 
             local editBox = ChatFrameUtil.ChooseBoxForSend()
             if editBox and editBox:IsShown() then

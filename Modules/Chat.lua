@@ -49,7 +49,7 @@ local function UpdateInputHeight(inputBox)
         local font, fontSize, flags = inputBox:GetFont()
         fontSize = fontSize or 14
 
-        local topBottomPadding = math.max(7, math.floor(fontSize / 2))
+        local topBottomPadding = 4
         local minInputHeight = math.ceil(fontSize) + 4
         local minContainerHeight = minInputHeight + (2 * topBottomPadding)
 
@@ -57,8 +57,8 @@ local function UpdateInputHeight(inputBox)
             container:SetHeight(minContainerHeight)
             inputBox.__wm_topBottomPadding = topBottomPadding
             inputBox:ClearAllPoints()
-            inputBox:SetPoint("TOPLEFT", container, "TOPLEFT", 8, -topBottomPadding)
-            inputBox:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, topBottomPadding)
+            inputBox:SetPoint("TOPLEFT", container, "TOPLEFT", 6, -topBottomPadding)
+            inputBox:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -64, topBottomPadding)
             return
         end
 
@@ -96,8 +96,8 @@ local function UpdateInputHeight(inputBox)
         container:SetHeight(containerHeight)
         inputBox.__wm_topBottomPadding = topBottomPadding
         inputBox:ClearAllPoints()
-        inputBox:SetPoint("TOPLEFT", container, "TOPLEFT", 8, -topBottomPadding)
-        inputBox:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, topBottomPadding)
+        inputBox:SetPoint("TOPLEFT", container, "TOPLEFT", 6, -topBottomPadding)
+        inputBox:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -64, topBottomPadding)
     end)
 end
 
@@ -219,12 +219,9 @@ end
 
 local function CreateButtons(win, baseLevel)
     -- Copy Button
-    win.copyBtn = CreateFrame("Button", nil, win)
+    win.copyBtn = CreateFrame("Button", nil, win, "BackdropTemplate")
     win.copyBtn:SetPoint("TOPLEFT", 6, -6)
     win.copyBtn:SetSize(20, 20)
-    win.copyBtn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
-    win.copyBtn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
-    win.copyBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
     win.copyBtn:SetFrameLevel(baseLevel + 49)
     win.copyBtn:SetScript("OnClick", function(self)
         addon:DebugMessage("[Chat] Copy Chat History button clicked")
@@ -239,12 +236,9 @@ local function CreateButtons(win, baseLevel)
     win.copyBtn:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
 
     -- TRP3 Button
-    win.trp3Btn = CreateFrame("Button", nil, win)
+    win.trp3Btn = CreateFrame("Button", nil, win, "BackdropTemplate")
     win.trp3Btn:SetPoint("LEFT", win.copyBtn, "RIGHT", 4, 0)
     win.trp3Btn:SetSize(20, 20)
-    win.trp3Btn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
-    win.trp3Btn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
-    win.trp3Btn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
     win.trp3Btn:SetFrameLevel(baseLevel + 49)
     win.trp3Btn:Hide()
     
@@ -274,12 +268,9 @@ local function CreateButtons(win, baseLevel)
     win.trp3Btn:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
 
     -- GInvite Button
-    win.ginviteBtn = CreateFrame("Button", nil, win)
+    win.ginviteBtn = CreateFrame("Button", nil, win, "BackdropTemplate")
     win.ginviteBtn:SetPoint("LEFT", win.trp3Btn, "RIGHT", 4, 0)
     win.ginviteBtn:SetSize(20, 20)
-    win.ginviteBtn:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-MemberNote-Up")
-    win.ginviteBtn:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-MemberNote-Down")
-    win.ginviteBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
     win.ginviteBtn:SetFrameLevel(baseLevel + 49)
     win.ginviteBtn:Hide()
 
@@ -305,7 +296,7 @@ local function CreateButtons(win, baseLevel)
     win.ginviteBtn:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
 
     -- Close Button
-    win.closeBtn = CreateFrame("Button", nil, win, "UIPanelCloseButton")
+    win.closeBtn = CreateFrame("Button", nil, win, "BackdropTemplate")
     win.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     win.closeBtn:SetSize(24, 24)
     win.closeBtn:SetFrameLevel(baseLevel + 50)
@@ -829,8 +820,8 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.Input = CreateFrame("EditBox", inputName, win.InputContainer)
     win.Input._WhisperManagerInput = true
     win.Input:SetFrameLevel(baseLevel + 31)
-    win.Input:SetPoint("TOPLEFT", win.InputContainer, "TOPLEFT", 8, 0)
-    win.Input:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -8, 0)
+    win.Input:SetPoint("TOPLEFT", win.InputContainer, "TOPLEFT", 6, 0)
+    win.Input:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -64, 0)
     win.Input:SetMultiLine(true)
     win.Input:SetAutoFocus(false)
     win.Input:SetHistoryLines(32)
@@ -846,15 +837,15 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
 
     local _, fontHeight = win.Input:GetFont()
     fontHeight = fontHeight or 14
-    local topBottomPadding = math.max(7, math.floor(fontHeight / 2))
+    local topBottomPadding = 4
     local initialInputHeight = math.ceil(fontHeight) + 4
     local initialContainerHeight = initialInputHeight + (2 * topBottomPadding)
     win.Input:SetHeight(initialInputHeight)
     win.InputContainer:SetHeight(initialContainerHeight)
     win.Input.__wm_topBottomPadding = topBottomPadding
     win.Input:ClearAllPoints()
-    win.Input:SetPoint("TOPLEFT", win.InputContainer, "TOPLEFT", 8, -topBottomPadding)
-    win.Input:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -8, -topBottomPadding)
+    win.Input:SetPoint("TOPLEFT", win.InputContainer, "TOPLEFT", 6, -topBottomPadding)
+    win.Input:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -64, -topBottomPadding)
 
     win.Input:SetScript("OnHyperlinkLeave", function(self)
         GameTooltip:Hide()
@@ -875,7 +866,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
 
     local inputCount = win.InputContainer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     local countYOffset = -math.max(4, math.floor((win.Input.__wm_topBottomPadding or 7) / 2))
-    inputCount:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -8, countYOffset)
+    inputCount:SetPoint("TOPRIGHT", win.InputContainer, "TOPRIGHT", -6, countYOffset)
     inputCount:SetTextColor(0.6, 0.6, 0.6)
     inputCount:SetText("0/" .. addon.CHAT_MAX_LETTERS)
 
@@ -923,7 +914,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     if win.copyBtn then win.copyBtn:SetScript("OnShow", UpdateLevelsOnShow) end
     if win.resizeBtn then win.resizeBtn:SetScript("OnShow", UpdateLevelsOnShow) end
 
-    self.windows[playerKey] = win
+    win.InputContainer:Hide()
     addon:LoadWindowPosition(win)
     addon:LoadWindowHistory(win)
 
@@ -935,6 +926,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
 
     -- Chat.lua is the active window constructor (loaded after UI/Window.lua).
     addon:RegisterThemeFrame(win, "whisper")
+    self.windows[playerKey] = win
     
     return win
 end
