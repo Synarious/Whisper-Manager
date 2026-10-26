@@ -2,6 +2,7 @@
 local addon = WhisperManager;
 
 local DEFAULT_SETTINGS = {
+    theme = "guildhelper",
     messageFontSize = 14,
     inputFontSize = 14,
     fontFamily = "Fonts\\ARIALN.TTF", -- Default to Arial per user request
@@ -51,6 +52,8 @@ local DEFAULT_SETTINGS = {
     enableTRP3Button = false, -- Show TRP3 button (disabled by default)
     enableGinviteButton = false, -- Show ginvite button (disabled by default)
 }
+
+addon:WriteThemeColors(DEFAULT_SETTINGS, "guildhelper")
 
 -- Available fonts
 local FONT_OPTIONS = {
@@ -120,6 +123,20 @@ function addon:LoadSettings()
     self:DebugMessage("  windowSpacing: " .. tostring(WhisperManager_Config.settings.windowSpacing))
     self:DebugMessage("  defaultWindowWidth: " .. tostring(WhisperManager_Config.settings.defaultWindowWidth))
     self:DebugMessage("  defaultWindowHeight: " .. tostring(WhisperManager_Config.settings.defaultWindowHeight))
+
+    -- Migrate untouched black defaults to GuildHelper, preserving personalized colors.
+    local saved = WhisperManager_Config.settings
+    if saved.theme == nil then
+        local personalized = false
+        for _, prefix in ipairs({"windowBackground", "titleBar", "inputBox", "recentChatBackground"}) do
+            local c = saved[prefix .. "Color"]
+            if c and (c.r ~= 0 or c.g ~= 0 or c.b ~= 0) then personalized = true end
+            local alpha = saved[prefix .. "Alpha"]
+            if alpha and alpha ~= (prefix == "titleBar" and 0.8 or 0.9) then personalized = true end
+        end
+        saved.theme = personalized and "custom" or "guildhelper"
+        if not personalized then self:WriteThemeColors(saved, "guildhelper") end
+    end
 
     -- Set defaults for any missing values - DIRECTLY on the global table
     for key, value in pairs(DEFAULT_SETTINGS) do
@@ -221,49 +238,35 @@ function addon:ApplyFontSettings()
 end
 
 function addon:ApplyAppearanceSettings()
-    -- Get appearance settings
-    local bgColor = self:GetSetting("windowBackgroundColor") or DEFAULT_SETTINGS.windowBackgroundColor
-    local bgAlpha = self:GetSetting("windowBackgroundAlpha") or DEFAULT_SETTINGS.windowBackgroundAlpha
-    local titleColor = self:GetSetting("titleBarColor") or DEFAULT_SETTINGS.titleBarColor
-    local titleAlpha = self:GetSetting("titleBarAlpha") or DEFAULT_SETTINGS.titleBarAlpha
-    local inputColor = self:GetSetting("inputBoxColor") or DEFAULT_SETTINGS.inputBoxColor
-    local inputAlpha = self:GetSetting("inputBoxAlpha") or DEFAULT_SETTINGS.inputBoxAlpha
-    local recentBgColor = self:GetSetting("recentChatBackgroundColor") or DEFAULT_SETTINGS.recentChatBackgroundColor
-    local recentBgAlpha = self:GetSetting("recentChatBackgroundAlpha") or DEFAULT_SETTINGS.recentChatBackgroundAlpha
-    
-    -- Update all open whisper windows
-    for _, window in pairs(self.windows) do
-        if window then
-            -- Update window background
-            if window.SetBackdropColor then
-                window:SetBackdropColor(bgColor.r, bgColor.g, bgColor.b, bgAlpha)
-            end
-            
-            -- Update title bar
-            if window.titleBar and window.titleBar.SetBackdropColor then
-                window.titleBar:SetBackdropColor(titleColor.r, titleColor.g, titleColor.b, titleAlpha)
-            end
-            
-            -- Update input box background
-            if window.InputContainer and window.InputContainer.SetBackdropColor then
-                window.InputContainer:SetBackdropColor(inputColor.r, inputColor.g, inputColor.b, inputAlpha)
-            end
-        end
-    end
-    
-    -- Update recent chats window
-    if self.recentChatsFrame then
-        self.recentChatsFrame:SetBackdropColor(recentBgColor.r, recentBgColor.g, recentBgColor.b, recentBgAlpha)
-    end
+    self:RefreshTheme()
 end
 
 -- Sound Notification Functions
 function addon:PlayNotificationSound()
     local soundKitID = self:GetSetting("notificationSound")
-    
-    if not soundKitID then
+
+    -- Migrate legacy string values (e.g. "Level Up" persisted by older
+    -- versions) to numeric SOUNDKIT IDs. PlaySound requires a number since
+    -- Legion 7.3 and 12.x validates strictly via C_Sound.PlaySound.
+    if type(soundKitID) == "string" then
+        local legacyMap = {
+            ["Tell Message"] = SOUNDKIT and SOUNDKIT.TELL_MESSAGE,
+            ["Whisper Inform"] = SOUNDKIT and SOUNDKIT.WHISPER_INFORM,
+            ["UI Quest Complete"] = SOUNDKIT and SOUNDKIT.UI_QUEST_OBJECTIVES_COMPLETE,
+            ["Level Up"] = SOUNDKIT and SOUNDKIT.LEVEL_UP,
+            ["Auction Open"] = SOUNDKIT and SOUNDKIT.AUCTION_WINDOW_OPEN,
+            ["Ready Check"] = SOUNDKIT and SOUNDKIT.READY_CHECK,
+            ["None (Disabled)"] = nil,
+        }
+        local mapped = legacyMap[soundKitID]
+        -- Persist the migration so we only do it once.
+        self:SetSetting("notificationSound", mapped)
+        soundKitID = mapped
+    end
+
+    if not soundKitID or type(soundKitID) ~= "number" then
         addon:DebugMessage("|cffff8800Sound notification disabled|r")
-        self:DebugMessage("Sound notification disabled (nil soundKit)")
+        self:DebugMessage("Sound notification disabled (nil/non-numeric soundKit)")
         return -- Sound disabled
     end
     
@@ -277,8 +280,13 @@ function addon:PlayNotificationSound()
     -- Channel is optional, uses Master by default
     
     local channel = self:GetSetting("soundChannel")
+    if type(channel) ~= "string" then channel = "Master" end
     -- Play the sound; PlaySound does not reliably return a success value, so don't depend on a return.
-    PlaySound(soundKitID, channel)
+    -- pcall so a stricter 12.x C_Sound validator can never throw a Lua error at the user.
+    local ok = pcall(PlaySound, soundKitID, channel)
+    if not ok then
+        pcall(PlaySound, soundKitID)
+    end
     self:DebugMessage("Triggered PlaySound for kit ID: " .. tostring(soundKitID) .. " on channel: " .. tostring(channel))
     addon:DebugMessage("|cff00ff00Played notification sound.|r")
 end
@@ -375,6 +383,7 @@ local function CreateColorAlphaPicker(parent, label, colorKey, alphaKey, x, y, a
         local currentColor = addon:GetSetting(colorKey) or {r = 0, g = 0, b = 0}
         local currentAlpha = addon:GetSetting(alphaKey) or 0.9
         
+        local currentTheme = addon:GetSetting("theme")
         ColorPickerFrame:SetupColorPickerAndShow({
             r = currentColor.r,
             g = currentColor.g,
@@ -387,6 +396,7 @@ local function CreateColorAlphaPicker(parent, label, colorKey, alphaKey, x, y, a
                 addon:SetSetting(colorKey, {r = r, g = g, b = b})
                 addon:SetSetting(alphaKey, a)
                 self:SetBackdropColor(r, g, b, a)
+                addon:SetSetting("theme", "custom")
                 if applyCallback then applyCallback() end
             end,
             opacityFunc = function()
@@ -395,12 +405,14 @@ local function CreateColorAlphaPicker(parent, label, colorKey, alphaKey, x, y, a
                 addon:SetSetting(colorKey, {r = r, g = g, b = b})
                 addon:SetSetting(alphaKey, a)
                 self:SetBackdropColor(r, g, b, a)
+                addon:SetSetting("theme", "custom")
                 if applyCallback then applyCallback() end
             end,
             cancelFunc = function()
                 addon:SetSetting(colorKey, currentColor)
                 addon:SetSetting(alphaKey, currentAlpha)
                 self:SetBackdropColor(currentColor.r, currentColor.g, currentColor.b, currentAlpha)
+                addon:SetSetting("theme", currentTheme)
                 if applyCallback then applyCallback() end
             end,
         })
@@ -527,6 +539,7 @@ function addon:CreateSpawnPreviewWindow()
         addon:UpdateSpawnPreviewStatus()
     end)
 
+    self:RegisterThemeFrame(preview, "preview")
     self.spawnPreviewWindow = preview
     return self:CreateSpawnPreviewWindow()
 end
@@ -633,6 +646,40 @@ function addon:CreateSettingsFrame()
     
     local scrollChild = frame.scrollChild
     local yOffset = 0
+
+    local themeLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    themeLabel:SetPoint("TOPLEFT", 10, yOffset)
+    themeLabel:SetText("Appearance & Theme")
+    yOffset = yOffset - 32
+    local themeDropdown = CreateFrame("Frame", "WhisperManager_ThemeDropdown", scrollChild, "UIDropDownMenuTemplate")
+    themeDropdown:SetPoint("TOPLEFT", 0, yOffset)
+    UIDropDownMenu_SetWidth(themeDropdown, 230)
+    UIDropDownMenu_Initialize(themeDropdown, function(_, level)
+        for _, option in ipairs(addon.THEME_OPTIONS) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = option.name
+            info.value = option.value
+            info.checked = addon:GetSetting("theme") == option.value
+            info.func = function()
+                addon:SelectTheme(option.value)
+                UIDropDownMenu_SetSelectedValue(themeDropdown, option.value)
+                UIDropDownMenu_SetText(themeDropdown, option.name)
+            end
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    frame.themeDropdown = themeDropdown
+    UIDropDownMenu_SetSelectedValue(themeDropdown, addon:GetSetting("theme"))
+    for _, option in ipairs(addon.THEME_OPTIONS) do
+        if option.value == addon:GetSetting("theme") then UIDropDownMenu_SetText(themeDropdown, option.name) end
+    end
+    yOffset = yOffset - 42
+    local themeHint = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    themeHint:SetPoint("TOPLEFT", 10, yOffset)
+    themeHint:SetWidth(420)
+    themeHint:SetJustifyH("LEFT")
+    themeHint:SetText("Themes apply instantly to all windows. Fine-tune colors and transparency under Window Appearance below.")
+    yOffset = yOffset - 46
     
     -- Font Family Section
     local fontLabel = scrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1094,6 +1141,17 @@ function addon:CreateSettingsFrame()
         addon:DebugMessage("Settings reset to defaults.")
     end)
     
+    function frame:RefreshThemeSwatches()
+        for _, spec in ipairs({{self.windowBg, "windowBackground"}, {self.titleBar, "titleBar"}, {self.inputBox, "inputBox"}, {self.recentChat, "recentChatBackground"}}) do
+            local c = addon:GetSetting(spec[2] .. "Color")
+            spec[1]:SetBackdropColor(c.r, c.g, c.b, addon:GetSetting(spec[2] .. "Alpha"))
+        end
+        UIDropDownMenu_SetSelectedValue(themeDropdown, addon:GetSetting("theme"))
+        for _, option in ipairs(addon.THEME_OPTIONS) do
+            if option.value == addon:GetSetting("theme") then UIDropDownMenu_SetText(themeDropdown, option.name) end
+        end
+    end
+    addon:RegisterThemeFrame(frame, "settings")
     addon.settingsFrame = frame
     return frame
 end

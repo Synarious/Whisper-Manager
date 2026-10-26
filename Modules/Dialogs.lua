@@ -146,6 +146,17 @@ function addon:ShowURLCopyDialog(url)
     StaticPopup_Show("WHISPERMANAGER_SHOW_URL")
 end
 
+-- Never put Battle.net name tokens or chat markup into the copy editbox.
+local function PlainExportText(text, bnetName)
+    text = tostring(text or "")
+    text = text:gsub("|T.-|t", ""):gsub("|A.-|a", "")
+    text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|cn.-:", ""):gsub("|r", "")
+    text = text:gsub("|H.-|h(.-)|h", "%1")
+    text = text:gsub("|K.-|k", function() return bnetName or "BNet Friend" end)
+    text = text:gsub("|n", "\n")
+    return text
+end
+
 --- Format chat history for export (plain text)
 local function FormatChatHistoryForExport(playerKey)
     if not WhisperManager_HistoryDB or not playerKey then
@@ -167,7 +178,7 @@ local function FormatChatHistoryForExport(playerKey)
     end
 
     local lines = {}
-    local displayName = addon:GetDisplayNameFromKey(playerKey)
+    local displayName = PlainExportText(addon:GetDisplayNameFromKey(playerKey))
     
     table.insert(lines, "Chat History Export")
     table.insert(lines, "Conversation with: " .. displayName)
@@ -222,18 +233,9 @@ local function FormatChatHistoryForExport(playerKey)
                     end
                 end
                 
-                local plainMessage = message
-                
-                plainMessage = plainMessage:gsub("|T.-|t", "")
-                plainMessage = plainMessage:gsub("|A.-|a", "")
-                plainMessage = plainMessage:gsub("|c%x%x%x%x%x%x%x%x", "")
-                plainMessage = plainMessage:gsub("|cn.-:", "")
-                plainMessage = plainMessage:gsub("|r", "")
-                plainMessage = plainMessage:gsub("|H.-|h(.-)|h", "%1")
-                plainMessage = plainMessage:gsub("|K.-|k", "")
-                plainMessage = plainMessage:gsub("|n", "\n")
-                plainMessage = plainMessage:gsub("  +", " ")
-                
+                authorDisplay = PlainExportText(authorDisplay, displayName)
+                local plainMessage = PlainExportText(message, displayName)
+
                 local line = string.format("[%s] %s: %s", timeString, authorDisplay, plainMessage)
                 table.insert(lines, line)
             end
@@ -251,7 +253,8 @@ function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
     end
     
     local exportText = FormatChatHistoryForExport(playerKey)
-    displayName = displayName or addon:GetDisplayNameFromKey(playerKey)
+    displayName = PlainExportText(displayName or addon:GetDisplayNameFromKey(playerKey),
+        PlainExportText(addon:GetDisplayNameFromKey(playerKey)))
     
     local frame = addon.chatExportFrame
     if not frame then
@@ -303,6 +306,7 @@ function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
         frame.editBox = CreateFrame("EditBox", nil, frame.scrollFrame)
         frame.editBox:SetMultiLine(true)
         frame.editBox:SetMaxLetters(0)
+        frame.editBox:SetMaxBytes(0)
         frame.editBox:SetFontObject(ChatFontNormal)
         frame.editBox:SetWidth(550)
         frame.editBox:SetAutoFocus(false)
@@ -331,7 +335,21 @@ function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
         frame:SetPoint("CENTER", addon:GetOverlayParent(), "CENTER")
     end
     
-    addon.nextDialogLevel = (addon.nextDialogLevel or 200) + 10
+    -- Conversation windows can be thousands of levels above UIParent.
+    -- Raise above the owner, its independent reply field, and other visible windows.
+    local highestLevel = addon.nextDialogLevel or 200
+    local function include(window)
+        if window and window:IsShown() then
+            highestLevel = math.max(highestLevel, window:GetFrameLevel() + 100)
+            if window.InputContainer then
+                highestLevel = math.max(highestLevel, window.InputContainer:GetFrameLevel())
+            end
+        end
+    end
+    include(parentWindow)
+    include(addon.historyFrame)
+    for _, window in pairs(addon.windows) do include(window) end
+    addon.nextDialogLevel = highestLevel + 20
     frame:SetFrameStrata("DIALOG")
     frame:SetFrameLevel(addon.nextDialogLevel)
     
@@ -354,8 +372,10 @@ function addon:ShowChatExportDialog(playerKey, displayName, parentWindow)
     frame.playerLabel:SetText("Conversation with: " .. displayName)
     frame.editBox:SetText(exportText)
     frame.editBox:SetCursorPosition(0)
-    frame.editBox:HighlightText(0, 0)
     
+    addon:RegisterThemeFrame(frame, "export")
     frame:Show()
     frame:Raise()
+    frame.editBox:SetFocus()
+    frame.editBox:HighlightText(0)
 end

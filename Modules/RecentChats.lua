@@ -98,19 +98,20 @@ function addon:CreateRecentChatsFrame()
     frame.combatWarning:SetText("|cffff8800⚔ In Combat - New windows queued|r")
     frame.combatWarning:Hide()
     
-    -- Update combat status on show and periodically
-    frame:SetScript("OnUpdate", function(self)
-        if InCombatLockdown() then
-            if not self.combatWarning:IsShown() then
-                self.combatWarning:Show()
-            end
+    -- Chat restrictions and combat are separate; ordinary windows remain usable.
+    frame:SetScript("OnUpdate", function(self, elapsed)
+        self.restrictionElapsed = (self.restrictionElapsed or 0) + elapsed
+        if self.restrictionElapsed < 0.25 then return end
+        self.restrictionElapsed = 0
+        local reason = addon:GetWhisperRestrictionReason()
+        if reason then
+            self.combatWarning:SetText("Chat restricted - use default chat")
+            self.combatWarning:Show()
         else
-            if self.combatWarning:IsShown() then
-                self.combatWarning:Hide()
-            end
+            self.combatWarning:Hide()
         end
     end)
-    
+
     -- Close button
     frame.closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     frame.closeBtn:SetPoint("TOPRIGHT", -2, -2)
@@ -137,6 +138,7 @@ function addon:CreateRecentChatsFrame()
         end
     end)
     
+    addon:RegisterThemeFrame(frame, "recent")
     addon.recentChatsFrame = frame
     
     -- Initial population
@@ -279,6 +281,8 @@ function addon:RefreshRecentChats()
         btn.timeText:SetText(self.GetTimeAgo(chat.lastMessageTime))
         btn.timeText:SetTextColor(0.7, 0.7, 0.7)
         
+        addon:StyleThemeRow(btn, i, chat.isRead == false and not chat.autoHideWindow, chat.autoHideWindow)
+
         -- Click to open
         btn:SetScript("OnClick", function(_, button)
             if button == "RightButton" then
@@ -366,36 +370,8 @@ function addon:LoadRecentChatsPosition()
 end
 
 function addon:ToggleRecentChatsFrame()
-    if InCombatLockdown() then
-        if self.recentChatsFrame and self.recentChatsFrame:IsShown() then
-            self.recentChatsFrame:Hide()
-            return
-        end
-
-        if not self.__pendingRecentChatsOpen then
-            self.__pendingRecentChatsOpen = true
-            table.insert(self.combatQueue, function()
-                if not addon.__pendingRecentChatsOpen then return end
-                addon.__pendingRecentChatsOpen = nil
-                if InCombatLockdown() then return end
-
-                local chatModeEnabledAfterCombat = addon.IsChatModeEnabled and addon:IsChatModeEnabled()
-                if not chatModeEnabledAfterCombat then
-                    addon:CloseAllWindows()
-                end
-
-                if not addon.recentChatsFrame then
-                    addon:CreateRecentChatsFrame()
-                    addon:LoadRecentChatsPosition()
-                end
-
-                if addon.recentChatsFrame and not addon.recentChatsFrame:IsShown() then
-                    addon:RefreshRecentChats()
-                    addon.recentChatsFrame:Show()
-                end
-            end)
-            self:Print("|cffff8800Recent Chats cannot open during combat. It will open after combat ends.|r")
-        end
+    if self.recentChatsFrame and not self:CanChangeAddonFrame(self.recentChatsFrame) then
+        self:QueueWindowAction("recent-chats", function() self:ToggleRecentChatsFrame() end)
         return
     end
 

@@ -236,6 +236,7 @@ function addon:CreateHistoryFrame()
         frame.detailScrollBar:SetValue(maxScroll)
     end
     frame.detailScrollFrame:SetScript("OnHyperlinkClick", function(self, link, text, button)
+        if addon:IsSecretValue(link) or addon:IsSecretValue(text) then return end
         addon:DebugMessage("Hyperlink clicked in history:", link, text, button)
         
         -- Handle chatfilter links manually
@@ -326,6 +327,7 @@ function addon:CreateHistoryFrame()
         pcall(function() SetKeyboardFocus(nil) end)
     end)
 
+    addon:RegisterThemeFrame(frame, "history")
     addon.historyFrame = frame
     return frame
 end
@@ -438,6 +440,8 @@ function addon:RefreshHistoryList(filterText)
         btn.timeText:SetText(self.GetTimeAgo(conv.lastTimestamp))
         btn.timeText:SetTextColor(0.7, 0.7, 0.7)
         
+        addon:StyleThemeRow(btn, i)
+
         -- Click to show detail
         btn:SetScript("OnClick", function()
             addon:ShowHistoryDetail(conv.playerKey, conv.displayName)

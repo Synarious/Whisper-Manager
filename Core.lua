@@ -12,11 +12,12 @@ addon.playerDisplayNames = {};   -- Cached display names
 addon.recentChats = {};          -- Recent conversation tracking
 addon.nextFrameLevel = 1;        -- Z-order tracking for windows
 addon.cascadeCounter = 0;        -- Counter for alternating window positioning
-addon.combatQueue = {};          -- Queue for operations during combat lockdown
+addon.deferredWindowActions = {}; -- Keyed, coalesced protected-frame work
 
 -- Constants
 addon.MAX_HISTORY_LINES = 1000;
-addon.CHAT_MAX_LETTERS = 245;
+addon.CHAT_MAX_LETTERS = 500;
+addon.WHISPER_CHUNK_BYTES = 245;
 addon.RECENT_CHAT_EXPIRY = 72 * 60 * 60;  -- 72 hours in seconds
 addon.FOCUSED_ALPHA = 1.0;
 addon.UNFOCUSED_ALPHA = 0.65;
@@ -38,9 +39,17 @@ end
 --- Apply overlay settings (parent only, keep DIALOG strata for dropdown compatibility)
 function addon:EnsureFrameOverlay(frame)
     if not frame then return end
+    if self.CanChangeAddonFrame and not self:CanChangeAddonFrame(frame) then
+        self:QueueWindowAction("overlay:" .. tostring(frame), function() self:EnsureFrameOverlay(frame) end)
+        return
+    end
 
     local parent = self:GetOverlayParent()
     if parent and frame:GetParent() ~= parent then
+        if self.CanChangeAddonFrame and not self:CanChangeAddonFrame(parent) then
+            self:QueueWindowAction("overlay:" .. tostring(frame), function() self:EnsureFrameOverlay(frame) end)
+            return
+        end
         frame:SetParent(parent)
     end
 
@@ -53,15 +62,8 @@ end
 
 --- Re-apply overlay settings to all primary WhisperManager frames
 function addon:RefreshOverlayAnchors()
-    local parent = self:GetOverlayParent()
-
     local function apply(frame)
-        if not frame then return end
-        if parent and frame:GetParent() ~= parent then
-            frame:SetParent(parent)
-        end
-        frame:SetFrameStrata("DIALOG")
-        if frame.SetToplevel then frame:SetToplevel(true) end
+        if frame then self:EnsureFrameOverlay(frame) end
     end
 
     apply(self.floatingButton)
@@ -362,6 +364,7 @@ function addon:HandleSlashCommand(message)
         self:Print("Usage:")
         self:Print("/wmgr debug [on|off|toggle] - Control diagnostic chat output.")
         self:Print("/wmgr reset_positions - Reset saved window positions.")
+        self:Print("/wmgr recover - Restore the latest saved unsent whisper.")
         self:Print("/wmgr reset_all_data - [Dangerous]  Clear all saved data (history, windows, config).")
         self:Print("/wmgr delete_data_retention_test - [Dangerous] Data retention cleanup (keep 3 recent, delete older than 5 min).")
         self:Print("/wmgr cleanup_empty - [Dangerous] Remove empty conversation entries from history.")
@@ -383,6 +386,8 @@ function addon:HandleSlashCommand(message)
         else
             self:SetDebugEnabled(not self.debugEnabled)
         end
+    elseif command == "recover" then
+        self:RecoverUnsentWhisper()
     elseif command == "reset_positions" then
         self:ResetWindowPositions()
     elseif command == "reset_all_data" then
@@ -481,6 +486,7 @@ end
 local function hookChatFrameEditBox(editBox)
     if editBox and not Hooked_ChatFrameEditBoxes[editBox:GetName()] then
         hooksecurefunc(editBox, "Insert", function(self, theText)
+            if addon:IsSecretValue(theText) or addon:GetWhisperRestrictionReason() then return end
             local activeEditBox = GetActiveWhisperManagerEditBox()
             if activeEditBox and activeEditBox ~= self then
                 activeEditBox:Insert(theText)
@@ -497,6 +503,7 @@ local function hookChatFrameEditBox(editBox)
         end)
 
         hooksecurefunc(editBox, "SetText", function(self, theText)
+            if addon:IsSecretValue(theText) or addon:GetWhisperRestrictionReason() then return end
             local firstChar = ""
             if string.len(theText) > 0 then
                 firstChar = string.sub(theText, 1, 1)
@@ -508,6 +515,8 @@ local function hookChatFrameEditBox(editBox)
         end)
 
         hooksecurefunc(editBox, "HighlightText", function(self, theStart, theEnd)
+            if addon:IsSecretValue(theStart) or addon:IsSecretValue(theEnd)
+                or addon:GetWhisperRestrictionReason() then return end
             local activeEditBox = GetActiveWhisperManagerEditBox()
             if activeEditBox and activeEditBox ~= self then
                 activeEditBox:HighlightText(theStart, theEnd)
@@ -1056,11 +1065,13 @@ function addon:SetupHooks()
 
     local function ResolveBNetTellTarget(tokenizedName)
         local function BuildResult(accountInfo)
-            if not accountInfo or not accountInfo.bnetAccountID or not accountInfo.battleTag then
+            if not accountInfo or addon:IsSecretValue(accountInfo.bnetAccountID)
+                or addon:IsSecretValue(accountInfo.battleTag)
+                or not accountInfo.bnetAccountID or not accountInfo.battleTag then
                 return nil, nil, nil
             end
             local key = "bnet_" .. accountInfo.battleTag
-            local displayName = accountInfo.accountName or accountInfo.battleTag
+            local displayName = addon:GetReadableBNetName(accountInfo)
             return accountInfo.bnetAccountID, key, displayName
         end
 
@@ -1081,7 +1092,9 @@ function addon:SetupHooks()
         local numBNetTotal = BNGetNumFriends() or 0
         for i = 1, numBNetTotal do
             local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
-            if accountInfo and accountInfo.bnetAccountID and accountInfo.battleTag then
+            if accountInfo and not addon:IsSecretValue(accountInfo.bnetAccountID)
+                and not addon:IsSecretValue(accountInfo.battleTag)
+                and accountInfo.bnetAccountID and accountInfo.battleTag then
                 if requestedBattleTag and accountInfo.battleTag == requestedBattleTag then
                     return BuildResult(accountInfo)
                 end
@@ -1089,7 +1102,8 @@ function addon:SetupHooks()
                 local battleTagLower = strlower(accountInfo.battleTag)
                 local battleTagName = accountInfo.battleTag:match("^([^#]+)")
                 local battleTagNameLower = battleTagName and strlower(battleTagName) or nil
-                local accountNameLower = accountInfo.accountName and strlower(accountInfo.accountName) or nil
+                local name = addon:GetReadableBNetName(accountInfo)
+                local accountNameLower = strlower(name)
 
                 if tokenLower == battleTagLower or tokenLower == battleTagNameLower or tokenLower == accountNameLower then
                     return BuildResult(accountInfo)
@@ -1102,7 +1116,8 @@ function addon:SetupHooks()
 
     -- Hook BNet whisper default action similarly
     hooksecurefunc(ChatFrameUtil, "SendBNetTell", function(tokenizedName)
-        if not tokenizedName or tokenizedName == "" then return end
+        if addon:IsSecretValue(tokenizedName) or addon:GetWhisperRestrictionReason()
+            or InCombatLockdown() or not tokenizedName or tokenizedName == "" then return end
 
         local bnetAccountID, playerKey, displayName = ResolveBNetTellTarget(tokenizedName)
         if not bnetAccountID or not playerKey then
@@ -1115,6 +1130,7 @@ function addon:SetupHooks()
         end
 
         QueueWhisperAction(function()
+            if addon:GetWhisperRestrictionReason() or InCombatLockdown() then return end
             local monitorModeActive = addon.IsChatModeEnabled and (not addon:IsChatModeEnabled())
             if addon:IsSilentModeEnabled() or monitorModeActive then
                 addon:UpdateRecentChat(playerKey, displayName or tokenizedName, true, "Me")

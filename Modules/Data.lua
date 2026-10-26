@@ -251,7 +251,14 @@ function addon:DisplayHistory(window, playerKey)
                         -- Try to get RP name from TRP3 integration (if loaded)
                         addon:DebugMessage("[Data:DisplayHistory] Checking for TRP3 integration:", addon.TRP3_GetRPNameWithColor ~= nil);
                         addon:DebugMessage("[Data:DisplayHistory] Author name:", author);
-                        local rpNameWithColor = addon.TRP3_GetRPNameWithColor and addon.TRP3_GetRPNameWithColor(author)
+                        local rpNameWithColor = nil
+                        if type(addon.TRP3_GetRPNameWithColor) == "function" then
+                            -- pcall: TRP3 is iterating on a taint fix and any of its
+                            -- helpers may throw/stub out from under us. Never let
+                            -- history rendering break because of it.
+                            local ok, result = pcall(addon.TRP3_GetRPNameWithColor, author)
+                            if ok then rpNameWithColor = result end
+                        end
                         addon:DebugMessage("[Data:DisplayHistory] TRP3 returned RP name with color:", rpNameWithColor);
                         
                         if rpNameWithColor then

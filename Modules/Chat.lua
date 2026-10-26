@@ -3,9 +3,16 @@ local addon = WhisperManager
 
 local WINDOW_HISTORY_RENDER_LIMIT = 50
 
--- Uses combatQueue from Core.lua for combat-safe operations
+-- Window behavior has one implementation; UI/Window.lua handles lifecycle events.
 
 local function UpdateWindowFrameLevels(win, baseLevel)
+    for _, frame in pairs({win, win.titleBar, win.History, win.InputContainer, win.Input,
+        win.closeBtn, win.copyBtn, win.resizeBtn, win.trp3Btn, win.ginviteBtn}) do
+        if not addon:CanChangeAddonFrame(frame) then
+            addon:QueueWindowAction("levels:" .. tostring(win), function() UpdateWindowFrameLevels(win, baseLevel) end)
+            return
+        end
+    end
     addon:EnsureFrameOverlay(win)
     if win.InputContainer then
         addon:EnsureFrameOverlay(win.InputContainer)
@@ -33,6 +40,10 @@ local function UpdateInputHeight(inputBox)
 
     C_Timer.After(0, function()
         if not inputBox:IsVisible() then return end
+        if not addon:CanChangeAddonFrame(container) or not addon:CanChangeAddonFrame(inputBox) then
+            addon:QueueWindowAction("input-height:" .. tostring(inputBox), function() UpdateInputHeight(inputBox) end)
+            return
+        end
 
         local text = inputBox:GetText() or ""
         local font, fontSize, flags = inputBox:GetFont()
@@ -217,7 +228,7 @@ local function CreateButtons(win, baseLevel)
     win.copyBtn:SetFrameLevel(baseLevel + 49)
     win.copyBtn:SetScript("OnClick", function(self)
         addon:DebugMessage("[Chat] Copy Chat History button clicked")
-        addon:ShowChatExportDialog(win.playerKey, win.displayName)
+        addon:ShowChatExportDialog(win.playerKey, win.displayName, win)
     end)
     win.copyBtn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -298,7 +309,7 @@ local function CreateButtons(win, baseLevel)
     win.closeBtn:SetPoint("TOPRIGHT", -2, -2)
     win.closeBtn:SetSize(24, 24)
     win.closeBtn:SetFrameLevel(baseLevel + 50)
-    win.closeBtn:SetScript("OnClick", function(self) win:Hide() end)
+    win.closeBtn:SetScript("OnClick", function(self) addon:CloseWindow(win.playerKey) end)
     
     -- Resize Button
     win.resizeBtn = CreateFrame("Button", nil, win)
@@ -364,6 +375,7 @@ local function CreateHistoryFrame(win)
     end)
     
     win.History:SetScript("OnHyperlinkClick", function(self, link, text, button)
+        if addon:IsSecretValue(link) or addon:IsSecretValue(text) then return end
         addon:DebugMessage("Hyperlink clicked in window:", link, text, button)
         
         local type, value = link:match("(%a+):(.+)")
@@ -416,21 +428,21 @@ local function CreateHistoryFrame(win)
     end)
     
     win.History:SetScript("OnHyperlinkEnter", function(self, link, text, button)
-        ShowUIPanel(GameTooltip)
+        if addon:IsSecretValue(link) then return end
         GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:SetHyperlink(link)
         GameTooltip:Show()
     end)
-    win.History:SetScript("OnHyperlinkLeave", function(self) HideUIPanel(GameTooltip) end)
+    win.History:SetScript("OnHyperlinkLeave", function(self) GameTooltip:Hide() end)
 end
 
 function addon:FocusWindow(window)
-    if not window then return end
+    if not window or not window:IsShown() then return end
 
     self:EnsureFrameOverlay(window)
     
-    if InCombatLockdown() then
-        self:DebugMessage("In combat - skipping FocusWindow")
+    if not self:CanChangeAddonFrame(window) then
+        self:QueueWindowAction("focus", function() self:FocusWindow(window) end)
         return
     end
     
@@ -440,7 +452,7 @@ function addon:FocusWindow(window)
     end
     
     for _, win in pairs(self.windows) do
-        if win ~= window and win:IsShown() then
+        if win ~= window and win:IsShown() and self:CanChangeAddonFrame(win) then
             win:SetAlpha(self.UNFOCUSED_ALPHA)
         end
     end
@@ -475,21 +487,18 @@ end
 
 function addon:ApplyChatModeToWindows()
     local modeEnabled = self:IsChatModeEnabled()
-
     for _, win in pairs(self.windows) do
         if win and win.InputContainer then
-            if modeEnabled and win:IsShown() then
+            if not self:CanChangeAddonFrame(win.InputContainer) then
+                self:QueueWindowAction("chat-mode", function() self:ApplyChatModeToWindows() end)
+            elseif modeEnabled and win:IsShown() then
                 win.InputContainer:Show()
                 win.InputContainer:ClearAllPoints()
                 win.InputContainer:SetPoint("TOPLEFT", win, "BOTTOMLEFT", 0, 1)
                 win.InputContainer:SetPoint("TOPRIGHT", win, "BOTTOMRIGHT", 0, 1)
-                if win.Input then
-                    UpdateInputHeight(win.Input)
-                end
+                if win.Input then UpdateInputHeight(win.Input) end
             else
-                if win.Input and win.Input.HasFocus and win.Input:HasFocus() then
-                    win.Input:ClearFocus()
-                end
+                if win.Input and win.Input.HasFocus and win.Input:HasFocus() then win.Input:ClearFocus() end
                 win.InputContainer:Hide()
             end
         end
@@ -497,7 +506,7 @@ function addon:ApplyChatModeToWindows()
 end
 
 function addon:EnforceChatModeRestrictions(silent)
-    local isRestricted = self:IsRestrictedChatModeInstance()
+    local isRestricted = self:GetWhisperRestrictionReason() ~= nil
 
     if isRestricted then
         self:CloseAllWindows()
@@ -510,7 +519,7 @@ function addon:EnforceChatModeRestrictions(silent)
         self:SaveSettings()
         self:ApplyChatModeToWindows()
         if not silent then
-            self:Print("|cffff8800Chat Mode disabled in this instance type (dungeon/raid/arena/battleground).|r")
+            self:Print("|cffff8800Chat Mode disabled while chat restrictions are active.|r")
         end
         return false
     end
@@ -521,7 +530,7 @@ function addon:EnforceChatModeRestrictions(silent)
         self:SaveSettings()
         self:ApplyChatModeToWindows()
         if not silent then
-            self:Print("|cff00ff00Chat Mode re-enabled after leaving restricted instance content.|r")
+            self:Print("|cff00ff00Chat Mode re-enabled after chat restrictions ended.|r")
         end
     end
 
@@ -539,8 +548,8 @@ function addon:ToggleChatMode()
         return false
     end
 
-    if self:IsRestrictedChatModeInstance() then
-        self:Print("|cffff8800Chat Mode is not available in dungeons, raids, arenas, or battlegrounds.|r")
+    if self:GetWhisperRestrictionReason() then
+        self:Print("|cffff8800" .. self:GetWhisperRestrictionReason() .. "|r")
         return false
     end
 
@@ -553,7 +562,7 @@ function addon:ToggleChatMode()
 end
 
 function addon:OpenConversation(playerName)
-    if self.__closingWindow then return false end
+    if self.__closingWindow or self:IsSecretValue(playerName) or self:GetWhisperRestrictionReason() then return false end
     
     self:DebugMessage("OpenConversation called for:", playerName)
     local playerKey, playerTarget, displayName = self:ResolvePlayerIdentifiers(playerName)
@@ -568,16 +577,8 @@ function addon:OpenConversation(playerName)
     self:EnforceChatModeRestrictions(true)
 
     -- Instance protection: never open windows inside dungeons/raids/pvp/arenas.
-    if self:IsRestrictedChatModeInstance() then
-        self:DebugMessage("In instance (protection mode) - skipping window open, whisper visible in chat")
-        return false
-    end
-
-    -- Combat lockdown: cannot CREATE new frames, but existing windows can be shown/updated.
-    if not win and InCombatLockdown() then
-        self:DebugMessage("In combat - queueing window creation (will open after combat)")
-        self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
-        table.insert(self.combatQueue, function() self:OpenConversation(playerName) end)
+    if self:GetWhisperRestrictionReason() then
+        self:DebugMessage("Chat restrictions active - leaving whispers in default chat")
         return false
     end
 
@@ -596,11 +597,15 @@ function addon:OpenConversation(playerName)
     if not self:IsChatModeEnabled() then
         for _, otherWin in pairs(self.windows) do
             if otherWin and otherWin ~= win and otherWin:IsShown() then
-                otherWin:Hide()
+                self:CloseWindow(otherWin.playerKey)
             end
         end
     end
 
+    if not self:CanChangeAddonFrame(win) then
+        self:QueueWindowAction("open:" .. playerKey, function() self:OpenConversation(playerName) end)
+        return false
+    end
     self:DisplayHistory(win, playerKey)
     if win.title then win.title:SetText("Whisper: " .. (displayName or playerTarget)) end
     if isNewWindow then
@@ -613,31 +618,27 @@ function addon:OpenConversation(playerName)
 end
 
 function addon:OpenBNetConversation(bnSenderID, displayName)
+    if self:IsSecretValue(bnSenderID) or self:GetWhisperRestrictionReason() then return false end
     self:DebugMessage("OpenBNetConversation called for BNet ID:", bnSenderID)
     
     local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
-    if not accountInfo or not accountInfo.battleTag then
+    if not accountInfo or self:IsSecretValue(accountInfo.battleTag) or not accountInfo.battleTag then
         self:DebugMessage("|cffff0000ERROR: Could not get BattleTag for BNet ID:|r", bnSenderID)
         return false
     end
     
     local playerKey = "bnet_" .. accountInfo.battleTag
-    displayName = accountInfo.accountName or displayName or accountInfo.battleTag
+    local accountName = accountInfo.accountName
+    if self:IsSecretValue(accountName) then accountName = nil end
+    if self:IsSecretValue(displayName) then displayName = nil end
+    displayName = accountName or displayName or accountInfo.battleTag
     local win = self.windows[playerKey]
 
     self:EnforceChatModeRestrictions(true)
 
     -- Instance protection: never open windows inside dungeons/raids/pvp/arenas.
-    if self:IsRestrictedChatModeInstance() then
-        self:DebugMessage("In instance (protection mode) - skipping BNet window open, whisper visible in chat")
-        return false
-    end
-
-    -- Combat lockdown: cannot CREATE new frames, but existing windows can be shown/updated.
-    if not win and InCombatLockdown() then
-        self:DebugMessage("In combat - queueing BNet window creation (will open after combat)")
-        self:Print("|cffff8800Cannot open new whisper window while in combat. Will open after combat ends.|r")
-        table.insert(self.combatQueue, function() self:OpenBNetConversation(bnSenderID, displayName) end)
+    if self:GetWhisperRestrictionReason() then
+        self:DebugMessage("Chat restrictions active - leaving Battle.net whispers in default chat")
         return false
     end
 
@@ -656,11 +657,15 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
     if not self:IsChatModeEnabled() then
         for _, otherWin in pairs(self.windows) do
             if otherWin and otherWin ~= win and otherWin:IsShown() then
-                otherWin:Hide()
+                self:CloseWindow(otherWin.playerKey)
             end
         end
     end
     
+    if not self:CanChangeAddonFrame(win) then
+        self:QueueWindowAction("open:" .. playerKey, function() self:OpenBNetConversation(bnSenderID, displayName) end)
+        return false
+    end
     self:DisplayHistory(win, playerKey)
     if win.title then win.title:SetText("BNet: " .. displayName) end
     if isNewWindow then
@@ -678,7 +683,8 @@ function addon:ShowWindow(playerKey, displayName)
             local numBNetTotal = BNGetNumFriends()
             for i = 1, numBNetTotal do
                 local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
-                if accountInfo and accountInfo.battleTag == battleTag then
+                if accountInfo and not self:IsSecretValue(accountInfo.battleTag)
+                    and not self:IsSecretValue(accountInfo.bnetAccountID) and accountInfo.battleTag == battleTag then
                     return self:OpenBNetConversation(accountInfo.bnetAccountID, displayName)
                 end
             end
@@ -829,6 +835,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     win.Input:SetAutoFocus(false)
     win.Input:SetHistoryLines(32)
     win.Input:SetMaxLetters(addon.CHAT_MAX_LETTERS)
+    win.Input:SetMaxBytes(0) -- The sender validates each transmitted UTF-8 chunk.
     win.Input:SetAltArrowKeyMode(true)
 
     local inputFontPath = addon:GetSetting("fontFamily") or "Fonts\\FRIZQT__.TTF"
@@ -873,52 +880,20 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     inputCount:SetText("0/" .. addon.CHAT_MAX_LETTERS)
 
     win.Input:SetScript("OnEnterPressed", function(self)
-        local message = self:GetText()
-        if not message or message == "" then
-            return
-        end
-
-        local sent = false
-        if win.isBNet then
-            if win.bnSenderID then
-                C_BattleNet.SendWhisper(win.bnSenderID, message)
-                sent = true
-            else
-                addon:Print("|cffff8800Unable to determine Battle.net target for this whisper.|r")
-            end
-        else
-            local target = win.playerTarget
-            if not target or target == "" then
-                if win.playerKey and win.playerKey:match("^c_.+") then
-                    target = win.playerKey:sub(3)
-                elseif win.displayName and win.displayName ~= "" then
-                    target = win.displayName
-                end
-            end
-
-            if not target or target == "" then
-                addon:Print("|cffff8800Unable to determine whisper target for this window.|r")
-            else
-                win.playerTarget = target
-                C_ChatInfo.SendChatMessage(message, "WHISPER", nil, target)
-                sent = true
-            end
-        end
-
-        if sent then
-            addon.__lastWhisperTarget = win.isBNet and win.displayName or target
-            addon.__lastWhisperMessage = message
-            addon.__lastWhisperWindow = win
-            self:SetText("")
-            UpdateInputHeight(self)
+        if addon:SendComposedWhisper(win, self:GetText()) then
+            -- Keep the original draft until all outgoing chunks are confirmed.
             self:ClearFocus()
             addon:SetEditBoxFocus(nil)
         end
     end)
-
     win.Input:SetScript("OnTextChanged", function(self)
         local len = self:GetNumLetters()
-        inputCount:SetText(len .. "/" .. addon.CHAT_MAX_LETTERS)
+        local suffix = ""
+        if not win.isBNet and len > 0 then
+            local chunks = addon:SplitWhisperMessage(self:GetText())
+            suffix = chunks and (#chunks > 1 and (" / " .. #chunks .. " parts") or "") or " / link too long"
+        end
+        inputCount:SetText(len .. "/" .. addon.CHAT_MAX_LETTERS .. suffix)
         if len >= addon.CHAT_MAX_LETTERS - 15 then
             inputCount:SetTextColor(1.0, 0.3, 0.3)
         elseif len >= addon.CHAT_MAX_LETTERS - 50 then
@@ -931,11 +906,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
 
     win.Input:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
-        if not InCombatLockdown() then
-            win:Hide()
-        else
-            addon:Print("|cffff8800Cannot close window during combat. Please try again after combat ends.|r")
-        end
+        addon:CloseWindow(win.playerKey)
     end)
 
     win.Input:SetScript("OnSizeChanged", function(self)
@@ -961,6 +932,9 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
     end
     
     UpdateWindowFrameLevels(win, baseLevel)
+
+    -- Chat.lua is the active window constructor (loaded after UI/Window.lua).
+    addon:RegisterThemeFrame(win, "whisper")
     
     return win
 end
@@ -1069,7 +1043,6 @@ end
 
 function addon:SaveWindowPosition(window, saveSize)
     if not addon:IsSafeToOperate() then return end
-    if InCombatLockdown() then return end
     if not window then return end
     
     -- Initialize session storage if needed
@@ -1082,7 +1055,8 @@ function addon:SaveWindowPosition(window, saveSize)
     -- Save current position to session storage
     local parent = addon:GetOverlayParent()
     local centerX, centerY = window:GetCenter()
-    local parentCenterX, parentCenterY = parent and parent:GetCenter()
+    local parentCenterX, parentCenterY
+    if parent then parentCenterX, parentCenterY = parent:GetCenter() end
     if centerX and centerY and parentCenterX and parentCenterY and playerKey then
         addon.sessionWindowPositions[playerKey] = {
             x = centerX - parentCenterX,
@@ -1101,6 +1075,10 @@ end
 
 function addon:LoadWindowPosition(window)
     if not window then return end
+    if not self:CanChangeAddonFrame(window) then
+        self:QueueWindowAction("position:" .. tostring(window), function() self:LoadWindowPosition(window) end)
+        return
+    end
     
     local playerKey = window.playerKey
     local spawnX = addon:GetSetting("spawnAnchorX") or 0
@@ -1137,6 +1115,10 @@ end
 function addon:CloseWindow(playerKey)
     local win = self.windows[playerKey]
     if win then
+        if not self:CanChangeAddonFrame(win) or (win.InputContainer and not self:CanChangeAddonFrame(win.InputContainer)) then
+            self:QueueWindowAction("close:" .. playerKey, function() self:CloseWindow(playerKey) end)
+            return false
+        end
         win:Hide()
         return true
     end
@@ -1145,11 +1127,8 @@ end
 
 function addon:CloseAllWindows()
     local closed = 0
-    for _, win in pairs(self.windows) do
-        if win:IsShown() then
-            win:Hide()
-            closed = closed + 1
-        end
+    for playerKey, win in pairs(self.windows) do
+        if win:IsShown() and self:CloseWindow(playerKey) then closed = closed + 1 end
     end
     return closed > 0
 end
@@ -1213,7 +1192,7 @@ function addon:RegisterChatEvents()
     -- deliver chat payloads as secret values. Addons cannot read, compare, or
     -- store those, so skip any event whose payload we cannot access.
     local function IsSecretValue(value)
-        return issecretvalue and issecretvalue(value) == true
+        return addon:IsSecretValue(value)
     end
     
     eventFrame:RegisterEvent("CHAT_MSG_WHISPER")
@@ -1235,7 +1214,7 @@ function addon:RegisterChatEvents()
             addon:EnforceChatModeRestrictions(false)
         elseif event == "CHAT_MSG_WHISPER" then
             local message, author, _, _, _, _, _, _, _, _, _, guid = ...
-            if not message or IsSecretValue(message) or IsSecretValue(author) then
+            if IsSecretValue(message) or IsSecretValue(author) or not message then
                 return
             end
             local playerKey, _, displayName = addon:ResolvePlayerIdentifiers(author)
@@ -1243,7 +1222,7 @@ function addon:RegisterChatEvents()
 
             -- Try to extract class from GUID if available
             local classToken = nil
-            if guid and not IsSecretValue(guid) then
+            if not IsSecretValue(guid) and guid then
                 local _, class = GetPlayerInfoByGUID(guid)
                 if class then
                     classToken = class
@@ -1272,15 +1251,16 @@ function addon:RegisterChatEvents()
             end
         elseif event == "CHAT_MSG_WHISPER_INFORM" then
             local message, target, _, _, _, _, _, _, _, _, _, guid = ...
-            if not message or IsSecretValue(message) or IsSecretValue(target) then
+            if IsSecretValue(message) or IsSecretValue(target) or not message then
                 return
             end
             local playerKey, resolvedTarget, displayName = addon:ResolvePlayerIdentifiers(target)
             if not playerKey then return end
+            addon:ConfirmQueuedWhisper(playerKey, message)
 
             -- Try to extract class from GUID if available
             local classToken = nil
-            if guid and not IsSecretValue(guid) then
+            if not IsSecretValue(guid) and guid then
                 local _, class = GetPlayerInfoByGUID(guid)
                 if class then
                     classToken = class
@@ -1311,19 +1291,19 @@ function addon:RegisterChatEvents()
             end
         elseif event == "CHAT_MSG_BN_WHISPER" then
             local message, author, _, _, _, _, _, _, _, _, _, _, bnSenderID = ...
-            if not message or IsSecretValue(message) or IsSecretValue(author) then
+            if IsSecretValue(message) or IsSecretValue(author) or not message then
                 return
             end
             
             -- Get BattleTag for permanent identification
             local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
-            if not accountInfo or not accountInfo.battleTag or IsSecretValue(accountInfo.battleTag) then
+            if not accountInfo or IsSecretValue(accountInfo.battleTag) or not accountInfo.battleTag then
                 addon:DebugMessage("|cffff0000ERROR: Could not get BattleTag for incoming BNet whisper|r")
                 return
             end
             
             local playerKey = "bnet_" .. accountInfo.battleTag
-            local displayName = accountInfo.accountName or author or accountInfo.battleTag
+            local displayName = addon:GetReadableBNetName(accountInfo, author)
             
             -- Use displayName for history so it's consistent, not the session-based author
             -- BNet whispers don't have class info
@@ -1349,19 +1329,20 @@ function addon:RegisterChatEvents()
             end
         elseif event == "CHAT_MSG_BN_WHISPER_INFORM" then
             local message, _, _, _, _, _, _, _, _, _, _, _, bnSenderID = ...
-            if not message or IsSecretValue(message) then
+            if IsSecretValue(message) or not message then
                 return
             end
             
             -- Get BattleTag for permanent identification
             local accountInfo = C_BattleNet.GetAccountInfoByID(bnSenderID)
-            if not accountInfo or not accountInfo.battleTag or IsSecretValue(accountInfo.battleTag) then
+            if not accountInfo or IsSecretValue(accountInfo.battleTag) or not accountInfo.battleTag then
                 addon:DebugMessage("|cffff0000ERROR: Could not get BattleTag for outgoing BNet whisper|r")
                 return
             end
             
             local playerKey = "bnet_" .. accountInfo.battleTag
-            local displayName = accountInfo.accountName or accountInfo.battleTag
+            addon:ConfirmQueuedWhisper(playerKey, message)
+            local displayName = addon:GetReadableBNetName(accountInfo)
             
             -- Use actual player character name with realm instead of "Me"
             local playerName, playerRealm = UnitName("player")
@@ -1388,29 +1369,13 @@ function addon:RegisterChatEvents()
             local message = ...
             -- System messages in protected content can be secret values; addons
             -- cannot read them, so skip the whisper-failure detection there.
-            if not message or IsSecretValue(message) then
+            if IsSecretValue(message) or not message then
                 return
             end
-            if addon.__lastWhisperTarget then
-                local errorTarget = message:match("No player named '(.+)' is currently playing%.")
-                    or message:match("^(.+) is not online%.")
-                    or message:match("^(.+) is ignoring you%.")
-                if errorTarget then
-                    local normalizedError = addon.StripRealmFromName(errorTarget)
-                    local normalizedLast = addon.StripRealmFromName(addon.__lastWhisperTarget)
-                    if normalizedError == normalizedLast then
-                        addon:Print("|cffff0000Whisper not delivered: " .. errorTarget .. " is offline or unavailable.|r")
-                        local win = addon.__lastWhisperWindow
-                        if win and win.Input and addon.__lastWhisperMessage then
-                            win.Input:SetText(addon.__lastWhisperMessage)
-                            win.Input:SetFocus()
-                        end
-                        addon.__lastWhisperTarget = nil
-                        addon.__lastWhisperMessage = nil
-                        addon.__lastWhisperWindow = nil
-                    end
-                end
-            end
+            local errorTarget = message:match("No player named '(.+)' is currently playing%.")
+                or message:match("^(.+) is not online%.")
+                or message:match("^(.+) is ignoring you%.")
+            if errorTarget then addon:FailQueuedWhisper(errorTarget) end
         end
     end)
 end
