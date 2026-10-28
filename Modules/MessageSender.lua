@@ -99,7 +99,7 @@ local function fail(job, reason)
     for i = job.index, #job.chunks do remaining[#remaining + 1] = job.chunks[i] end
     -- Never overwrite a new draft typed while waiting for delivery.
     local unsent = job.index == 1 and job.original or table.concat(remaining, " ")
-    if job.win.Input:GetText() == job.original and addon:CanChangeAddonFrame(job.win.Input) then
+    if job.win.Input:GetText() == "" and addon:CanChangeAddonFrame(job.win.Input) then
         job.win.Input:SetText(unsent)
         addon:Print("|cffff8800" .. reason .. " Unconfirmed text remains in the composer; check chat before retrying.|r")
     else
@@ -172,6 +172,8 @@ function addon:SendComposedWhisper(win, text)
     local chunks, err
     if win.isBNet then chunks = {text} else chunks, err = self:SplitWhisperMessage(text) end
     if not chunks then self:Print(err); return false end
+    if not self:CanChangeAddonFrame(win.Input) then return false end
+    win.Input:SetText("")
     win.whisperSendPending = true
     queue[#queue + 1] = {win = win, target = target, original = text, chunks = chunks, index = 1}
     pump()
@@ -187,7 +189,6 @@ function addon:ConfirmQueuedWhisper(playerKey, text)
     job.index = job.index + 1
     if job.index > #job.chunks then
         job.win.whisperSendPending = nil
-        if job.win.Input:GetText() == job.original then job.win.Input:SetText("") end
         current = nil
         C_Timer.After(0.5, pump)
     else

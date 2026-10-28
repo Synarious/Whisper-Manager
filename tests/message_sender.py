@@ -72,7 +72,7 @@ local w=window('c_Friend','Friend-Realm',false)
 local text='*'..string.rep('hello there ',30)..'*'
 w.Input.text=text
 assert(a:SendComposedWhisper(w,text))
-assert(#sent==1 and w.Input.text==text and w.whisperSendPending)
+assert(#sent==1 and w.Input.text=="" and w.whisperSendPending)
 assert(not a:SendComposedWhisper(w,text))
 a:ConfirmQueuedWhisper('wrong',sent[1].text)
 assert(#sent==1)
@@ -136,10 +136,10 @@ local previous=#sent
 a:SendComposedWhisper(w,w.Input.text)
 a:SendComposedWhisper(new,new.Input.text)
 assert(#sent==previous+1 and new.whisperSendPending)
-a:ConfirmQueuedWhisper(w.playerKey,w.Input.text)
+a:ConfirmQueuedWhisper(w.playerKey,sent[#sent].text)
 advanceShortTimer()
 assert(#sent==previous+2 and sent[#sent].target=='Other-Realm')
-a:ConfirmQueuedWhisper(new.playerKey,new.Input.text)
+a:ConfirmQueuedWhisper(new.playerKey,sent[#sent].text)
 assert(not new.whisperSendPending and new.Input.text=='')
 
 ''')

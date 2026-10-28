@@ -552,7 +552,7 @@ function addon:ToggleChatMode()
     return true
 end
 
-function addon:OpenConversation(playerName)
+function addon:OpenConversation(playerName, skipHistory)
     if self.__closingWindow or self:IsSecretValue(playerName) or self:GetWhisperRestrictionReason() then return false end
     
     self:DebugMessage("OpenConversation called for:", playerName)
@@ -597,7 +597,7 @@ function addon:OpenConversation(playerName)
         self:QueueWindowAction("open:" .. playerKey, function() self:OpenConversation(playerName) end)
         return false
     end
-    self:DisplayHistory(win, playerKey)
+    if not skipHistory then self:DisplayHistory(win, playerKey) end
     if win.title then win.title:SetText("Whisper: " .. (displayName or playerTarget)) end
     if isNewWindow then
         self:LoadWindowPosition(win)
@@ -608,7 +608,7 @@ function addon:OpenConversation(playerName)
     return true
 end
 
-function addon:OpenBNetConversation(bnSenderID, displayName)
+function addon:OpenBNetConversation(bnSenderID, displayName, skipHistory)
     if self:IsSecretValue(bnSenderID) or self:GetWhisperRestrictionReason() then return false end
     self:DebugMessage("OpenBNetConversation called for BNet ID:", bnSenderID)
     
@@ -657,7 +657,7 @@ function addon:OpenBNetConversation(bnSenderID, displayName)
         self:QueueWindowAction("open:" .. playerKey, function() self:OpenBNetConversation(bnSenderID, displayName) end)
         return false
     end
-    self:DisplayHistory(win, playerKey)
+    if not skipHistory then self:DisplayHistory(win, playerKey) end
     if win.title then win.title:SetText("BNet: " .. displayName) end
     if isNewWindow then
         self:LoadWindowPosition(win)
@@ -872,7 +872,7 @@ function addon:CreateWindow(playerKey, playerTarget, displayName, isBNet)
 
     win.Input:SetScript("OnEnterPressed", function(self)
         if addon:SendComposedWhisper(win, self:GetText()) then
-            -- Keep the original draft until all outgoing chunks are confirmed.
+            -- Delivery recovery retains its own copy of the submitted draft.
             self:ClearFocus()
             addon:SetEditBoxFocus(nil)
         end
@@ -1222,7 +1222,6 @@ function addon:RegisterChatEvents()
             end
 
             addon:AddMessageToHistory(playerKey, displayName or author, author, message, classToken)
-            addon:UpdateRecentChat(playerKey, displayName or author, false)
             
             -- Play notification sound if enabled
             addon:PlayNotificationSound()
@@ -1235,7 +1234,7 @@ function addon:RegisterChatEvents()
             if addon:IsSilentModeEnabled() then
                 addon:DebugMessage("Silent Mode active; suppressing auto-open for incoming whisper:", tostring(author))
             elseif not addon:IsChatAutoHidden(playerKey) then
-                addon:OpenConversation(author)
+                addon:OpenConversation(author, true)
             end
             local window = addon.windows[playerKey]
             if window then
@@ -1270,12 +1269,11 @@ function addon:RegisterChatEvents()
             WhisperManager_CharacterDB[fullPlayerName] = true
             
             addon:AddMessageToHistory(playerKey, displayName or resolvedTarget, fullPlayerName, message, playerClass)
-            addon:UpdateRecentChat(playerKey, displayName or resolvedTarget, false)
 
             if addon:IsSilentModeEnabled() then
                 addon:DebugMessage("Silent Mode active; suppressing auto-open for outgoing whisper:", tostring(resolvedTarget))
             elseif not addon:IsChatAutoHidden(playerKey) then
-                addon:OpenConversation(resolvedTarget)
+                addon:OpenConversation(resolvedTarget, true)
             end
             local window = addon.windows[playerKey]
             if window then
@@ -1300,7 +1298,6 @@ function addon:RegisterChatEvents()
             -- Use displayName for history so it's consistent, not the session-based author
             -- BNet whispers don't have class info
             addon:AddMessageToHistory(playerKey, displayName, displayName, message, nil)
-            addon:UpdateRecentChat(playerKey, displayName, true)
             
             -- Play notification sound if enabled
             addon:PlayNotificationSound()
@@ -1313,7 +1310,7 @@ function addon:RegisterChatEvents()
             if addon:IsSilentModeEnabled() then
                 addon:DebugMessage("Silent Mode active; suppressing auto-open for incoming BNet whisper:", tostring(displayName))
             elseif not addon:IsChatAutoHidden(playerKey) then
-                addon:OpenBNetConversation(bnSenderID, displayName)
+                addon:OpenBNetConversation(bnSenderID, displayName, true)
             end
             local window = addon.windows[playerKey]
             if window then
@@ -1347,11 +1344,10 @@ function addon:RegisterChatEvents()
             WhisperManager_CharacterDB[fullPlayerName] = true
             
             addon:AddMessageToHistory(playerKey, displayName, fullPlayerName, message, playerClass)
-            addon:UpdateRecentChat(playerKey, displayName, true)
             if addon:IsSilentModeEnabled() then
                 addon:DebugMessage("Silent Mode active; suppressing auto-open for outgoing BNet whisper:", tostring(displayName))
             elseif not addon:IsChatAutoHidden(playerKey) then
-                addon:OpenBNetConversation(bnSenderID, displayName)
+                addon:OpenBNetConversation(bnSenderID, displayName, true)
             end
             local window = addon.windows[playerKey]
             if window then
