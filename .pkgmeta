@@ -5,6 +5,7 @@ manual-changelog:
 ignore:
   - tests
   - .github
+  - .release-tools
   - .vscode
   - .gitignore
   - README.md
