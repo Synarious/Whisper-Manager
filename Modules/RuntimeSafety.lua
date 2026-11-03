@@ -4,6 +4,14 @@ function addon:IsSecretValue(value)
     return issecretvalue and issecretvalue(value) == true
 end
 
+function addon:AreConversationKeysEqual(left, right)
+    if self:IsSecretValue(left) or self:IsSecretValue(right)
+        or type(left) ~= "string" or type(right) ~= "string" then return false end
+    if left == right then return true end
+    if strcmputf8i then return strcmputf8i(left, right) == 0 end
+    return left:lower() == right:lower()
+end
+
 function addon:GetReadableBNetName(accountInfo, fallback)
     local name = accountInfo and accountInfo.accountName
     if self:IsSecretValue(name) then name = nil end
@@ -43,6 +51,7 @@ function addon:GetWhisperRestrictionReason()
 end
 
 function addon:CheckRuntimeRestrictions()
+    if not self.initialized then return end
     local reason = self:GetWhisperRestrictionReason()
     if reason then
         if self.CancelRestrictedWhispers then self:CancelRestrictedWhispers(reason) end

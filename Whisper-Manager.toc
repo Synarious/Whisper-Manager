@@ -1,8 +1,8 @@
-## Interface: 120000, 120005, 120100
+## Interface: 120000, 120005, 120100, 120105
 ## Title: Whisper Manager
 ## Notes: Whisper addon with window managment, editbox improvements and cross-character history.
 ## Author: Synarious | syfusion.com/github | https://github.com/Synarious/Whisper-Manager
-## Version: @project-version@
+## Version: 12.100
 ## X-Curse-Project-ID: 1377667
 ## Dependencies: Blizzard_ChatFrame
 ## OptionalDeps: TotalRP3

@@ -151,14 +151,15 @@ function addon:RefreshRecentChats()
     if not addon.recentChatsFrame then return end
     local scrollChild = addon.recentChatsFrame.scrollChild
     if not scrollChild then return end
-    
-    -- Clear existing children
-    local children = {scrollChild:GetChildren()}
-    for _, child in ipairs(children) do
-        child:Hide()
-        child:SetParent(nil)
+    if not self:CanChangeAddonFrame(addon.recentChatsFrame) or not self:CanChangeAddonFrame(scrollChild) then
+        self:QueueWindowAction("recent-chats", function() self:RefreshRecentChats() end)
+        return
     end
     
+    local rows = addon.recentChatsFrame.rows or {}
+    addon.recentChatsFrame.rows = rows
+    for _, row in ipairs(rows) do row:Hide() end
+
     if not WhisperManager_RecentChats then
         WhisperManager_RecentChats = {}
     end
@@ -228,59 +229,33 @@ function addon:RefreshRecentChats()
         return a.lastMessageTime > b.lastMessageTime
     end)
     
-    -- Create buttons for each chat
+    -- Reuse row frames and their regions across message/search refreshes.
     local yOffset = 0
     for i, chat in ipairs(chats) do
-        local btn = CreateFrame("Button", nil, scrollChild)
-        btn:SetSize(260, 40)
-        btn:SetPoint("TOPLEFT", 0, -yOffset)
-        btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        
-        -- Background
-        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-        btn.bg:SetAllPoints()
-        if chat.autoHideWindow then
-            btn.bg:SetColorTexture(0.45, 0.4, 0.1, 0.55)
-        else
-            btn.bg:SetColorTexture(0.2, 0.2, 0.2, 0.5)
-        end
-        
-        -- Highlight
-        btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
-        btn.highlight:SetAllPoints()
-        btn.highlight:SetColorTexture(0.3, 0.3, 0.3, 0.5)
-        
-        -- Unread Indicator (Left border strip)
-        if chat.isRead == false and not chat.autoHideWindow then
+        local btn = rows[i]
+        if not btn then
+            btn = CreateFrame("Button", nil, scrollChild)
+            rows[i] = btn
+            btn:SetSize(260, 40)
+            btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+            btn.bg:SetAllPoints()
+            btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+            btn.highlight:SetAllPoints()
             btn.unreadIndicator = btn:CreateTexture(nil, "OVERLAY")
             btn.unreadIndicator:SetPoint("LEFT", 0, 0)
             btn.unreadIndicator:SetSize(4, 40)
-            btn.unreadIndicator:SetColorTexture(0, 1, 0, 1) -- Green strip for unread
-            
-            -- Also highlight background slightly green
-            btn.bg:SetColorTexture(0.2, 0.4, 0.2, 0.5)
+            btn.nameText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            btn.nameText:SetPoint("TOPLEFT", 10, -5)
+            btn.nameText:SetJustifyH("LEFT")
+            btn.timeText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            btn.timeText:SetPoint("BOTTOMLEFT", 10, 5)
+            btn.timeText:SetTextColor(0.7, 0.7, 0.7)
         end
-        
-        -- Name text
-        btn.nameText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        btn.nameText:SetPoint("TOPLEFT", 10, -5)
+        btn:SetPoint("TOPLEFT", 0, -yOffset)
         btn.nameText:SetText(chat.displayName or "Unknown")
-        btn.nameText:SetJustifyH("LEFT")
-        
-        if chat.autoHideWindow then
-            btn.nameText:SetTextColor(1.0, 0.9, 0.2)
-        elseif chat.isRead ~= false then
-            btn.nameText:SetTextColor(0.6, 0.6, 0.6)
-        else
-            btn.nameText:SetTextColor(1, 1, 1)
-        end
-        
-        -- Time text
-        btn.timeText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btn.timeText:SetPoint("BOTTOMLEFT", 10, 5)
         btn.timeText:SetText(self.GetTimeAgo(chat.lastMessageTime))
-        btn.timeText:SetTextColor(0.7, 0.7, 0.7)
-        
+        btn.unreadIndicator:SetShown(chat.isRead == false and not chat.autoHideWindow)
         addon:StyleThemeRow(btn, i, chat.isRead == false and not chat.autoHideWindow, chat.autoHideWindow)
 
         -- Click to open
@@ -314,7 +289,8 @@ function addon:RefreshRecentChats()
                         local numBNetTotal, numBNetOnline = BNGetNumFriends()
                         for i = 1, numBNetTotal do
                             local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
-                            if accountInfo and accountInfo.battleTag == battleTag then
+                            if accountInfo and not addon:IsSecretValue(accountInfo.battleTag)
+                                and not addon:IsSecretValue(accountInfo.bnetAccountID) and accountInfo.battleTag == battleTag then
                                 return addon:OpenBNetConversation(accountInfo.bnetAccountID, chat.displayName)
                             end
                         end
@@ -339,6 +315,7 @@ function addon:RefreshRecentChats()
             end
         end)
         
+        btn:Show()
         yOffset = yOffset + 45
     end
     

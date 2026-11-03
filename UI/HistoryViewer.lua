@@ -257,6 +257,7 @@ function addon:CreateHistoryFrame()
              if lineID then
                  C_ChatInfo.UncensorChatLine(lineID)
                  local newText = C_ChatInfo.GetChatLineText(lineID)
+                 if addon:IsSecretValue(newText) then return end
                  if newText and newText ~= "" then
                      -- Update history DB
                      local playerKey = addon.historyFrame and addon.historyFrame.exportBtn and addon.historyFrame.exportBtn.playerKey
@@ -295,6 +296,7 @@ function addon:CreateHistoryFrame()
         securecallfunction(SetItemRef, link, text, button, self)
     end)
     frame.detailScrollFrame:SetScript("OnHyperlinkEnter", function(self, link, text, button)
+        if addon:IsSecretValue(link) then return end
         -- Note: ShowUIPanel is protected, use GameTooltip:Show() instead
         GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
         GameTooltip:SetHyperlink(link)
@@ -364,93 +366,88 @@ function addon:LoadHistoryPosition()
     end
 end
 
+function addon:SetHistoryFrameShown(shown)
+    self.pendingHistoryVisibility = shown
+    if self.historyFrame and not self:CanChangeAddonFrame(self.historyFrame) then
+        self:QueueWindowAction("history-visibility", function() self:SetHistoryFrameShown(shown) end)
+        return
+    end
+    self:CancelWindowAction("history-visibility")
+    if shown then
+        if not self.historyFrame then
+            self:CreateHistoryFrame()
+            self:LoadHistoryPosition()
+        end
+        self:EnsureFrameOverlay(self.historyFrame)
+        self:RefreshHistoryList(self.historyFrame.searchBox:GetText() or "")
+        self.historyFrame:Show()
+    elseif self.historyFrame then
+        self.historyFrame:Hide()
+    end
+    self.pendingHistoryVisibility = nil
+end
+
 function addon:ToggleHistoryFrame()
-    self:ToggleRecentChatsFrame()
+    local shown = self.pendingHistoryVisibility
+    if shown == nil then shown = self.historyFrame and self.historyFrame:IsShown() end
+    self:SetHistoryFrameShown(not shown)
 end
 
 function addon:RefreshHistoryList(filterText)
     if not self.historyFrame then return end
-    
-    -- Clear existing buttons
     local scrollChild = self.historyFrame.listScrollChild
-    for _, child in ipairs({scrollChild:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
-    end
-    
-    if not WhisperManager_HistoryDB then
+    if not self:CanChangeAddonFrame(self.historyFrame) or not self:CanChangeAddonFrame(scrollChild) then
+        self:QueueWindowAction("history-list", function() self:RefreshHistoryList(filterText) end)
         return
     end
-    
-    -- Convert to sorted array
+    local rows = self.historyFrame.rows or {}
+    self.historyFrame.rows = rows
+    for _, row in ipairs(rows) do row:Hide() end
     local conversations = {}
-    for playerKey, history in pairs(WhisperManager_HistoryDB) do
+    filterText = (filterText or ""):lower()
+    for playerKey, history in pairs(WhisperManager_HistoryDB or {}) do
         if playerKey ~= "__schema" and type(history) == "table" and #history > 0 then
-            -- Extract display name from key instead of using __display
             local displayName = self:GetDisplayNameFromKey(playerKey)
-            -- Support both old and new format
-            local lastEntry = history[#history]
-            local lastTimestamp = lastEntry.t or lastEntry.timestamp or 0
-            
-            -- Apply filter if provided
-            if not filterText or filterText == "" or 
-               displayName:lower():find(filterText:lower(), 1, true) then
-                table.insert(conversations, {
+            if filterText == "" or displayName:lower():find(filterText, 1, true) then
+                conversations[#conversations + 1] = {
                     playerKey = playerKey,
                     displayName = displayName,
-                    lastTimestamp = lastTimestamp,
-                })
+                    lastTimestamp = self.GetHistoryTimestamp(history[#history]) or 0,
+                }
             end
         end
     end
-    
-    -- Sort by most recent first
     table.sort(conversations, function(a, b)
+        if a.lastTimestamp == b.lastTimestamp then return a.playerKey < b.playerKey end
         return a.lastTimestamp > b.lastTimestamp
     end)
-    
-    -- Create buttons for each conversation
-    local yOffset = 0
     for i, conv in ipairs(conversations) do
-        local btn = CreateFrame("Button", nil, scrollChild)
-        btn:SetSize(180, 37)
-        btn:SetPoint("TOPLEFT", 0, -yOffset)
-        
-        -- Background
-        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-        btn.bg:SetAllPoints()
-        btn.bg:SetColorTexture(0.2, 0.2, 0.2, 0.5)
-        
-        -- Highlight
-        btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
-        btn.highlight:SetAllPoints()
-        btn.highlight:SetColorTexture(0.3, 0.3, 0.3, 0.5)
-        
-        -- Name text
-        btn.nameText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        btn.nameText:SetPoint("TOPLEFT", 5, -5)
-        btn.nameText:SetPoint("TOPRIGHT", -5, -5)
+        local btn = rows[i]
+        if not btn then
+            btn = CreateFrame("Button", nil, scrollChild)
+            rows[i] = btn
+            btn:SetSize(180, 37)
+            btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+            btn.bg:SetAllPoints()
+            btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+            btn.highlight:SetAllPoints()
+            btn.nameText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            btn.nameText:SetPoint("TOPLEFT", 5, -5)
+            btn.nameText:SetPoint("TOPRIGHT", -5, -5)
+            btn.nameText:SetJustifyH("LEFT")
+            btn.nameText:SetWordWrap(false)
+            btn.timeText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            btn.timeText:SetPoint("TOPLEFT", btn.nameText, "BOTTOMLEFT", 0, -2)
+            btn.timeText:SetTextColor(0.7, 0.7, 0.7)
+        end
+        btn:SetPoint("TOPLEFT", 0, -(i - 1) * 41)
         btn.nameText:SetText(conv.displayName)
-        btn.nameText:SetJustifyH("LEFT")
-        btn.nameText:SetWordWrap(false)
-        
-        -- Time text
-        btn.timeText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btn.timeText:SetPoint("TOPLEFT", btn.nameText, "BOTTOMLEFT", 0, -2)
         btn.timeText:SetText(self.GetTimeAgo(conv.lastTimestamp))
-        btn.timeText:SetTextColor(0.7, 0.7, 0.7)
-        
-        addon:StyleThemeRow(btn, i)
-
-        -- Click to show detail
-        btn:SetScript("OnClick", function()
-            addon:ShowHistoryDetail(conv.playerKey, conv.displayName)
-        end)
-        
-        yOffset = yOffset + 41
+        self:StyleThemeRow(btn, i)
+        btn:SetScript("OnClick", function() addon:ShowHistoryDetail(conv.playerKey, conv.displayName) end)
+        btn:Show()
     end
-    
-    scrollChild:SetHeight(math.max(yOffset, 1))
+    scrollChild:SetHeight(math.max(#conversations * 41, 1))
 end
 
 function addon:FilterHistoryList(filterText)
@@ -480,6 +477,7 @@ function addon:ShowHistoryDetail(playerKey, displayName)
     end
     
     local history = WhisperManager_HistoryDB[playerKey]
+    detailScroll:SetMaxLines(#history * 2 + 1)
     local playerName, playerRealm = UnitName("player")
     local realm = (playerRealm or GetRealmName()):gsub("%s+", "")
     local fullPlayerName = playerName .. "-" .. realm

@@ -58,7 +58,8 @@ function methods:SetPoint(...) self.points[#self.points+1]={...} end
 function methods:ClearAllPoints() self.points={} end
 local function object(kind,name,parent)
  local o={kind=kind,name=name,children={},regions={},scripts={},points={}}
- setmetatable(o,{__index=function(_,key)
+ setmetatable(o,{__index=function(object,key)
+  if key=='SetBackdrop' and not object.hasBackdrop then return nil end
   if methods[key] then return methods[key] end
   if key:match('^Set') or key:match('^Enable') or key:match('^Register') then return noop end
  end})
@@ -80,7 +81,7 @@ ChatFontNormal=object('FontString')
 SOUNDKIT={}; C_Timer={After=noop}; WhisperManager_HistoryDB={}
 C_BattleNet={SendWhisper=function() return true end}
 function strlenutf8(s) local _,n=s:gsub('[^\128-\191]',''); return n end
-WhisperManager={windows={},combatQueue={},CHAT_MAX_LETTERS=500,MAX_HISTORY_LINES=100,
+WhisperManager={initialized=true,windows={},combatQueue={},CHAT_MAX_LETTERS=500,MAX_HISTORY_LINES=100,
  DebugMessage=noop, GetOverlayParent=function() return UIParent end, EnsureFrameOverlay=noop,
  IsChatModeEnabled=function() return true end, SetEditBoxFocus=noop, Print=noop}
 ''')
@@ -142,8 +143,8 @@ assert(first.copyBtn.wmIcon and first.closeBtn.wmIcon, 'First open must finish b
 a.EnforceChatModeRestrictions,a.DisplayHistory,a.FocusWindow=savedEnforce,savedDisplay,savedFocus
 win.Input:SetText(string.rep('b',500))
 win.Input.scripts.OnEnterPressed(win.Input)
-assert(win.whisperSendPending and #win.Input:GetText()==500)
-a:ConfirmQueuedWhisper(win.playerKey,win.Input:GetText())
+assert(win.whisperSendPending and win.Input:GetText()=='')
+a:ConfirmQueuedWhisper(win.playerKey,string.rep('b',500))
 assert(not win.whisperSendPending and win.Input:GetText()=='')
 WhisperManager_Config={settings={windowBackgroundColor={r=.3,g=.2,b=.1}}}
 a.settings=a:LoadSettings()

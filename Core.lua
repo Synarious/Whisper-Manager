@@ -13,6 +13,7 @@ addon.recentChats = {};          -- Recent conversation tracking
 addon.nextFrameLevel = 1;        -- Z-order tracking for windows
 addon.cascadeCounter = 0;        -- Counter for alternating window positioning
 addon.deferredWindowActions = {}; -- Keyed, coalesced protected-frame work
+addon.initialized = false;
 
 -- Constants
 addon.MAX_HISTORY_LINES = 1000;
@@ -146,7 +147,15 @@ end
 
 -- Initialization
 function addon:Initialize()
+    if self.initialized then return true end
     self:DebugMessage("=== WhisperManager Initializing ===")
+
+    self:RegisterSlashCommands()
+    -- Validate before modifying any saved data or installing runtime hooks.
+    if not self:ValidateSchema() then
+        self:Print("|cffff0000WhisperManager could not initialize. Update the addon or repair its saved data.|r")
+        return false
+    end
     
     -- Initialize saved variable tables
     if type(WhisperManager_HistoryDB) ~= "table" then
@@ -197,14 +206,6 @@ function addon:Initialize()
         WhisperManager_Config = {}
     end
     
-    -- Validate schema version
-    self:DebugMessage("Running schema validation...")
-    if not self:ValidateSchema() then
-        self:Print("|cffff0000WhisperManager has been disabled due to version mismatch!|r")
-        self:Print("|cffff8800Your saved data is safe and has not been modified.|r")
-        return
-    end
-    
     if WhisperManager_HistoryDB and not WhisperManager_HistoryDB.__schema then
         WhisperManager_HistoryDB.__schema = self.EXPECTED_SCHEMA_VERSION
     end
@@ -250,18 +251,6 @@ function addon:Initialize()
     end
     addon.debugEnabled = not not WhisperManager_Config.debug
 
-    if addon.RegisterSlashCommands then
-        addon:RegisterSlashCommands()
-    end
-
-    if addon.LoadSettings then
-        addon.settings = addon:LoadSettings()
-        self:DebugMessage("Settings loaded in Initialize():")
-        self:DebugMessage("  addon.settings.spawnAnchorX =", addon.settings.spawnAnchorX)
-        self:DebugMessage("  addon.settings.spawnAnchorY =", addon.settings.spawnAnchorY)
-        self:DebugMessage("  addon.settings.windowSpacing =", addon.settings.windowSpacing)
-    end
-
     self:InitializeSilentModeState()
 
     -- NOTE: Shift-click item linking is intentionally NOT intercepted.
@@ -286,7 +275,10 @@ function addon:Initialize()
     -- Initialize TRP3 integration if available
     self:InitializeTRP3Integration()
 
+    self.initialized = true
+    self:SetupChatHooks()
     self:DebugMessage("WhisperManager initialized.");
+    return true
 end
 
 -- Slash Commands
@@ -358,15 +350,16 @@ end
 --- Handle slash command input
 -- @param message string Command text entered by user
 function addon:HandleSlashCommand(message)
-    print("[WM DEBUG] HandleSlashCommand called with: " .. tostring(message))
+    self:DebugMessage("HandleSlashCommand called with:", message)
     local input = self:TrimWhitespace(message or "") or ""
     if input == "" or input:lower() == "help" then
         self:Print("Usage:")
         self:Print("/wmgr debug [on|off|toggle] - Control diagnostic chat output.")
         self:Print("/wmgr reset_positions - Reset saved window positions.")
         self:Print("/wmgr recover - Restore the latest saved unsent whisper.")
+        self:Print("/wmgr history - Browse all saved conversations.")
         self:Print("/wmgr reset_all_data - [Dangerous]  Clear all saved data (history, windows, config).")
-        self:Print("/wmgr delete_data_retention_test - [Dangerous] Data retention cleanup (keep 3 recent, delete older than 5 min).")
+        self:Print("/wmgr delete_data_retention_test - [Dangerous] Data retention cleanup (keep 3 recent, delete older than 2 min).")
         self:Print("/wmgr cleanup_empty - [Dangerous] Remove empty conversation entries from history.")
         self:Print("/wmgr test-unread - Create a fake unread message.")
         self:Print("/wmgr read-all - Mark all messages as read.")
@@ -376,6 +369,11 @@ function addon:HandleSlashCommand(message)
 
     local command, rest = input:match("^(%S+)%s*(.-)$")
     command = command and command:lower() or ""
+
+    if not self.initialized and command ~= "reset_all_data" then
+        self:Print("WhisperManager did not initialize. Update the addon or repair its saved data, then /reload.")
+        return
+    end
     
     if command == "debug" then
         local directive = rest and rest:lower() or ""
@@ -388,6 +386,8 @@ function addon:HandleSlashCommand(message)
         end
     elseif command == "recover" then
         self:RecoverUnsentWhisper()
+    elseif command == "history" then
+        self:ToggleHistoryFrame()
     elseif command == "reset_positions" then
         self:ResetWindowPositions()
     elseif command == "reset_all_data" then
@@ -484,9 +484,10 @@ local function GetActiveWhisperManagerEditBox()
 end
 
 local function hookChatFrameEditBox(editBox)
+    if not addon.initialized then return end
     if editBox and not Hooked_ChatFrameEditBoxes[editBox:GetName()] then
         hooksecurefunc(editBox, "Insert", function(self, theText)
-            if addon:IsSecretValue(theText) or addon:GetWhisperRestrictionReason() then return end
+            if addon:IsSecretValue(theText) or type(theText) ~= "string" or addon:GetWhisperRestrictionReason() then return end
             local activeEditBox = GetActiveWhisperManagerEditBox()
             if activeEditBox and activeEditBox ~= self then
                 activeEditBox:Insert(theText)
@@ -494,7 +495,8 @@ local function hookChatFrameEditBox(editBox)
                 -- after Inserting; hand focus back to the WhisperManager input on
                 -- the next frame (after the original call completes).
                 C_Timer.After(0, function()
-                    if activeEditBox and activeEditBox:IsShown() then
+                    if activeEditBox and activeEditBox:IsShown() and not addon:GetWhisperRestrictionReason()
+                        and addon:CanChangeAddonFrame(activeEditBox) then
                         addon:SetEditBoxFocus(activeEditBox)
                         activeEditBox:SetFocus()
                     end
@@ -503,7 +505,7 @@ local function hookChatFrameEditBox(editBox)
         end)
 
         hooksecurefunc(editBox, "SetText", function(self, theText)
-            if addon:IsSecretValue(theText) or addon:GetWhisperRestrictionReason() then return end
+            if addon:IsSecretValue(theText) or type(theText) ~= "string" or addon:GetWhisperRestrictionReason() then return end
             local firstChar = ""
             if string.len(theText) > 0 then
                 firstChar = string.sub(theText, 1, 1)
@@ -532,15 +534,15 @@ end
 -- replaced anymore. Overriding methods of Blizzard's protected chat frames ran
 -- addon code inside every protected frame execution (unit menus, dropdowns),
 -- tainting the whole path and blocking protected calls like CopyToClipboard.
-hooksecurefunc(ChatFrameUtil, "ActivateChat", function(editBox)
+local function OnActivateChat(editBox)
     if editBox and editBox.GetAttribute then
         local chatType = editBox:GetAttribute("chatType")
-        if chatType and chatType ~= "WHISPER" then
+        if not addon:IsSecretValue(chatType) and chatType and chatType ~= "WHISPER" then
             addon:SetEditBoxFocus(nil)
         end
     end
     hookChatFrameEditBox(editBox)
-end)
+end
 
 -- NOTE: ChatFrameUtil.GetActiveWindow / ChatEdit_GetActiveWindow are NOT
 -- overridden anymore (same taint reasons as above).
@@ -565,6 +567,11 @@ function addon:GetEditBoxFocus()
 end
 
 function addon:SetupChatHooks()
+    if not self.initialized then return end
+    if not self.__activateChatHookInstalled then
+        hooksecurefunc(ChatFrameUtil, "ActivateChat", OnActivateChat)
+        self.__activateChatHookInstalled = true
+    end
     if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox then
         hookChatFrameEditBox(DEFAULT_CHAT_FRAME.editBox)
     end
@@ -576,13 +583,9 @@ function addon:SetupChatHooks()
     end
 end
 
-C_Timer.After(0, function()
-    addon:SetupChatHooks()
-end)
-
 -- Utility Functions
 function addon:TrimWhitespace(value)
-    if type(value) ~= "string" then return nil end
+    if self:IsSecretValue(value) or type(value) ~= "string" then return nil end
 
     local okLeading, noLeading = pcall(string.gsub, value, "^%s+", "")
     if not okLeading then
@@ -729,6 +732,7 @@ addon.StripRealmFromName = StripRealmFromName
 
 -- Hook Setup
 function addon:SetupHooks()
+    if not self.initialized then return end
     -- Prevent duplicate hooks
     if addon.__hooksInstalled then
         addon:DebugMessage("Hooks already installed, skipping.")
@@ -761,14 +765,21 @@ function addon:SetupHooks()
     end
 
     local function NormalizeTellTarget(rawTarget)
+        if addon:IsSecretValue(rawTarget) then return nil end
+        local function ReadTargetField(target, ...)
+            for i = 1, select("#", ...) do
+                local value = target[select(i, ...)]
+                if not addon:IsSecretValue(value) and value ~= nil then return value end
+            end
+        end
         local function NormalizeRealm(realm)
-            if type(realm) ~= "string" or realm == "" then return nil end
+            if addon:IsSecretValue(realm) or type(realm) ~= "string" or realm == "" then return nil end
             local cleaned = realm:gsub("%s+", "")
             return cleaned ~= "" and cleaned or nil
         end
 
         local function CleanNameString(value)
-            if type(value) ~= "string" then return nil end
+            if addon:IsSecretValue(value) or type(value) ~= "string" then return nil end
             local cleaned = addon:TrimWhitespace(value)
             if not cleaned or cleaned == "" then return nil end
 
@@ -795,7 +806,7 @@ function addon:SetupHooks()
                 cleaned = parenthesizedTarget
             end
 
-            if cleaned and cleaned:find(" ", 1, true) and not cleaned:find("%-", 1, true) then
+            if cleaned and cleaned:find(" ", 1, true) and not cleaned:find("-", 1, true) then
                 local firstToken = cleaned:match("^([^%s]+)")
                 cleaned = firstToken or cleaned
             end
@@ -808,15 +819,16 @@ function addon:SetupHooks()
         end
 
         if type(rawTarget) == "table" then
-            local unitToken = rawTarget.unit or rawTarget.unitToken
-            if type(unitToken) == "string" and unitToken ~= "" and UnitExists and UnitExists(unitToken) then
+            local unitToken = ReadTargetField(rawTarget, "unit", "unitToken")
+            if not addon:IsSecretValue(unitToken) and type(unitToken) == "string" and unitToken ~= "" and UnitExists and UnitExists(unitToken) then
                 local unitName, unitRealm = UnitName(unitToken)
                 -- 12.x: UnitName returns secret values for secret units in protected
                 -- content; those cannot be processed by addons.
                 local unitNameSecret = issecretvalue and issecretvalue(unitName) == true
                 local unitRealmSecret = issecretvalue and issecretvalue(unitRealm) == true
-                if unitName and not unitNameSecret and unitName ~= "" then
-                    local realm = unitRealmSecret and nil or NormalizeRealm(unitRealm)
+                if not unitNameSecret and unitName and unitName ~= "" then
+                    local realm
+                    if not unitRealmSecret then realm = NormalizeRealm(unitRealm) end
                     if realm then
                         return unitName .. "-" .. realm
                     end
@@ -824,13 +836,14 @@ function addon:SetupHooks()
                 end
             end
 
-            local guid = rawTarget.guid or rawTarget.playerGuid
-            if type(guid) == "string" and guid ~= "" and GetPlayerInfoByGUID then
+            local guid = ReadTargetField(rawTarget, "guid", "playerGuid")
+            if not addon:IsSecretValue(guid) and type(guid) == "string" and guid ~= "" and GetPlayerInfoByGUID then
                 local _, _, _, _, _, guidName, guidRealm = GetPlayerInfoByGUID(guid)
                 local guidNameSecret = issecretvalue and issecretvalue(guidName) == true
-                if guidName and not guidNameSecret and guidName ~= "" then
+                if not guidNameSecret and guidName and guidName ~= "" then
                     local guidRealmSecret = issecretvalue and issecretvalue(guidRealm) == true
-                    local realm = guidRealmSecret and nil or NormalizeRealm(guidRealm)
+                    local realm
+                    if not guidRealmSecret then realm = NormalizeRealm(guidRealm) end
                     if realm then
                         return guidName .. "-" .. realm
                     end
@@ -844,17 +857,17 @@ function addon:SetupHooks()
             }
             for _, key in ipairs(candidateKeys) do
                 local candidate = rawTarget[key]
-                if type(candidate) == "string" and candidate ~= "" then
+                if not addon:IsSecretValue(candidate) and type(candidate) == "string" and candidate ~= "" then
                     local normalized = CleanNameString(candidate)
                     if normalized then
-                        local realmCandidate = rawTarget.realm or rawTarget.server or rawTarget.realmName
+                        local realmCandidate = ReadTargetField(rawTarget, "realm", "server", "realmName")
                         local realm = NormalizeRealm(realmCandidate)
-                        if realm and not normalized:find("%-", 1, true) then
+                        if realm and not normalized:find("-", 1, true) then
                             return normalized .. "-" .. realm
                         end
                         return normalized
                     end
-                elseif type(candidate) == "table" then
+                elseif not addon:IsSecretValue(candidate) and type(candidate) == "table" then
                     local nested = NormalizeTellTarget(candidate)
                     if nested then
                         return nested
@@ -867,7 +880,7 @@ function addon:SetupHooks()
     end
 
     local function HandleSendTell(name, chatFrame)
-        if addon.IsRestrictedChatModeInstance and addon:IsRestrictedChatModeInstance() then
+        if addon:IsSecretValue(name) or addon:GetWhisperRestrictionReason() then
             return
         end
 
@@ -887,7 +900,7 @@ function addon:SetupHooks()
         end
 
         QueueWhisperAction(function()
-            if InCombatLockdown and InCombatLockdown() then
+            if addon:GetWhisperRestrictionReason() then
                 return
             end
 
@@ -938,7 +951,7 @@ function addon:SetupHooks()
     end
 
     local function HandleOpenChat(text, chatFrame)
-        if addon.__closingWindow then
+        if addon.__closingWindow or addon:IsSecretValue(text) or addon:GetWhisperRestrictionReason() then
             return
         end
 
@@ -957,11 +970,12 @@ function addon:SetupHooks()
         end
 
         local chatType = editBox:GetAttribute("chatType")
-        if chatType ~= "WHISPER" then
+        if addon:IsSecretValue(chatType) or chatType ~= "WHISPER" then
             return
         end
 
         local tellTarget = editBox:GetAttribute("tellTarget")
+        if addon:IsSecretValue(tellTarget) then return end
         if (not tellTarget or tellTarget == "") and addon.ExtractWhisperTarget then
             tellTarget = addon:ExtractWhisperTarget(text)
         end
@@ -979,7 +993,7 @@ function addon:SetupHooks()
         end
 
         QueueWhisperAction(function()
-            if addon.__closingWindow then
+            if addon.__closingWindow or addon:GetWhisperRestrictionReason() then
                 return
             end
 
@@ -1035,11 +1049,11 @@ function addon:SetupHooks()
     -- forward it into the WhisperManager input if it has focus. Post-hook only,
     -- so no protected chat flow is tainted.
     hooksecurefunc(ChatFrameUtil, "InsertLink", function(text)
-        if type(text) ~= "string" or text == "" then
+        if addon:IsSecretValue(text) or type(text) ~= "string" or text == "" or addon:GetWhisperRestrictionReason() then
             return
         end
         local activeEditBox = GetActiveWhisperManagerEditBox()
-        if activeEditBox then
+        if activeEditBox and addon:CanChangeAddonFrame(activeEditBox) then
             activeEditBox:Insert(text)
         end
     end)
@@ -1051,7 +1065,7 @@ function addon:SetupHooks()
     if type(ChatFrameUtil.ReplyTell) == "function" and type(ChatFrameUtil.GetLastTellTarget) == "function" then
         hooksecurefunc(ChatFrameUtil, "ReplyTell", function(chatFrame)
             local lastTellTarget = ChatFrameUtil.GetLastTellTarget()
-            if lastTellTarget and lastTellTarget ~= "" then
+            if not addon:IsSecretValue(lastTellTarget) and lastTellTarget and lastTellTarget ~= "" then
                 HandleSendTell(lastTellTarget, chatFrame)
             end
         end)
@@ -1117,7 +1131,7 @@ function addon:SetupHooks()
     -- Hook BNet whisper default action similarly
     hooksecurefunc(ChatFrameUtil, "SendBNetTell", function(tokenizedName)
         if addon:IsSecretValue(tokenizedName) or addon:GetWhisperRestrictionReason()
-            or InCombatLockdown() or not tokenizedName or tokenizedName == "" then return end
+            or not tokenizedName or tokenizedName == "" then return end
 
         local bnetAccountID, playerKey, displayName = ResolveBNetTellTarget(tokenizedName)
         if not bnetAccountID or not playerKey then
@@ -1130,7 +1144,7 @@ function addon:SetupHooks()
         end
 
         QueueWhisperAction(function()
-            if addon:GetWhisperRestrictionReason() or InCombatLockdown() then return end
+            if addon:GetWhisperRestrictionReason() then return end
             local monitorModeActive = addon.IsChatModeEnabled and (not addon:IsChatModeEnabled())
             if addon:IsSilentModeEnabled() or monitorModeActive then
                 addon:UpdateRecentChat(playerKey, displayName or tokenizedName, true, "Me")
@@ -1224,13 +1238,14 @@ function addon:RegisterCoreEvents()
                     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r Loaded successfully!")
                 end
                 addon:Initialize()
-            elseif addonName == "totalRP3" or addonName == "TotalRP3" then
+            elseif addon.initialized and (addonName == "totalRP3" or addonName == "TotalRP3") then
                 if addon.debugEnabled then
                     DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00WhisperManager:|r TotalRP3 detected, setting up integration...")
                 end
                 addon:InitializeTRP3Integration()
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
+            if not addon.initialized then return end
             addon:DebugMessage("PLAYER_ENTERING_WORLD fired. Setting up hooks.");
             addon:SetupHooks()
             self:UnregisterEvent("PLAYER_ENTERING_WORLD")

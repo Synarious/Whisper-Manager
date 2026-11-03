@@ -88,6 +88,7 @@ function addon:SplitWhisperMessage(text, limit)
 end
 
 local queue, current = {}, nil
+local recoveryQueue = {}
 local pump
 
 local function fail(job, reason)
@@ -103,6 +104,7 @@ local function fail(job, reason)
         job.win.Input:SetText(unsent)
         addon:Print("|cffff8800" .. reason .. " Unconfirmed text remains in the composer; check chat before retrying.|r")
     else
+        recoveryQueue[#recoveryQueue + 1] = {win = job.win, text = unsent}
         job.win.unsentWhisperDraft = unsent
         addon.lastFailedWhisperWindow = job.win
         addon:Print("|cffff8800" .. reason .. " Clear the new draft, then use /wmgr recover to restore unconfirmed text. Check chat before retrying.|r")
@@ -111,18 +113,31 @@ local function fail(job, reason)
 end
 
 function addon:RecoverUnsentWhisper()
-    local win = self.lastFailedWhisperWindow
-    if not win or not win.unsentWhisperDraft then self:Print("No saved unsent whisper."); return end
-    if not self:CanChangeAddonFrame(win) then
+    local draft = recoveryQueue[#recoveryQueue]
+    if not draft then self:Print("No saved unsent whisper."); return end
+    local win = draft.win
+    local reason = self:GetWhisperRestrictionReason()
+    if reason then self:Print(reason); return end
+    if not self:CanChangeAddonFrame(win) or not self:CanChangeAddonFrame(win.Input)
+        or (win.InputContainer and not self:CanChangeAddonFrame(win.InputContainer)) then
         self:Print("This window is temporarily protected. Restore the draft after combat.")
         return
     end
     if win.whisperSendPending or win.Input:GetText() ~= "" then
-        self:Print("Clear the draft in that conversation before restoring the unsent whisper.")
+        local label = win.displayName or win.playerTarget or win.playerKey
+        self:Print("Clear the draft in " .. label .. " before restoring the unsent whisper.")
         return
     end
-    win.Input:SetText(win.unsentWhisperDraft)
+    win.Input:SetText(draft.text)
+    table.remove(recoveryQueue)
     win.unsentWhisperDraft = nil
+    for i = #recoveryQueue, 1, -1 do
+        if recoveryQueue[i].win == win then
+            win.unsentWhisperDraft = recoveryQueue[i].text
+            break
+        end
+    end
+    self.lastFailedWhisperWindow = recoveryQueue[#recoveryQueue] and recoveryQueue[#recoveryQueue].win or nil
     win:Show()
     self:Print("Restored the unconfirmed whisper draft.")
 end
@@ -152,6 +167,7 @@ pump = function()
 end
 
 function addon:SendComposedWhisper(win, text)
+    if self.IsSafeToOperate and not self:IsSafeToOperate() then return false end
     local reason = self:GetWhisperRestrictionReason()
     if reason then self:Print(reason); return false end
     if self:IsSecretValue(text) then return false end
@@ -165,7 +181,7 @@ function addon:SendComposedWhisper(win, text)
         return false
     end
     local target = win.isBNet and win.bnSenderID or win.playerTarget
-    if not target or target == "" then
+    if self:IsSecretValue(target) or not target or target == "" then
         self:Print("Unable to determine the whisper recipient.")
         return false
     end
@@ -183,7 +199,7 @@ end
 function addon:ConfirmQueuedWhisper(playerKey, text)
     if self:IsSecretValue(playerKey) or self:IsSecretValue(text) then return end
     local job = current
-    if not job or not job.awaitingConfirmation or job.win.playerKey ~= playerKey
+    if not job or not job.awaitingConfirmation or not self:AreConversationKeysEqual(job.win.playerKey, playerKey)
         or job.chunks[job.index] ~= text then return end
     job.awaitingConfirmation = false
     job.index = job.index + 1

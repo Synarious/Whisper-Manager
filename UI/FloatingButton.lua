@@ -29,6 +29,7 @@ function addon:CreateFloatingButton()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("WhisperManager", 1, 0.82, 0)
         GameTooltip:AddLine("Left Click: Recent Chats", 1, 1, 1)
+        GameTooltip:AddLine("Right Click: Chat History", 1, 1, 1)
         local modeLabel = addon.GetDefaultBehaviorLabel and addon:GetDefaultBehaviorLabel() or "Silent OFF | Chat OFF"
         GameTooltip:AddLine("SHIFT+Left Click: Rotate Default Behavior", 0.7, 0.9, 1)
         GameTooltip:AddLine("Current: " .. modeLabel, 0.8, 0.8, 0.8)
@@ -72,6 +73,8 @@ function addon:CreateFloatingButton()
         
         if button == "LeftButton" then
             addon:ToggleRecentChatsFrame()
+        elseif button == "RightButton" then
+            addon:ToggleHistoryFrame()
         end
     end)
     
@@ -109,6 +112,10 @@ end
 
 function addon:UpdateFloatingButtonUnreadStatus()
     if not self.floatingButton then return end
+    if not self:CanChangeAddonFrame(self.floatingButton) then
+        self:QueueWindowAction("unread-status", function() self:UpdateFloatingButtonUnreadStatus() end)
+        return
+    end
     
     local hasUnread = false
     local unreadCount = 0

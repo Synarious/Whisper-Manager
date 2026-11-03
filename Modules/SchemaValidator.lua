@@ -17,11 +17,23 @@ function addon:ValidateSchema()
         return true
     end
     
+    if type(WhisperManager_HistoryDB) ~= "table" then
+        addon:Print("Saved history is not a table. WhisperManager has been disabled without modifying it.")
+        addon.schemaValidationPassed = false
+        return false
+    end
     local savedSchema = WhisperManager_HistoryDB.__schema
     
-    if not savedSchema then
+    if savedSchema == nil then
         -- Very old version without schema - assume schema 1
         savedSchema = 1
+    end
+
+    if type(savedSchema) ~= "number" or savedSchema ~= savedSchema
+        or savedSchema == math.huge or savedSchema == -math.huge then
+        addon:Print("Saved history has an invalid schema version. WhisperManager has been disabled without modifying it.")
+        addon.schemaValidationPassed = false
+        return false
     end
     
     addon:DebugMessage("Saved schema version:", savedSchema)
@@ -89,11 +101,11 @@ function addon:ShowSchemaWarning(savedSchema)
         errorText = "|cffffffffYour saved data is from an incompatible version of WhisperManager.|r\n\n"
         errorText = errorText .. string.format("|cffaaaaaa  Saved version: |r|cffff6666%d|r\n", savedSchema)
         errorText = errorText .. string.format("|cffaaaaaa  Required version: |r|cff66ff66%d|r\n\n", addon.EXPECTED_SCHEMA_VERSION)
-        errorText = errorText .. "|cffff8800Please preform the addon to protect your whisper data.|r\n\n"
+        errorText = errorText .. "|cffff8800Update the addon to protect your whisper data.|r\n\n"
         errorText = errorText .. "|cff00ff00What to do:|r\n\n"
         errorText = errorText .. "|cffaaaaaa  1. Back up your whisper data (optional):|r\n"
         errorText = errorText .. "|cffcccccc     <WOW>/WTF/Account/<Account>/SavedVariables/\n     WhisperManager.lua|r\n\n"
-        errorText = errorText .. "|cffaaaaaa  2. Type:|r |cff66ff66/wmgr delete_all_data|r\n\n"
+        errorText = errorText .. "|cffaaaaaa  2. To discard the saved data, type:|r |cff66ff66/wmgr reset_all_data|r\n\n"
         errorText = errorText .. "|cffaaaaaa  3. Type:|r |cff66ff66/reload|r"
     else
         errorText = "|cffffffffYour saved data is from a newer version of WhisperManager.|r\n\n"
@@ -104,7 +116,7 @@ function addon:ShowSchemaWarning(savedSchema)
         errorText = errorText .. "|cffaaaaaa  1. Update WhisperManager to the latest version|r\n\n"
         errorText = errorText .. "|cff888888     OR|r\n\n"
         errorText = errorText .. "|cffaaaaaa  2. Back up your whisper data, then type:|r\n"
-        errorText = errorText .. "|cff66ff66     /wmgr delete_all_data|r\n"
+        errorText = errorText .. "|cff66ff66     /wmgr reset_all_data|r\n"
         errorText = errorText .. "|cff66ff66     /reload|r"
     end
     

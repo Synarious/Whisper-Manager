@@ -68,7 +68,7 @@ local FONT_OPTIONS = {
 -- Available notification sounds
 -- Using WoW Sound Kit IDs (more reliable than file paths)
 local SOUND_OPTIONS = {
-    {name = "None (Disabled)", soundKit = nil},
+    {name = "None (Disabled)", soundKit = 0},
     {name = "Tell Message", soundKit = SOUNDKIT.TELL_MESSAGE},
     {name = "Whisper Inform", soundKit = SOUNDKIT.WHISPER_INFORM},
     {name = "UI Quest Complete", soundKit = SOUNDKIT.UI_QUEST_OBJECTIVES_COMPLETE},
@@ -180,7 +180,7 @@ end
 
 function addon:GetSetting(key)
     -- addon.settings is now guaranteed to be loaded at startup.
-    local value = self.settings[key]
+    local value = self.settings and self.settings[key]
     if value == nil then
         self:DebugMessage("Warning: No setting found for '", key, "'. Using default.")
         return DEFAULT_SETTINGS[key]
@@ -233,9 +233,10 @@ function addon:ApplyFontSettings()
     end
     
     -- Update history viewer if it exists
-    if self.historyFrame and self.historyFrame.detailText then
-        local _, _, flags = self.historyFrame.detailText:GetFont()
-        self.historyFrame.detailText:SetFont(fontPath, messageSize, flags or "")
+    if self.historyFrame and self.historyFrame.detailScrollFrame then
+        local detail = self.historyFrame.detailScrollFrame
+        local _, _, flags = detail:GetFont()
+        detail:SetFont(fontPath, messageSize, flags or "")
     end
 end
 
@@ -259,15 +260,16 @@ function addon:PlayNotificationSound()
             ["Level Up"] = SOUNDKIT and SOUNDKIT.LEVEL_UP,
             ["Auction Open"] = SOUNDKIT and SOUNDKIT.AUCTION_WINDOW_OPEN,
             ["Ready Check"] = SOUNDKIT and SOUNDKIT.READY_CHECK,
-            ["None (Disabled)"] = nil,
+            ["None (Disabled)"] = 0,
         }
         local mapped = legacyMap[soundKitID]
+        if mapped == nil then mapped = 0 end
         -- Persist the migration so we only do it once.
         self:SetSetting("notificationSound", mapped)
         soundKitID = mapped
     end
 
-    if not soundKitID or type(soundKitID) ~= "number" then
+    if not soundKitID or type(soundKitID) ~= "number" or soundKitID <= 0 then
         addon:DebugMessage("|cffff8800Sound notification disabled|r")
         self:DebugMessage("Sound notification disabled (nil/non-numeric soundKit)")
         return -- Sound disabled

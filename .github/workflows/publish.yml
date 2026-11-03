@@ -1,49 +1,81 @@
-# description of this workflow, can be anything you want
-name: Package and release
+name: Test and release
 
-# we need to let GitHub know _when_ we want to release, typically only when we create a new tag.
-# this will target only tags, and not all pushes to the master branch.
-# this part can be heavily customized to your liking, like targeting only tags that match a certain word,
-# other branches or even pullrequests.
 on:
+  workflow_dispatch:
+  pull_request:
   push:
+    branches:
+      - '**'
     tags:
       - '**'
 
-# a workflow is built up as jobs, and within these jobs are steps
+permissions:
+  contents: read
+
 jobs:
-
-  # "release" is a job, you can name it anything you want
-  release:
-
-    # we can run our steps on pretty much anything, but the "ubuntu-latest" image is a safe bet
+  test:
     runs-on: ubuntu-latest
-    
-    # we need to give the packager write permissions to create releases and upload assets
-    permissions:
-      contents: write  # <-- This is the magic line
-
-    # specify the environment variables used by the packager, matching the secrets from the project on GitHub
-    env:
-      CF_API_KEY: ${{ secrets.CF_API_KEY }}
-      WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
-      WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
-      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}  # "GITHUB_TOKEN" is a secret always provided to the workflow
-                                                 # for your own token, the name cannot start with "GITHUB_"
-
-    # "steps" holds a list of all the steps needed to package and release our AddOn
     steps:
-
-      # we first have to clone the AddOn project, this is a required step
-      - name: Clone project
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
-          fetch-depth: 0  # gets entire git history, needed for automatic changelogs
-      # once cloned, we just run the GitHub Action for the packager project
-      - name: Package and release
-        run: curl -s https://raw.githubusercontent.com/BigWigsMods/packager/master/release.sh | bash -s -- -n "{package-name}-{project-version}"
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: tests/requirements.txt
+      - run: python -m pip install -r tests/requirements.txt
+      - name: Run Lua regression tests
         shell: bash
-        
-      # once cloned, we just run the GitHub Action for the packager project
+        run: |
+          for test in tests/*.py; do
+            python -B "$test"
+          done
+
+  release:
+    if: >-
+      github.event_name != 'pull_request' &&
+      (startsWith(github.ref, 'refs/tags/') ||
+       github.ref == 'refs/heads/master' ||
+       github.ref == 'refs/heads/main' ||
+       github.ref == 'refs/heads/dev')
+    needs: test
+    runs-on: ubuntu-latest
+    concurrency:
+      group: addon-release
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Prepare version and clean addon directory
+        id: prepare
+        run: python .github/scripts/release.py
+      - name: Commit version and push release tag
+        if: steps.prepare.outputs.bumped == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- Whisper-Manager.toc
+          git commit -m "Release ${RELEASE_TAG}"
+          git tag -a "$RELEASE_TAG" -m "Release ${RELEASE_TAG}"
+          git push --atomic origin "HEAD:refs/heads/${GITHUB_REF_NAME}" "refs/tags/${RELEASE_TAG}"
       - name: Package and release
         uses: BigWigsMods/packager@v2
+        with:
+          # release.py stages only runtime files and LICENSE; do not recopy the repo.
+          args: -c -o -n "{package-name}-{project-version}"
+        env:
+          # The tag is made in this run: GITHUB_TOKEN pushes do not start another run.
+          GITHUB_REF: refs/tags/${{ steps.prepare.outputs.tag }}
+          GITHUB_REF_NAME: ${{ steps.prepare.outputs.tag }}
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          WOWI_API_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

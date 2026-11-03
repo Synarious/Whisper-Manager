@@ -14,6 +14,7 @@ C_RestrictedActions={GetAddOnRestrictionState=function() return state end,
  CheckAllowProtectedFunctions=function(frame,silent) assert(silent); return not frame.blocked end}
 WhisperManager.IsRestrictedChatModeInstance=function() return instance end
 WhisperManager.DebugMessage=function() end
+WhisperManager.initialized=true
 function InCombatLockdown() return combat end
 function wipe(t) for k in pairs(t) do t[k]=nil end end
 function CreateFrame()
@@ -125,10 +126,11 @@ a.IsRestrictedChatModeInstance=function() return restricted end
 a:SetSetting('chatModeEnabled',true)
 w:Show()
 a:CheckRuntimeRestrictions()
-assert(not a:IsChatModeEnabled() and a.__chatModeRestoreRequested and not w:IsShown())
+assert(not a:IsChatModeEnabled() and a.__chatModeRestricted and not w:IsShown())
+assert(a:GetSetting('chatModeEnabled')==true)
 restricted=false
 a:CheckRuntimeRestrictions()
-assert(a:IsChatModeEnabled() and not a.__chatModeRestoreRequested and not w:IsShown())
+assert(a:IsChatModeEnabled() and not a.__chatModeRestricted and not w:IsShown())
 -- The actual constructor can create a new non-secure conversation in combat.
 combat=true
 a.DisplayHistory=function() end

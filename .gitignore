@@ -1,2 +1,4 @@
 debug_addons
 .vscode
+.release/
+__pycache__/

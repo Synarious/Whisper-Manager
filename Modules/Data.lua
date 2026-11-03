@@ -147,13 +147,16 @@ function addon:DisplayHistory(window, playerKey)
         return false
     end
 
-    -- Always render only the most recent messages for the whisper window.
+    -- Honor the backlog requested by the conversation's scroll handler.
     local historyCount = #history
-    local maxLines = WINDOW_INITIAL_HISTORY_LIMIT
+    local maxLines = math.max(WINDOW_INITIAL_HISTORY_LIMIT, window.__wm_historyRenderLimit or 0)
+    window.__wm_historyRenderLimit = maxLines
     local startIndex = math.max(1, historyCount - maxLines + 1)
+    -- Date separators count as messages in ScrollingMessageFrame too.
+    historyFrame:SetMaxLines(math.min(historyCount, maxLines) * 2 + 1)
 
     -- Fixed header shown at the top of history to indicate start of saved backlog
-    historyFrame:AddMessage("== Looback End: Check History ==", 1.0, 0.82, 0.0)
+    historyFrame:AddMessage(startIndex > 1 and "== Scroll up for older messages ==" or "== Start of saved history ==", 1.0, 0.82, 0.0)
 
     for i = startIndex, historyCount do
         local entry = history[i]
@@ -341,10 +344,6 @@ end
 function addon:UpdateRecentChat(playerKey, displayName, isBNet, author)
     -- SCHEMA PROTECTION: Block if validation failed
     if not addon:IsSafeToOperate() then return end
-    if InCombatLockdown() then
-        addon:DebugMessage("In combat - skipping UpdateRecentChat write")
-        return
-    end
     
     if not playerKey then return end
     
@@ -466,244 +465,87 @@ end
 -- Export GetTimeAgo for use in other modules
 addon.GetTimeAgo = GetTimeAgo;
 
+-- Read both saved formats; unknown timestamps must never be treated as ancient.
+local function HistoryTimestamp(entry)
+    if type(entry) ~= "table" then return nil end
+    local timestamp = entry.t
+    if type(timestamp) ~= "number" then timestamp = entry.timestamp end
+    if type(timestamp) == "number" and timestamp > 0 and timestamp < math.huge then return timestamp end
+end
+addon.GetHistoryTimestamp = HistoryTimestamp
+
+-- Sort a copy with the original index as a tie-breaker, then update only array
+-- entries so conversation metadata and references survive cleanup.
+local function PruneHistory(history, keep)
+    local sorted = {}
+    for index, entry in ipairs(history) do
+        local timestamp = HistoryTimestamp(entry)
+        if not timestamp then return 0, false end -- Preserve this conversation for manual repair.
+        sorted[#sorted + 1] = {entry = entry, timestamp = timestamp, index = index}
+    end
+    table.sort(sorted, function(a, b)
+        if a.timestamp == b.timestamp then return a.index < b.index end
+        return a.timestamp < b.timestamp
+    end)
+    local retained = {}
+    for index, item in ipairs(sorted) do
+        if keep(item.timestamp, #sorted - index + 1) then retained[#retained + 1] = item.entry end
+    end
+    local oldCount, changed = #history, false
+    for index = 1, oldCount do
+        if history[index] ~= retained[index] then changed = true end
+        history[index] = retained[index]
+    end
+    return oldCount - #retained, changed
+end
+
 -- History Retention Cleanup
 function addon:RunHistoryRetentionCleanup()
-    local config = WhisperManager_Config or {}
-    local settings = config.settings or {}
-    local retentionMode = settings.historyRetentionMode or "none"
-    
-    if retentionMode == "none" then
-        if addon.DebugMode then
-            DEFAULT_CHAT_FRAME:AddMessage("[WM] Retention cleanup: Mode is 'none', skipping")
-        end
-        return
+    if not self:IsSafeToOperate() then return end
+    local settings = (WhisperManager_Config or {}).settings or {}
+    local mode = settings.historyRetentionMode or "none"
+    if mode == "none" then return end
+    local policy
+    for _, option in ipairs(self.RETENTION_OPTIONS or {}) do
+        if option.value == mode then policy = option; break end
     end
-    
-    -- Find the retention options from Settings.lua
-    local retentionOptions = self.RETENTION_OPTIONS
-    if not retentionOptions then
-        if addon.DebugMode then
-            DEFAULT_CHAT_FRAME:AddMessage("[WM] Retention cleanup: RETENTION_OPTIONS not found")
-        end
-        return
-    end
-    
-    -- Find the selected mode configuration
-    local modeConfig = nil
-    for _, option in ipairs(retentionOptions) do
-        if option.value == retentionMode then
-            modeConfig = option
-            break
-        end
-    end
-    
-    if not modeConfig then
-        if addon.DebugMode then
-            DEFAULT_CHAT_FRAME:AddMessage("[WM] Retention cleanup: Mode config not found for: " .. retentionMode)
-        end
-        return
-    end
-    
-    local keepCount = modeConfig.keepCount
-    local keepMonths = modeConfig.keepMonths
-    local deleteMonths = modeConfig.deleteMonths
-    
-    if addon.DebugMode then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("[WM] Retention cleanup: Mode=%s, Keep=%d, KeepMonths=%s, DeleteMonths=%d", 
-            retentionMode, keepCount, tostring(keepMonths), deleteMonths))
-    end
-    
-    local historyDB = WhisperManager_HistoryDB or {}
-    local currentTime = time()
-    local secondsPerMonth = 30 * 24 * 60 * 60  -- Approximate month as 30 days
-    
-    local totalPlayersProcessed = 0
-    local totalMessagesDeleted = 0
-    
-    -- Iterate through each player's history
-    for playerKey, history in pairs(historyDB) do
-        if type(history) == "table" and #history > 0 then
-            -- Sort to chronological order (oldest first) to repair data reversed by legacy cleanup
-            table.sort(history, function(a, b)
-                return (a.t or 0) < (b.t or 0)
+    if not policy then return end
+    local now, secondsPerMonth = time(), 30 * 24 * 60 * 60
+    local players, deleted, changed = 0, 0, false
+    for key, history in pairs(WhisperManager_HistoryDB or {}) do
+        if key ~= "__schema" and type(history) == "table" and #history > 0 then
+            local removed, reordered = PruneHistory(history, function(timestamp, newestIndex)
+                local age = (now - timestamp) / secondsPerMonth
+                return (newestIndex <= policy.keepCount and (not policy.keepMonths or age <= policy.keepMonths))
+                    or age < policy.deleteMonths
             end)
-            -- Build a sorted copy (newest first) for processing without mutating the original
-            local sorted = {}
-            for _, v in ipairs(history) do
-                table.insert(sorted, v)
-            end
-            table.sort(sorted, function(a, b)
-                return (a.t or 0) > (b.t or 0)
-            end)
-            
-            local messagesToKeep = {}
-            local protectedCount = 0
-            
-            -- Process messages from the sorted copy
-            for i, message in ipairs(sorted) do
-                local messageAge = currentTime - (message.t or 0)
-                local ageInMonths = messageAge / secondsPerMonth
-                
-                local shouldKeep = false
-                
-                -- Protected messages: within keepCount AND within keepMonths (if specified)
-                if i <= keepCount then
-                    if keepMonths == nil or ageInMonths <= keepMonths then
-                        shouldKeep = true
-                        protectedCount = protectedCount + 1
-                    end
-                end
-                
-                -- Non-protected messages: keep if younger than deleteMonths
-                if not shouldKeep and ageInMonths < deleteMonths then
-                    shouldKeep = true
-                end
-                
-                if shouldKeep then
-                    table.insert(messagesToKeep, message)
-                end
-            end
-            
-            -- Sort kept messages back to chronological order (oldest first)
-            table.sort(messagesToKeep, function(a, b)
-                return (a.t or 0) < (b.t or 0)
-            end)
-            
-            local deletedCount = #history - #messagesToKeep
-            if deletedCount > 0 then
-                historyDB[playerKey] = messagesToKeep
-                totalMessagesDeleted = totalMessagesDeleted + deletedCount
-                
-                if addon.DebugMode then
-                    DEFAULT_CHAT_FRAME:AddMessage(string.format("[WM] Cleaned %s: %d messages deleted, %d kept (%d protected)", 
-                        playerKey, deletedCount, #messagesToKeep, protectedCount))
-                end
-            end
-            
-            totalPlayersProcessed = totalPlayersProcessed + 1
+            players, deleted = players + 1, deleted + removed
+            changed = changed or reordered
         end
     end
-    
-    -- Clean up empty entries
-    local emptyRemoved = addon:CleanupEmptyHistoryEntries()
-    
-    -- Clean up window positions not accessed in over 7 days
-    local windowPositionsRemoved = addon:CleanupWindowPositions()
-    
-    -- Refresh all open windows to reflect deleted messages
-    if totalMessagesDeleted > 0 or emptyRemoved > 0 then
-        addon:RefreshAllOpenWindows()
-    end
-    
-    -- Always show cleanup results to user if messages were deleted
-    if totalMessagesDeleted > 0 then
-        local message = string.format("|cFF00FF00[WhisperManager]|r History cleanup complete: Removed %d old message%s from %d conversation%s to keep your saved history lean.", 
-            totalMessagesDeleted,
-            totalMessagesDeleted ~= 1 and "s" or "",
-            totalPlayersProcessed,
-            totalPlayersProcessed ~= 1 and "s" or "")
-        if emptyRemoved > 0 then
-            message = message .. string.format(" Also removed %d empty conversation%s.", 
-                emptyRemoved, emptyRemoved ~= 1 and "s" or "")
-        end
-        print(message)
-    elseif emptyRemoved > 0 then
-        print(string.format("|cFF00FF00[WhisperManager]|r Removed %d empty conversation%s from history.", 
-            emptyRemoved, emptyRemoved ~= 1 and "s" or ""))
-    elseif addon.DebugMode then
-        DEFAULT_CHAT_FRAME:AddMessage(string.format("[WM] Retention cleanup complete: No messages needed deletion (%d players checked)", 
-            totalPlayersProcessed))
+    local emptyRemoved = self:CleanupEmptyHistoryEntries()
+    self:CleanupWindowPositions()
+    if changed or emptyRemoved > 0 then self:RefreshAllOpenWindows() end
+    if deleted > 0 or emptyRemoved > 0 then
+        self:Print(string.format("History cleanup complete: Removed %d old messages and %d empty conversations (%d conversations checked).",
+            deleted, emptyRemoved, players))
     end
 end
 
--- Debug Retention Cleanup (for testing with short time intervals)
 function addon:RunDebugRetentionCleanup()
-    local historyDB = WhisperManager_HistoryDB or {}
-    local currentTime = time()
-    
-    local keepCount = 3  -- Keep 3 most recent messages
-    local keepSeconds = 120  -- Protected for 2 minutes
-    local deleteSeconds = 120  -- Delete messages older than 2 minutes
-    
-    print("|cFF00FF00[WhisperManager]|r Debug Retention Test: Keep 3 recent (protect <2min), delete >2min old")
-    
-    local totalPlayersProcessed = 0
-    local totalMessagesDeleted = 0
-    
-    -- Iterate through each player's history
-    for playerKey, history in pairs(historyDB) do
-        if type(history) == "table" and #history > 0 then
-            -- Sort to chronological order (oldest first) to repair data reversed by legacy cleanup
-            table.sort(history, function(a, b)
-                return (a.t or 0) < (b.t or 0)
+    if not self:IsSafeToOperate() then return end
+    local now, deleted, changed = time(), 0, false
+    for key, history in pairs(WhisperManager_HistoryDB or {}) do
+        if key ~= "__schema" and type(history) == "table" and #history > 0 then
+            local removed, reordered = PruneHistory(history, function(timestamp, newestIndex)
+                return newestIndex <= 3 or now - timestamp < 120
             end)
-            -- Build a sorted copy (newest first) for processing without mutating the original
-            local sorted = {}
-            for _, v in ipairs(history) do
-                table.insert(sorted, v)
-            end
-            table.sort(sorted, function(a, b)
-                return (a.t or 0) > (b.t or 0)
-            end)
-            
-            local messagesToKeep = {}
-            local protectedCount = 0
-            
-            -- Process messages
-            for i, message in ipairs(sorted) do
-                local messageAge = currentTime - (message.t or 0)
-                
-                local shouldKeep = false
-                
-                -- Always keep the top 3 most recent messages
-                if i <= keepCount then
-                    shouldKeep = true
-                    -- Mark as protected if also within keepSeconds
-                    if messageAge <= keepSeconds then
-                        protectedCount = protectedCount + 1
-                    end
-                -- Delete messages older than 5 minutes (if not in top 3)
-                elseif messageAge < deleteSeconds then
-                    shouldKeep = true
-                end
-                
-                if shouldKeep then
-                    table.insert(messagesToKeep, message)
-                end
-            end
-            
-            -- Sort kept messages back to chronological order (oldest first)
-            table.sort(messagesToKeep, function(a, b)
-                return (a.t or 0) < (b.t or 0)
-            end)
-            
-            local deletedCount = #history - #messagesToKeep
-            if deletedCount > 0 then
-                historyDB[playerKey] = messagesToKeep
-                totalMessagesDeleted = totalMessagesDeleted + deletedCount
-                
-                print(string.format("[WM] %s: Deleted %d, Kept %d (%d protected)", 
-                    playerKey, deletedCount, #messagesToKeep, protectedCount))
-            end
-            
-            totalPlayersProcessed = totalPlayersProcessed + 1
+            deleted, changed = deleted + removed, changed or reordered
         end
     end
-    
-    -- Clean up empty entries
-    local emptyRemoved = addon:CleanupEmptyHistoryEntries()
-    
-    -- Refresh all open windows to reflect deleted messages
-    if totalMessagesDeleted > 0 or emptyRemoved > 0 then
-        addon:RefreshAllOpenWindows()
-    end
-    
-    local message = string.format("|cFF00FF00[WhisperManager]|r Debug cleanup complete: %d players, %d messages deleted", 
-        totalPlayersProcessed, totalMessagesDeleted)
-    if emptyRemoved > 0 then
-        message = message .. string.format(", %d empty removed", emptyRemoved)
-    end
-    print(message)
+    local emptyRemoved = self:CleanupEmptyHistoryEntries()
+    if changed or emptyRemoved > 0 then self:RefreshAllOpenWindows() end
+    self:Print(string.format("Debug cleanup complete: Removed %d messages and %d empty conversations.", deleted, emptyRemoved))
 end
 
 --- Refresh all currently open whisper windows to display updated history
@@ -721,6 +563,7 @@ end
 
 -- Clean up empty history entries
 function addon:CleanupEmptyHistoryEntries()
+    if not self:IsSafeToOperate() then return 0 end
     local historyDB = WhisperManager_HistoryDB or {}
     local removedCount = 0
     
@@ -787,6 +630,35 @@ function addon:CleanupWindowPositions()
     return #keysToRemove
 end
 
+-- Reuse saved/session keys instead of rewriting historical identifiers. Cache
+-- aliases so ordinary ASCII case changes do not rescan the saved history.
+function addon:ResolveConversationKey(key)
+    if self:IsSecretValue(key) or type(key) ~= "string" then return nil end
+    if self.conversationKeyHistoryDB ~= WhisperManager_HistoryDB then
+        self.conversationKeyAliases = {}
+        self.conversationKeyHistoryDB = WhisperManager_HistoryDB
+    end
+    local aliases = self.conversationKeyAliases or {}
+    self.conversationKeyAliases = aliases
+    local folded = key:lower()
+    if aliases[folded] then return aliases[folded] end
+    local resolved
+    -- strcmputf8i also matches non-ASCII character names on the client.
+    for _, existing in pairs(aliases) do
+        if self:AreConversationKeysEqual(existing, key) then resolved = existing; break end
+    end
+    if not resolved then
+        for _, source in ipairs({self.windows or {}, WhisperManager_HistoryDB or {}, WhisperManager_RecentChats or {}}) do
+            for existing in pairs(source) do
+                if self:AreConversationKeysEqual(existing, key) then resolved = existing; break end
+            end
+            if resolved then break end
+        end
+    end
+    aliases[folded] = resolved or key
+    return aliases[folded]
+end
+
 function addon:ResolvePlayerIdentifiers(playerName)
     local trimmed = self:TrimWhitespace(playerName)
     if not trimmed or trimmed == "" then return nil end
@@ -801,6 +673,7 @@ function addon:ResolvePlayerIdentifiers(playerName)
     end
 
     if isCharacterKey or isBnetKey then
+        trimmed = self:ResolveConversationKey(trimmed)
         local display = self:GetDisplayNameFromKey(trimmed)
         local okCharTarget, charTarget = pcall(string.match, trimmed, "^c_(.+)")
         local okBnetTarget, bnetTarget = pcall(string.match, trimmed, "^bnet_(.+)")
@@ -835,6 +708,8 @@ function addon:ResolvePlayerIdentifiers(playerName)
         canonicalKey = "c_" .. baseName .. "-" .. currentRealm
     end
 
+    canonicalKey = self:ResolveConversationKey(canonicalKey)
+    target = canonicalKey:sub(3)
     local display = baseName
     local okDisplay, ambiguatedDisplay = pcall(Ambiguate, trimmed, "short")
     if okDisplay and ambiguatedDisplay and ambiguatedDisplay ~= "" then
