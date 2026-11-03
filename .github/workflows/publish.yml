@@ -70,7 +70,7 @@ jobs:
         uses: BigWigsMods/packager@v2
         with:
           # release.py stages only runtime files and LICENSE; do not recopy the repo.
-          args: -c -o -n "{package-name}-{project-version}"
+          args: -c -o -n "{package-name}"
         env:
           # The tag is made in this run: GITHUB_TOKEN pushes do not start another run.
           GITHUB_REF: refs/tags/${{ steps.prepare.outputs.tag }}
